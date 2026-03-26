@@ -68,21 +68,3 @@ export interface QueueStatus {
 	maxConcurrency: number
 	activeTasks: Array<{ taskId: string; title: string; startedAt: string }>
 }
-
-export interface ContemberTask {
-	id: string
-	title: string
-	status: string
-	priority: string | null
-	createdAt: string
-	dueDate: string | null
-	timeEstimate: number | null
-	module: { name: string } | null
-	project: {
-		id: string
-		slug: string
-		name: string
-		repositoryUrl: string | null
-		aiMode: string | null
-	} | null
-}

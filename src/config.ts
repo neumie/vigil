@@ -2,6 +2,16 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 
+const contemberProviderSchema = z.object({
+	type: z.literal('contember'),
+	apiBaseUrl: z.string().url(),
+	projectSlug: z.string(),
+	apiToken: z.string().min(1),
+})
+
+// Future providers go here as union members
+const providerSchema = z.discriminatedUnion('type', [contemberProviderSchema])
+
 const projectSchema = z.object({
 	slug: z.string(),
 	repoPath: z.string(),
@@ -10,11 +20,7 @@ const projectSchema = z.object({
 })
 
 const configSchema = z.object({
-	contember: z.object({
-		apiBaseUrl: z.string().url(),
-		projectSlug: z.string(),
-		apiToken: z.string().min(1),
-	}),
+	provider: providerSchema,
 	projects: z.array(projectSchema).min(1),
 	polling: z
 		.object({

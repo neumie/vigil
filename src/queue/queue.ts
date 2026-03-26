@@ -1,6 +1,6 @@
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
-import type { GraphQLClient } from '../graphql/client.js'
+import type { TaskProvider } from '../providers/provider.js'
 import type { QueueStatus } from '../types.js'
 import { log } from '../util/logger.js'
 import { processTask } from './worker.js'
@@ -13,7 +13,7 @@ export class TaskQueue {
 	constructor(
 		private config: VigilConfig,
 		private db: DB,
-		private graphql: GraphQLClient,
+		private provider: TaskProvider,
 	) {}
 
 	start() {
@@ -30,7 +30,7 @@ export class TaskQueue {
 	enqueue(taskId: string) {
 		if (!this.pending.includes(taskId) && !this.active.has(taskId)) {
 			this.pending.push(taskId)
-			db_insertEvent(this.db, taskId, 'task_queued')
+			safeInsertEvent(this.db, taskId, 'task_queued')
 			log.info('queue', `Enqueued task ${taskId} (pending: ${this.pending.length})`)
 			if (this.running) this.processNext()
 		}
@@ -58,7 +58,7 @@ export class TaskQueue {
 
 			this.active.set(taskId, { title, startedAt: new Date().toISOString() })
 
-			processTask(taskId, this.config, this.db, this.graphql).finally(() => {
+			processTask(taskId, this.config, this.db, this.provider).finally(() => {
 				this.active.delete(taskId)
 				this.processNext()
 			})
@@ -66,7 +66,7 @@ export class TaskQueue {
 	}
 }
 
-function db_insertEvent(db: DB, taskId: string, eventType: string) {
+function safeInsertEvent(db: DB, taskId: string, eventType: string) {
 	try {
 		db.insertEvent(taskId, eventType)
 	} catch {

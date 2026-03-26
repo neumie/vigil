@@ -1,10 +1,9 @@
 import type { ProjectConfig, VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
-import type { GraphQLClient } from '../graphql/client.js'
+import type { TaskProvider } from '../providers/provider.js'
 import type { SolverResult } from '../types.js'
 import { log } from '../util/logger.js'
 import { pushBranch } from '../worktree/manager.js'
-import { postComment } from './comment-poster.js'
 import { createPR } from './pr-creator.js'
 
 export async function dispatch(
@@ -12,7 +11,7 @@ export async function dispatch(
 	result: SolverResult,
 	config: VigilConfig,
 	db: DB,
-	graphql: GraphQLClient,
+	provider: TaskProvider,
 	projectConfig: ProjectConfig,
 ): Promise<void> {
 	const task = db.getTask(taskId)
@@ -36,8 +35,7 @@ export async function dispatch(
 				db.updateTask(taskId, { prUrl, prDraft: 0 })
 				db.insertEvent(taskId, 'pr_created', { url: prUrl, draft: false })
 
-				const commentMd = `**Vigil**: Solved (trivial). PR: ${prUrl}`
-				const commentId = await postComment(graphql, task.clientcareId, commentMd)
+				const commentId = await provider.postComment(task.clientcareId, `**Vigil**: Solved (trivial). PR: ${prUrl}`)
 				if (commentId) {
 					db.updateTask(taskId, { commentId })
 					db.insertEvent(taskId, 'comment_posted', { commentId })
@@ -60,8 +58,10 @@ export async function dispatch(
 				db.updateTask(taskId, { prUrl, prDraft: 1 })
 				db.insertEvent(taskId, 'pr_created', { url: prUrl, draft: true })
 
-				const commentMd = `**Vigil**: Solved (draft PR for review). PR: ${prUrl}`
-				const commentId = await postComment(graphql, task.clientcareId, commentMd)
+				const commentId = await provider.postComment(
+					task.clientcareId,
+					`**Vigil**: Solved (draft PR for review). PR: ${prUrl}`,
+				)
 				if (commentId) {
 					db.updateTask(taskId, { commentId })
 					db.insertEvent(taskId, 'comment_posted', { commentId })
@@ -73,15 +73,15 @@ export async function dispatch(
 		case 'complex': {
 			pushBranch(worktreePath, branchName)
 
-			let commentMd = `**Vigil**: Partial solution on branch \`${branchName}\`.\n\n`
-			commentMd += `**Summary**: ${result.summary}\n\n`
-			if (result.analysis) commentMd += `**Analysis**:\n${result.analysis}\n\n`
+			let md = `**Vigil**: Partial solution on branch \`${branchName}\`.\n\n`
+			md += `**Summary**: ${result.summary}\n\n`
+			if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
 			if (result.remainingWork?.length) {
-				commentMd += '**Remaining work**:\n'
-				for (const item of result.remainingWork) commentMd += `- ${item}\n`
+				md += '**Remaining work**:\n'
+				for (const item of result.remainingWork) md += `- ${item}\n`
 			}
 
-			const commentId = await postComment(graphql, task.clientcareId, commentMd)
+			const commentId = await provider.postComment(task.clientcareId, md)
 			if (commentId) {
 				db.updateTask(taskId, { commentId })
 				db.insertEvent(taskId, 'comment_posted', { commentId })
@@ -90,14 +90,14 @@ export async function dispatch(
 		}
 
 		case 'unclear': {
-			let commentMd = '**Vigil**: Cannot proceed — task needs clarification.\n\n'
-			if (result.analysis) commentMd += `**Analysis**:\n${result.analysis}\n\n`
+			let md = '**Vigil**: Cannot proceed — task needs clarification.\n\n'
+			if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
 			if (result.questionsForRequester?.length) {
-				commentMd += '**Questions**:\n'
-				for (const q of result.questionsForRequester) commentMd += `- ${q}\n`
+				md += '**Questions**:\n'
+				for (const q of result.questionsForRequester) md += `- ${q}\n`
 			}
 
-			const commentId = await postComment(graphql, task.clientcareId, commentMd)
+			const commentId = await provider.postComment(task.clientcareId, md)
 			if (commentId) {
 				db.updateTask(taskId, { commentId })
 				db.insertEvent(taskId, 'comment_posted', { commentId })
