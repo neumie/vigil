@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Vigil
 
-Vigil is an AI-powered task automation daemon. It polls a Contember CMS for new tasks, invokes Claude Code CLI to analyze and solve them, classifies complexity into tiers (trivial/simple/complex/unclear), and takes appropriate actions (create PRs, post comments, request clarification). A React dashboard provides real-time monitoring.
+Vigil is an AI-powered task automation daemon. It polls an external task source (via a pluggable provider system) for new tasks, invokes Claude Code CLI to analyze and solve them, classifies complexity into tiers (trivial/simple/complex/unclear), and takes appropriate actions (create PRs, post comments, request clarification). A React dashboard provides real-time monitoring. Currently supports Contember CMS as a task source, with the provider interface designed for adding others (GitHub Issues, Linear, etc.).
 
 ## Commands
 
@@ -25,16 +25,22 @@ No test framework is configured yet.
 
 ## Configuration
 
-Config loads from `VIGIL_CONFIG` env var path or `./vigil.config.json` (see `vigil.config.example.json`). Validated with Zod in `src/config.ts`. Key settings: Contember connection, project repos, polling interval, solver concurrency/timeout/model, GitHub PR options, server port (default 7474).
+Config loads from `VIGIL_CONFIG` env var path or `./vigil.config.json` (see `vigil.config.example.json`). Validated with Zod in `src/config.ts`. The `provider` field is a discriminated union keyed on `type` (currently only `"contember"`). Other key settings: project repos, polling interval, solver concurrency/timeout/model, GitHub PR options, server port (default 7474).
 
 ## Architecture
 
-**Data flow:** Contember → Poller → DB + Queue → Worker → Claude CLI → Result Parser → Action Dispatcher → PRs/Comments back to Contember
+**Data flow:** Task Source (via Provider) → Poller → DB + Queue → Worker → Claude CLI → Result Parser → Action Dispatcher → PRs/Comments back to source
+
+### Provider system (`src/providers/`)
+
+The `TaskProvider` interface (`provider.ts`) abstracts all interaction with external task sources. Core methods: `pollNewTasks()`, `getTaskContext()`, `postComment()`. Each provider maps its native format to provider-agnostic types (`DiscoveredTask`, `TaskContext`). The registry (`registry.ts`) is a factory that instantiates the correct provider from config. Currently only `ContemberProvider` (`contember.ts`) exists — it contains all Contember-specific logic including GraphQL queries and SlateJS conversion.
+
+To add a new provider: implement `TaskProvider`, add its config to the discriminated union in `src/config.ts`, and register it in `src/providers/registry.ts`.
 
 ### Core pipeline (`src/queue/worker.ts`)
 
 The worker processes tasks in 5 phases:
-1. **Poll** — fetch full task context from Contember via GraphQL
+1. **Poll** — fetch full task context via provider's `getTaskContext()`
 2. **Worktree** — create isolated git worktree for the task
 3. **Solve** — invoke `claude` CLI with a constructed prompt, collect output
 4. **Parse** — read `.solver-result.json` from worktree (fallback: parse stdout)
@@ -42,13 +48,12 @@ The worker processes tasks in 5 phases:
 
 ### Key modules
 
-- **`src/poller/poller.ts`** — interval-based polling of Contember, tracks `lastTaskSeen` timestamp to avoid duplicates
+- **`src/poller/poller.ts`** — interval-based polling via provider, tracks `lastTaskSeen` timestamp to avoid duplicates
 - **`src/queue/queue.ts`** — concurrent task processing with configurable concurrency limit
 - **`src/solver/invoker.ts`** — spawns `claude` CLI, passes prompt via stdin, respects timeout
-- **`src/solver/prompt-builder.ts`** — constructs the full prompt including tier definitions and Contember SlateJS→plaintext conversion
+- **`src/solver/prompt-builder.ts`** — constructs the full prompt from provider-agnostic `TaskContext`, including tier definitions
 - **`src/solver/result-parser.ts`** — Zod-validated parsing of `.solver-result.json` with stdout fallback
-- **`src/actions/dispatcher.ts`** — routes completed tasks to PR creation (`gh` CLI) or Contember comments based on tier
-- **`src/actions/comment-poster.ts`** — converts markdown to Contember's SlateJS JSON format for comments
+- **`src/actions/dispatcher.ts`** — routes completed tasks to PR creation (`gh` CLI) or source comments via provider
 - **`src/worktree/manager.ts`** — creates/pushes git worktrees per task
 - **`src/db/client.ts`** — SQLite (better-sqlite3) wrapper for tasks, poll state, event log
 - **`src/server/`** — Hono API serving task data, queue status, stats; serves the web dashboard
