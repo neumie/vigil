@@ -1,8 +1,7 @@
 import { dispatch } from '../actions/dispatcher.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
-import type { GraphQLClient } from '../graphql/client.js'
-import { GET_TASK_CONTEXT } from '../graphql/queries.js'
+import type { TaskProvider } from '../providers/provider.js'
 import { invokeClaude } from '../solver/invoker.js'
 import { parseClaudeOutput } from '../solver/output-parser.js'
 import { buildPrompt } from '../solver/prompt-builder.js'
@@ -11,11 +10,7 @@ import { log } from '../util/logger.js'
 import { slugify } from '../util/slug.js'
 import { createWorktree } from '../worktree/manager.js'
 
-interface GetTaskContextResponse {
-	getTask: unknown | null
-}
-
-export async function processTask(taskId: string, config: VigilConfig, db: DB, graphql: GraphQLClient): Promise<void> {
+export async function processTask(taskId: string, config: VigilConfig, db: DB, provider: TaskProvider): Promise<void> {
 	const task = db.getTask(taskId)
 	if (!task) throw new Error(`Task ${taskId} not found in DB`)
 
@@ -26,17 +21,15 @@ export async function processTask(taskId: string, config: VigilConfig, db: DB, g
 	db.insertEvent(taskId, 'solver_started')
 
 	try {
-		// Phase 1: Fetch full context from Contember
+		// Phase 1: Fetch full context via provider
 		log.info('worker', `Fetching context for task: ${task.title}`)
-		const data = await graphql.query<GetTaskContextResponse>(GET_TASK_CONTEXT, {
-			taskId: task.clientcareId,
-		})
+		const taskContext = await provider.getTaskContext(task.clientcareId)
 
-		if (!data.getTask) {
-			throw Object.assign(new Error('Task not found in Contember'), { phase: 'poll' })
+		if (!taskContext) {
+			throw Object.assign(new Error('Task not found in source system'), { phase: 'poll' })
 		}
 
-		const prompt = buildPrompt(data.getTask as unknown as Parameters<typeof buildPrompt>[0])
+		const prompt = buildPrompt(taskContext)
 		db.updateTask(taskId, { taskContext: prompt })
 
 		// Phase 2: Create git worktree
@@ -87,9 +80,7 @@ export async function processTask(taskId: string, config: VigilConfig, db: DB, g
 		if (!solverResult) {
 			throw Object.assign(
 				new Error('Could not determine solver result — no .solver-result.json and no tier in output'),
-				{
-					phase: 'solve',
-				},
+				{ phase: 'solve' },
 			)
 		}
 
@@ -108,7 +99,7 @@ export async function processTask(taskId: string, config: VigilConfig, db: DB, g
 		// Phase 5: Dispatch tier-appropriate action
 		log.info('worker', `Task assessed as ${solverResult.tier} (confidence: ${solverResult.confidence})`)
 		try {
-			await dispatch(taskId, solverResult, config, db, graphql, projectConfig)
+			await dispatch(taskId, solverResult, config, db, provider, projectConfig)
 		} catch (err) {
 			throw Object.assign(new Error(`Action dispatch failed: ${err instanceof Error ? err.message : err}`), {
 				phase: 'action',

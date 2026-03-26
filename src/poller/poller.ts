@@ -1,14 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
-import type { GraphQLClient } from '../graphql/client.js'
-import { LIST_NEW_TASKS } from '../graphql/queries.js'
-import type { ContemberTask } from '../types.js'
+import type { TaskProvider } from '../providers/provider.js'
 import { log } from '../util/logger.js'
-
-interface ListNewTasksResponse {
-	listTask: ContemberTask[]
-}
 
 export class Poller {
 	private timer: ReturnType<typeof setTimeout> | null = null
@@ -17,14 +11,17 @@ export class Poller {
 	constructor(
 		private config: VigilConfig,
 		private db: DB,
-		private graphql: GraphQLClient,
+		private provider: TaskProvider,
 		private onNewTask: (taskId: string) => void,
 	) {}
 
 	start() {
 		if (this.running) return
 		this.running = true
-		log.info('poller', `Starting poller (interval: ${this.config.polling.intervalSeconds}s)`)
+		log.info(
+			'poller',
+			`Starting poller (interval: ${this.config.polling.intervalSeconds}s, provider: ${this.provider.name})`,
+		)
 		this.tick()
 	}
 
@@ -57,34 +54,27 @@ export class Poller {
 
 	private async pollProject(projectSlug: string) {
 		const state = this.db.getPollState(projectSlug)
-		const createdAfter = state?.lastTaskSeen ?? '1970-01-01T00:00:00.000Z'
+		const since = state?.lastTaskSeen ?? '1970-01-01T00:00:00.000Z'
 
-		const data = await this.graphql.query<ListNewTasksResponse>(LIST_NEW_TASKS, {
-			projectSlug,
-			createdAfter,
-		})
-
-		const tasks = data.listTask
+		const tasks = await this.provider.pollNewTasks(projectSlug, since)
 		if (tasks.length === 0) return
 
 		let newCount = 0
-		let latestCreatedAt = createdAfter
+		let latestCreatedAt = since
 
 		for (const task of tasks) {
-			if (this.db.taskExistsByClientcareId(task.id)) continue
+			if (this.db.taskExistsByClientcareId(task.externalId)) continue
 
 			const id = randomUUID()
 			this.db.insertTask({
 				id,
-				clientcareId: task.id,
+				clientcareId: task.externalId,
 				projectSlug,
 				title: task.title,
 			})
 			this.db.insertEvent(id, 'task_discovered', {
-				clientcareId: task.id,
+				externalId: task.externalId,
 				title: task.title,
-				status: task.status,
-				priority: task.priority,
 			})
 			this.onNewTask(id)
 			newCount++

@@ -1,5 +1,6 @@
 {
-  "contember": {
+  "provider": {
+    "type": "contember",
     "apiBaseUrl": "https://api-clientcare.eu.contember.cloud",
     "projectSlug": "clientcare",
     "apiToken": "YOUR_CONTEMBER_API_TOKEN"

@@ -1,35 +1,4 @@
-interface TaskContext {
-	id: string
-	title?: string | null
-	status?: string | null
-	priority?: string | null
-	dueDate?: string | null
-	timeEstimate?: number | null
-	module?: { name?: string | null } | null
-	description?: {
-		data?: unknown
-		references?: Array<{
-			file?: { url?: string | null; fileName?: string | null; fileType?: string | null } | null
-		}> | null
-	} | null
-	comments?: Array<{
-		id: string
-		createdAt?: string | null
-		sourceType?: string | null
-		isPublic?: boolean | null
-		content?: { data?: unknown } | null
-		person?: { tenantPerson?: { name?: string | null; email?: string | null } | null } | null
-	}> | null
-	project?: {
-		id: string
-		name?: string | null
-		slug?: string | null
-		repositoryUrl?: string | null
-		aiMode?: string | null
-		description?: { data?: unknown } | null
-		contexts?: Array<{ title?: string | null; markdown?: string | null }> | null
-	} | null
-}
+import type { TaskContext } from '../providers/provider.js'
 
 const SOLVER_INSTRUCTIONS = `You are solving a task from a project management system. Read the task context below, then follow these steps:
 
@@ -96,119 +65,48 @@ Set \`prReady\` to:
 export function buildPrompt(task: TaskContext): string {
 	let context = ''
 
-	// Project context
 	if (task.project) {
 		context += `Project: ${task.project.name} (slug: ${task.project.slug})\n`
 
-		if (task.project.description?.data) {
-			const text = extractPlainText(task.project.description.data)
-			if (text) context += `\nProject Description:\n${text}\n`
+		if (task.project.description) {
+			context += `\nProject Description:\n${task.project.description}\n`
 		}
 
-		const contexts = task.project.contexts ?? []
-		if (contexts.length > 0) {
+		const docs = task.project.contextDocs ?? []
+		if (docs.length > 0) {
 			context += '\nProject Context Documents:\n'
-			for (const ctx of contexts) {
-				context += `\n### ${ctx.title ?? 'Untitled'}\n`
-				if (ctx.markdown) {
-					const text = ctx.markdown.slice(0, 3000) + (ctx.markdown.length > 3000 ? '...' : '')
-					context += `${text}\n`
-				}
+			for (const doc of docs) {
+				context += `\n### ${doc.title}\n${doc.body}\n`
 			}
 		}
 	}
 
-	// Task context
 	context += `\n\nTask: ${task.title}\n`
-	context += `Status: ${task.status}, Priority: ${task.priority}\n`
+	if (task.status) context += `Status: ${task.status}\n`
+	if (task.priority) context += `Priority: ${task.priority}\n`
 	if (task.dueDate) context += `Due date: ${task.dueDate}\n`
 	if (task.timeEstimate) context += `Estimate: ${task.timeEstimate}h\n`
-	if (task.module?.name) context += `Module: ${task.module.name}\n`
+	if (task.module) context += `Module: ${task.module}\n`
 
-	if (task.description?.data) {
-		const text = extractPlainText(task.description.data)
-		if (text) context += `\nTask Description:\n${text}\n`
+	if (task.description) {
+		context += `\nTask Description:\n${task.description}\n`
+	}
 
-		const files = collectFiles(task.description)
-		if (files.length > 0) {
-			context += '\nTask Files/Images:\n'
-			for (const f of files) {
-				context += `- ${f.fileName ?? f.url ?? 'file'} (${f.fileType ?? 'file'}) -> ${f.url ?? 'missing'}\n`
-			}
+	if (task.attachments?.length) {
+		context += '\nAttachments:\n'
+		for (const a of task.attachments) {
+			context += `- ${a.name}${a.type ? ` (${a.type})` : ''} -> ${a.url}\n`
 		}
 	}
 
 	const comments = task.comments ?? []
 	if (comments.length > 0) {
-		context += `\nTask Comments (${comments.length}):\n`
-		for (const comment of comments) {
-			const author = comment.person?.tenantPerson?.name ?? comment.person?.tenantPerson?.email ?? 'Unknown'
-			const visibility = comment.isPublic ? 'public' : 'internal'
-			context += `\n- [${comment.createdAt ?? '?'}] ${author} (${visibility}, source: ${comment.sourceType ?? 'manual'})\n`
-			if (comment.content?.data) {
-				const text = extractPlainText(comment.content.data)
-				context += text ? `${text}\n` : '(no text)\n'
-			} else {
-				context += '(no text)\n'
-			}
+		context += `\nComments (${comments.length}):\n`
+		for (const c of comments) {
+			context += `\n- [${c.createdAt}] ${c.author}${c.visibility ? ` (${c.visibility})` : ''}\n`
+			context += c.body ? `${c.body}\n` : '(no text)\n'
 		}
 	}
 
 	return `${SOLVER_INSTRUCTIONS}## Task Context\n\n${context}`
-}
-
-/**
- * Extract plain text from SlateJS JSON data.
- * Mirrors TaskContextBuilder.extractPlainTextFallback from ClientCare.
- */
-export function extractPlainText(value: unknown, depth = 0): string {
-	if (depth > 10 || value === null || value === undefined) return ''
-	if (typeof value === 'string') return value.trim()
-	if (Array.isArray(value)) {
-		return value
-			.map(item => extractPlainText(item, depth + 1))
-			.filter(Boolean)
-			.join(' ')
-			.replace(/\s+/g, ' ')
-			.trim()
-	}
-	if (typeof value !== 'object') return ''
-
-	const obj = value as Record<string, unknown>
-	const chunks: string[] = []
-
-	for (const key of ['text', 'title', 'caption', 'alt', 'markdown']) {
-		const entry = obj[key]
-		if (typeof entry === 'string' && entry.trim()) chunks.push(entry.trim())
-	}
-
-	for (const key of ['children', 'content', 'nodes', 'items', 'document', 'value', 'data']) {
-		const nested = extractPlainText(obj[key], depth + 1)
-		if (nested) chunks.push(nested)
-	}
-
-	if (chunks.length === 0) {
-		for (const [key, entry] of Object.entries(obj)) {
-			if (['url', 'href', 'src', 'id', 'type', '__typename'].includes(key)) continue
-			const nested = extractPlainText(entry, depth + 1)
-			if (nested) chunks.push(nested)
-		}
-	}
-
-	return chunks.join(' ').replace(/\s+/g, ' ').trim()
-}
-
-function collectFiles(
-	content?: {
-		references?: Array<{
-			file?: { url?: string | null; fileName?: string | null; fileType?: string | null } | null
-		}> | null
-	} | null,
-): Array<{ url?: string | null; fileName?: string | null; fileType?: string | null }> {
-	if (!content?.references) return []
-	const result: Array<{ url?: string | null; fileName?: string | null; fileType?: string | null }> = []
-	for (const r of content.references) {
-		if (r?.file) result.push(r.file)
-	}
-	return result
 }

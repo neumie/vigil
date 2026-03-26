@@ -1,7 +1,7 @@
 import { loadConfig } from './config.js'
 import { DB } from './db/client.js'
-import { GraphQLClient } from './graphql/client.js'
 import { Poller } from './poller/poller.js'
+import { createProvider } from './providers/registry.js'
 import { TaskQueue } from './queue/queue.js'
 import { createApp } from './server/app.js'
 import { log } from './util/logger.js'
@@ -16,13 +16,10 @@ async function main() {
 	)
 
 	const db = new DB()
-	const graphql = new GraphQLClient(
-		config.contember.apiBaseUrl,
-		config.contember.projectSlug,
-		config.contember.apiToken,
-	)
+	const provider = createProvider(config.provider)
+	log.info('vigil', `Provider: ${provider.name}`)
 
-	const queue = new TaskQueue(config, db, graphql)
+	const queue = new TaskQueue(config, db, provider)
 
 	// Recover tasks that were processing when we last shut down
 	const stale = db.getProcessingTaskIds()
@@ -41,7 +38,7 @@ async function main() {
 		log.info('vigil', `Re-enqueued ${queued.length} pending task(s) from DB`)
 	}
 
-	const poller = new Poller(config, db, graphql, id => {
+	const poller = new Poller(config, db, provider, id => {
 		queue.enqueue(id)
 	})
 
