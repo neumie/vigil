@@ -21,13 +21,19 @@ function entryPoint(): string {
 	return join(vigilRoot(), 'dist', 'index.js')
 }
 
+function escapeXml(s: string): string {
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 function buildPlist(env: Record<string, string>): string {
-	const root = vigilRoot()
-	const entry = entryPoint()
+	const root = escapeXml(vigilRoot())
+	const entry = escapeXml(entryPoint())
+	const nodePath = escapeXml(process.execPath)
 	const envEntries = Object.entries(env)
-		.map(([k, v]) => `\t\t\t<key>${k}</key>\n\t\t\t<string>${v}</string>`)
+		.map(([k, v]) => `\t\t\t<key>${escapeXml(k)}</key>\n\t\t\t<string>${escapeXml(v)}</string>`)
 		.join('\n')
-	const envBlock = envEntries.length > 0 ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${envEntries}\n\t</dict>` : ''
+	const envBlock =
+		envEntries.length > 0 ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${envEntries}\n\t</dict>\n` : ''
 
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -37,7 +43,7 @@ function buildPlist(env: Record<string, string>): string {
 \t<string>${LABEL}</string>
 \t<key>ProgramArguments</key>
 \t<array>
-\t\t<string>${process.execPath}</string>
+\t\t<string>${nodePath}</string>
 \t\t<string>${entry}</string>
 \t</array>
 \t<key>WorkingDirectory</key>
@@ -45,11 +51,10 @@ function buildPlist(env: Record<string, string>): string {
 \t<key>KeepAlive</key>
 \t<true/>
 \t<key>StandardOutPath</key>
-\t<string>${STDOUT_LOG}</string>
+\t<string>${escapeXml(STDOUT_LOG)}</string>
 \t<key>StandardErrorPath</key>
-\t<string>${STDERR_LOG}</string>
-${envBlock}
-</dict>
+\t<string>${escapeXml(STDERR_LOG)}</string>
+${envBlock}</dict>
 </plist>`
 }
 
