@@ -7,6 +7,7 @@ import { createApp } from './server/app.js'
 import { log } from './util/logger.js'
 
 async function main() {
+	process.title = 'vigil'
 	log.info('vigil', 'Starting Vigil...')
 
 	const config = loadConfig()
