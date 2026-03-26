@@ -33,6 +33,7 @@ const configSchema = z.object({
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
 			timeoutMinutes: z.number().min(1).default(30),
+			transformer: z.string().default('default'),
 		})
 		.default({}),
 	server: z

@@ -29,7 +29,7 @@ export async function processTask(taskId: string, config: VigilConfig, db: DB, p
 			throw Object.assign(new Error('Task not found in source system'), { phase: 'poll' })
 		}
 
-		const prompt = buildPrompt(taskContext)
+		const prompt = buildPrompt(taskContext, config.solver.transformer)
 		db.updateTask(taskId, { taskContext: prompt })
 
 		// Phase 2: Create git worktree

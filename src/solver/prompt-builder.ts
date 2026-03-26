@@ -1,4 +1,5 @@
 import type { TaskContext } from '../providers/provider.js'
+import { getTransformer } from '../transformers/transformer.js'
 
 const SOLVER_INSTRUCTIONS = `You are solving a task from a project management system. Read the task context below, then follow these steps:
 
@@ -62,51 +63,8 @@ Set \`prReady\` to:
 
 `
 
-export function buildPrompt(task: TaskContext): string {
-	let context = ''
-
-	if (task.project) {
-		context += `Project: ${task.project.name} (slug: ${task.project.slug})\n`
-
-		if (task.project.description) {
-			context += `\nProject Description:\n${task.project.description}\n`
-		}
-
-		const docs = task.project.contextDocs ?? []
-		if (docs.length > 0) {
-			context += '\nProject Context Documents:\n'
-			for (const doc of docs) {
-				context += `\n### ${doc.title}\n${doc.body}\n`
-			}
-		}
-	}
-
-	context += `\n\nTask: ${task.title}\n`
-	if (task.status) context += `Status: ${task.status}\n`
-	if (task.priority) context += `Priority: ${task.priority}\n`
-	if (task.dueDate) context += `Due date: ${task.dueDate}\n`
-	if (task.timeEstimate) context += `Estimate: ${task.timeEstimate}h\n`
-	if (task.module) context += `Module: ${task.module}\n`
-
-	if (task.description) {
-		context += `\nTask Description:\n${task.description}\n`
-	}
-
-	if (task.attachments?.length) {
-		context += '\nAttachments:\n'
-		for (const a of task.attachments) {
-			context += `- ${a.name}${a.type ? ` (${a.type})` : ''} -> ${a.url}\n`
-		}
-	}
-
-	const comments = task.comments ?? []
-	if (comments.length > 0) {
-		context += `\nComments (${comments.length}):\n`
-		for (const c of comments) {
-			context += `\n- [${c.createdAt}] ${c.author}${c.visibility ? ` (${c.visibility})` : ''}\n`
-			context += c.body ? `${c.body}\n` : '(no text)\n'
-		}
-	}
-
-	return `${SOLVER_INSTRUCTIONS}## Task Context\n\n${context}`
+export function buildPrompt(task: TaskContext, transformerName: string): string {
+	const transformer = getTransformer(transformerName)
+	const taskContextStr = transformer(task)
+	return `${SOLVER_INSTRUCTIONS}## Task Context\n\n${taskContextStr}`
 }
