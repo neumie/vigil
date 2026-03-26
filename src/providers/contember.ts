@@ -118,50 +118,62 @@ export class ContemberProvider implements TaskProvider {
 		const t = data.getTask
 		if (!t) return null
 
-		const comments =
-			t.comments?.map(c => ({
-				author: c.person?.tenantPerson?.name ?? c.person?.tenantPerson?.email ?? 'Unknown',
-				createdAt: c.createdAt ?? '',
-				body: c.content?.data ? extractPlainText(c.content.data) : '',
-				visibility: (c.isPublic ? 'public' : 'internal') as 'public' | 'internal',
-			})) ?? []
+		const metadata: Record<string, string> = {}
+		if (t.status) metadata.status = t.status
+		if (t.priority) metadata.priority = t.priority
+		if (t.dueDate) metadata['due date'] = t.dueDate
+		if (t.timeEstimate) metadata['time estimate'] = `${t.timeEstimate}h`
+		if (t.module?.name) metadata.module = t.module.name
 
-		const attachments: TaskContext['attachments'] = []
+		const comments =
+			t.comments
+				?.map(c => ({
+					author: c.person?.tenantPerson?.name ?? c.person?.tenantPerson?.email ?? 'Unknown',
+					createdAt: c.createdAt ?? '',
+					body: c.content?.data ? extractPlainText(c.content.data) : '',
+				}))
+				.filter(c => c.body) ?? []
+
+		const attachments: Array<{ name: string; url: string }> = []
 		if (t.description?.references) {
 			for (const ref of t.description.references) {
 				if (ref?.file?.url) {
 					attachments.push({
 						name: ref.file.fileName ?? 'file',
 						url: ref.file.url,
-						type: ref.file.fileType ?? undefined,
 					})
 				}
 			}
 		}
 
+		let projectContext: string | undefined
+		if (t.project) {
+			const parts: string[] = []
+			parts.push(`Project: ${t.project.name ?? ''} (slug: ${t.project.slug ?? ''})`)
+			if (t.project.description?.data) {
+				const desc = extractPlainText(t.project.description.data)
+				if (desc) parts.push(`\nProject Description:\n${desc}`)
+			}
+			const contexts = t.project.contexts ?? []
+			if (contexts.length > 0) {
+				parts.push('\nProject Context Documents:')
+				for (const ctx of contexts) {
+					if (ctx.markdown) {
+						const body = ctx.markdown.slice(0, 3000) + (ctx.markdown.length > 3000 ? '...' : '')
+						parts.push(`\n### ${ctx.title ?? 'Untitled'}\n${body}`)
+					}
+				}
+			}
+			projectContext = parts.join('\n')
+		}
+
 		return {
 			title: t.title ?? '',
-			status: t.status ?? undefined,
-			priority: t.priority ?? undefined,
-			dueDate: t.dueDate ?? undefined,
-			timeEstimate: t.timeEstimate ?? undefined,
-			module: t.module?.name ?? undefined,
 			description: t.description?.data ? extractPlainText(t.description.data) : undefined,
-			attachments: attachments.length > 0 ? attachments : undefined,
+			metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
 			comments: comments.length > 0 ? comments : undefined,
-			project: t.project
-				? {
-						name: t.project.name ?? '',
-						slug: t.project.slug ?? '',
-						description: t.project.description?.data ? extractPlainText(t.project.description.data) : undefined,
-						contextDocs: t.project.contexts
-							?.filter(c => c.markdown)
-							.map(c => ({
-								title: c.title ?? 'Untitled',
-								body: (c.markdown?.slice(0, 3000) ?? '') + (c.markdown && c.markdown.length > 3000 ? '...' : ''),
-							})),
-					}
-				: undefined,
+			attachments: attachments.length > 0 ? attachments : undefined,
+			projectContext,
 		}
 	}
 
