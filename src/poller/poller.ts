@@ -55,7 +55,7 @@ export class Poller {
 
 	private async pollProject(projectSlug: string) {
 		const state = this.db.getPollState(projectSlug)
-		const since = state?.lastTaskSeen ?? this.config.polling.since ?? '1970-01-01T00:00:00.000Z'
+		const since = state?.lastTaskSeen ?? this.config.polling.since ?? new Date().toISOString()
 
 		const tasks = await this.provider.pollNewTasks(projectSlug, since)
 		if (tasks.length === 0) return
