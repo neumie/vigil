@@ -77,6 +77,10 @@ When `solver.type` is set to `"okena"`, Vigil creates worktrees and runs Claude 
 
 Requires Okena's remote server enabled (`remote_server_enabled: true` in Okena settings).
 
+## Solver prompt
+
+The prompt builder (`src/solver/prompt-builder.ts`) delegates to [Almanac](https://github.com/neumie/almanac) skills — specifically `/task-start` (which chains complexity assessment, branch naming, and tier-appropriate execution) and `/commit` for conventional commits. This means the Claude Code instances solving tasks follow the same structured workflow and conventions you'd use interactively.
+
 ## Architecture
 
 ```
