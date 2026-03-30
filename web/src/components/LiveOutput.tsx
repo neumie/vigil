@@ -28,34 +28,34 @@ export function LiveOutput({ taskId, isActive }: { taskId: string; isActive: boo
 		return () => clearInterval(interval)
 	}, [taskId, done, isActive])
 
-	// Auto-scroll to bottom
 	useEffect(() => {
 		if (containerRef.current) {
 			containerRef.current.scrollTop = containerRef.current.scrollHeight
 		}
 	}, [output])
 
-	if (!output && !isActive) return null
+	if (!output && !isActive) return <p style={{ color: 'var(--text-4)', fontSize: 13 }}>No output captured.</p>
 
 	return (
 		<pre
 			ref={containerRef}
 			style={{
-				background: '#0a0a0a',
-				borderRadius: 6,
+				background: 'var(--bg-0)',
+				borderRadius: 'var(--radius-sm)',
 				padding: 12,
-				fontSize: 12,
-				fontFamily: 'monospace',
-				color: '#d4d4d8',
-				maxHeight: 400,
+				fontSize: 11,
+				fontFamily: 'var(--font-mono)',
+				color: 'var(--text-2)',
+				maxHeight: 500,
 				overflow: 'auto',
 				whiteSpace: 'pre-wrap',
 				wordBreak: 'break-word',
 				margin: 0,
+				lineHeight: 1.6,
 			}}
 		>
 			{output || (isActive ? 'Waiting for output...' : '')}
-			{isActive && !done && <span style={{ color: '#3b82f6', animation: 'blink 1s infinite' }}>|</span>}
+			{isActive && !done && <span style={{ color: 'var(--accent)', animation: 'blink 1s step-end infinite' }}>|</span>}
 		</pre>
 	)
 }

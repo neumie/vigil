@@ -1,35 +1,37 @@
 const tierColors: Record<string, string> = {
-	trivial: '#22c55e',
-	simple: '#3b82f6',
-	complex: '#f59e0b',
-	unclear: '#ef4444',
+	trivial: 'var(--green)',
+	simple: 'var(--blue)',
+	complex: 'var(--amber)',
+	unclear: 'var(--red)',
 }
 
 const statusColors: Record<string, string> = {
-	queued: '#71717a',
-	processing: '#3b82f6',
-	completed: '#22c55e',
-	failed: '#ef4444',
-	cancelled: '#f59e0b',
-	skipped: '#71717a',
+	queued: 'var(--text-3)',
+	processing: 'var(--blue)',
+	completed: 'var(--green)',
+	failed: 'var(--red)',
+	cancelled: 'var(--amber)',
+	skipped: 'var(--text-3)',
 }
 
 export function StatusBadge({ value, type }: { value: string; type: 'tier' | 'status' }) {
 	const colors = type === 'tier' ? tierColors : statusColors
-	const color = colors[value] ?? '#71717a'
+	const color = colors[value] ?? 'var(--text-3)'
 
 	return (
 		<span
 			style={{
 				display: 'inline-block',
-				padding: '2px 8px',
+				padding: '1px 6px',
 				borderRadius: 4,
-				fontSize: 12,
+				fontSize: 10,
 				fontWeight: 600,
 				color,
-				background: `${color}20`,
-				border: `1px solid ${color}40`,
+				background: `color-mix(in srgb, ${color} 15%, transparent)`,
+				border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
 				textTransform: 'uppercase',
+				letterSpacing: '0.04em',
+				lineHeight: '18px',
 			}}
 		>
 			{value}
