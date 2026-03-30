@@ -7,12 +7,13 @@ interface Props {
 	taskBaseUrl?: string
 	onSelectTask: (id: string) => void
 	onRetry: (id: string) => void
+	onCancel: (id: string) => void
 }
 
-export function Dashboard({ status, tasks, taskBaseUrl, onSelectTask, onRetry }: Props) {
+export function Dashboard({ status, tasks, taskBaseUrl, onSelectTask, onRetry, onCancel }: Props) {
 	const active = tasks.filter(t => t.status === 'processing')
 	const queued = tasks.filter(t => t.status === 'queued')
-	const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed')
+	const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
 
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -30,7 +31,7 @@ export function Dashboard({ status, tasks, taskBaseUrl, onSelectTask, onRetry }:
 			{active.length > 0 && (
 				<Section title="Active">
 					{active.map(t => (
-						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} />
+						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} onCancel={() => onCancel(t.id)} />
 					))}
 				</Section>
 			)}
@@ -51,7 +52,7 @@ export function Dashboard({ status, tasks, taskBaseUrl, onSelectTask, onRetry }:
 				) : (
 					completed.slice(0, 20).map(t => (
 						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} onRetry={
-							t.status === 'failed' ? () => onRetry(t.id) : undefined
+							(t.status === 'failed' || t.status === 'cancelled') ? () => onRetry(t.id) : undefined
 						} />
 					))
 				)}
@@ -91,7 +92,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 	)
 }
 
-function TaskRow({ task, taskBaseUrl, onClick, onRetry }: { task: TaskRecord; taskBaseUrl?: string; onClick: () => void; onRetry?: () => void }) {
+function TaskRow({ task, taskBaseUrl, onClick, onRetry, onCancel }: { task: TaskRecord; taskBaseUrl?: string; onClick: () => void; onRetry?: () => void; onCancel?: () => void }) {
 	const elapsed = task.startedAt
 		? formatDuration(new Date(task.completedAt ?? Date.now()).getTime() - new Date(task.startedAt).getTime())
 		: null
@@ -136,6 +137,14 @@ function TaskRow({ task, taskBaseUrl, onClick, onRetry }: { task: TaskRecord; ta
 				>
 					PR
 				</a>
+			)}
+			{onCancel && (
+				<button
+					onClick={e => { e.stopPropagation(); onCancel() }}
+					style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}
+				>
+					Cancel
+				</button>
 			)}
 			{onRetry && (
 				<button

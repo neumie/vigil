@@ -1,4 +1,4 @@
-export type TaskStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'skipped'
+export type TaskStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 export type Tier = 'trivial' | 'simple' | 'complex' | 'unclear'
 export type ErrorPhase = 'poll' | 'worktree' | 'solve' | 'action'
 

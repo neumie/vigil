@@ -10,6 +10,7 @@ const statusColors: Record<string, string> = {
 	processing: '#3b82f6',
 	completed: '#22c55e',
 	failed: '#ef4444',
+	cancelled: '#f59e0b',
 	skipped: '#71717a',
 }
 

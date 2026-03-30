@@ -56,6 +56,9 @@ export function App() {
 				<TaskDetail task={selectedTask} taskBaseUrl={config.taskBaseUrl} onBack={() => setSelectedTaskId(null)} onRetry={async () => {
 					await api.retry(selectedTask.id)
 					refresh()
+				}} onCancel={async () => {
+					await api.cancel(selectedTask.id)
+					refresh()
 				}} />
 			) : (
 				<Dashboard
@@ -65,6 +68,10 @@ export function App() {
 					onSelectTask={id => setSelectedTaskId(id)}
 					onRetry={async id => {
 						await api.retry(id)
+						refresh()
+					}}
+					onCancel={async id => {
+						await api.cancel(id)
 						refresh()
 					}}
 				/>

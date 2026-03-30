@@ -70,5 +70,8 @@ export const api = {
 	queue: () => fetchJSON<QueueStatus>('/queue'),
 	stats: () => fetchJSON<Record<string, number>>('/stats'),
 	retry: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/retry`),
+	cancel: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/cancel`),
+	output: (id: string, offset = 0) =>
+		fetchJSON<{ content: string; offset: number; done: boolean }>(`/tasks/${id}/output?offset=${offset}`),
 	triggerPoll: () => postJSON<{ message: string }>('/poll/trigger'),
 }

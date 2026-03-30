@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { dispatch } from '../actions/dispatcher.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
@@ -9,12 +11,15 @@ import type { Solver } from '../solver/solver.js'
 import { log } from '../util/logger.js'
 import { slugify } from '../util/slug.js'
 
+const LOGS_DIR = resolve(process.cwd(), 'logs')
+
 export async function processTask(
 	taskId: string,
 	config: VigilConfig,
 	db: DB,
 	provider: TaskProvider,
 	solver: Solver,
+	signal?: AbortSignal,
 ): Promise<void> {
 	const task = db.getTask(taskId)
 	if (!task) throw new Error(`Task ${taskId} not found in DB`)
@@ -24,6 +29,10 @@ export async function processTask(
 
 	db.updateTask(taskId, { status: 'processing', startedAt: new Date().toISOString() })
 	db.insertEvent(taskId, 'solver_started')
+
+	// Prepare output log path
+	mkdirSync(LOGS_DIR, { recursive: true })
+	const outputLogPath = resolve(LOGS_DIR, `${taskId}.log`)
 
 	try {
 		// Phase 1: Fetch full context via provider
@@ -45,6 +54,8 @@ export async function processTask(
 			prompt,
 			taskTitle: task.title,
 			solverConfig: config.solver,
+			signal,
+			outputLogPath,
 		})
 		db.updateTask(taskId, { worktreePath, branchName })
 		db.updateTask(taskId, {
@@ -98,13 +109,21 @@ export async function processTask(
 		log.success('worker', `Task completed: ${task.title} [${solverResult.tier}]`)
 	} catch (err) {
 		const error = err as Error & { phase?: string }
+		const isCancelled = error.name === 'AbortError' || signal?.aborted
 		db.updateTask(taskId, {
-			status: 'failed',
-			errorMessage: error.message,
+			status: isCancelled ? 'cancelled' : 'failed',
+			errorMessage: isCancelled ? 'Task cancelled by user' : error.message,
 			errorPhase: error.phase ?? 'solve',
 			completedAt: new Date().toISOString(),
 		})
-		db.insertEvent(taskId, 'solver_failed', { error: error.message, phase: error.phase })
-		log.error('worker', `Task failed: ${task.title}`, err)
+		db.insertEvent(taskId, isCancelled ? 'task_cancelled' : 'solver_failed', {
+			error: error.message,
+			phase: error.phase,
+		})
+		if (isCancelled) {
+			log.warn('worker', `Task cancelled: ${task.title}`)
+		} else {
+			log.error('worker', `Task failed: ${task.title}`, err)
+		}
 	}
 }
