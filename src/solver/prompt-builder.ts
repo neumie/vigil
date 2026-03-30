@@ -1,42 +1,13 @@
 import type { TaskContext } from '../providers/provider.js'
 import { getTransformer } from '../transformers/transformer.js'
 
-const SOLVER_INSTRUCTIONS = `You are solving a task from a project management system. Read the task context below, then follow these steps:
+const SOLVER_INSTRUCTIONS = `You are solving a task from a project management system. The task may be written in any language — understand it regardless.
 
-## Step 1: Explore the codebase
-- Read CLAUDE.md if it exists
-- Understand the project structure, conventions, and tech stack
-- Find code relevant to the task
+Follow the /task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
 
-## Step 2: Assess complexity
-Based on the task description and your codebase exploration, classify this task into one of four tiers:
+## Additional rules for automated solving
 
-- **TRIVIAL**: Simple, well-defined change. Examples: typo fix, copy change, config update, adding a straightforward field. You are highly confident you can solve it completely and correctly.
-- **SIMPLE**: Clear requirement with a bounded scope. Examples: adding a new API endpoint following existing patterns, implementing a form field, writing a utility function. You can solve it fully but it requires some thought.
-- **COMPLEX**: Multi-step change, touches multiple modules, or has notable uncertainty. Examples: refactoring, new feature with edge cases, performance optimization. You should attempt a partial solution and document what remains.
-- **UNCLEAR**: Key details are missing. The task cannot be meaningfully started without clarification. Do NOT attempt any code changes.
-
-## Step 3: Take action based on tier
-
-### If TRIVIAL or SIMPLE:
-- Implement the complete solution
-- Make clean, focused commits
-- Ensure existing patterns are followed
-- Run any available linters/formatters
-
-### If COMPLEX:
-- Implement as much as you reasonably can
-- Focus on the core changes, note what remains
-- Make clean commits for what you completed
-- Write a detailed analysis of remaining work
-
-### If UNCLEAR:
-- Do NOT make any code changes
-- Write a detailed analysis of what information is missing
-- List specific questions that need answers
-
-## Step 4: Write result file
-When finished, create a file called \`.solver-result.json\` in the repository root with this exact structure:
+After /task-start completes, write a \`.solver-result.json\` file in the repository root:
 
 \`\`\`json
 {
@@ -53,11 +24,14 @@ When finished, create a file called \`.solver-result.json\` in the repository ro
 }
 \`\`\`
 
-Set \`prReady\` to:
-- \`true\` for TRIVIAL (merge-ready PR)
-- \`true\` for SIMPLE (draft PR)
-- \`false\` for COMPLEX (branch only, no PR)
-- \`false\` for UNCLEAR (no code changes)
+Map tiers: trivial → prReady: true, simple/moderate → prReady: true (draft), complex → prReady: false, unclear → prReady: false (no code changes).
+
+### Critical rules:
+- NEVER change code that works correctly unless the task specifically asks for it
+- NEVER add features, refactor, or "improve" beyond what was requested
+- NEVER commit files you didn't intentionally change
+- If you cannot verify the described issue exists, classify as UNCLEAR and list questions
+- Use /commit for all commits
 
 ---
 
