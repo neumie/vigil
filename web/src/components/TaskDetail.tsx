@@ -1,5 +1,6 @@
 import type { TaskRecord } from '../api'
 import { ActivityTimeline } from './ActivityTimeline'
+import { LiveOutput } from './LiveOutput'
 import { StatusBadge } from './StatusBadge'
 
 interface Props {
@@ -7,9 +8,10 @@ interface Props {
 	taskBaseUrl?: string
 	onBack: () => void
 	onRetry: () => void
+	onCancel: () => void
 }
 
-export function TaskDetail({ task, taskBaseUrl, onBack, onRetry }: Props) {
+export function TaskDetail({ task, taskBaseUrl, onBack, onRetry, onCancel }: Props) {
 	const files = task.filesChanged ? JSON.parse(task.filesChanged) as string[] : []
 
 	return (
@@ -52,13 +54,34 @@ export function TaskDetail({ task, taskBaseUrl, onBack, onRetry }: Props) {
 				</Card>
 			)}
 
+			{/* Live Output */}
+			{(task.status === 'processing' || task.status === 'failed' || task.status === 'cancelled') && (
+				<Card title="Output">
+					<LiveOutput taskId={task.id} isActive={task.status === 'processing'} />
+				</Card>
+			)}
+
 			{/* Activity Timeline */}
 			<Card title="Activity">
 				<ActivityTimeline taskId={task.id} />
 			</Card>
 
 			{/* Actions */}
-			{task.status === 'failed' && (
+			{task.status === 'processing' && (
+				<button onClick={onCancel} style={{
+					padding: '8px 20px',
+					background: '#ef444420',
+					border: '1px solid #ef444440',
+					borderRadius: 6,
+					color: '#ef4444',
+					cursor: 'pointer',
+					fontSize: 14,
+					alignSelf: 'flex-start',
+				}}>
+					Cancel Task
+				</button>
+			)}
+			{(task.status === 'failed' || task.status === 'cancelled') && (
 				<button onClick={onRetry} style={{
 					padding: '8px 20px',
 					background: '#f59e0b20',

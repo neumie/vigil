@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { VigilConfig } from '../../config.js'
 import { log } from '../../util/logger.js'
 import type { SolveParams, SolveResult, Solver } from '../../solver/solver.js'
+import { excludeVigilFiles } from '../../worktree/manager.js'
 import { OkenaClient } from './client.js'
 
 interface CreateWorktreeResponse {
@@ -22,7 +23,11 @@ export class OkenaSolver implements Solver {
 	}
 
 	async solve(params: SolveParams): Promise<SolveResult> {
-		const { projectConfig, branchName, prompt, taskTitle, solverConfig } = params
+		const { projectConfig, branchName, prompt, taskTitle, solverConfig, signal, outputLogPath } = params
+
+		if (signal?.aborted) {
+			throw Object.assign(new Error('Task cancelled'), { name: 'AbortError' })
+		}
 
 		// Find the Okena project matching this repo
 		const state = await this.client.getState()
@@ -97,28 +102,56 @@ export class OkenaSolver implements Solver {
 			}
 
 			worktreePath = wt.path
-			terminalId = wt.terminal_id
+		}
 
-			if (!terminalId) {
-				throw Object.assign(new Error('Okena did not return a terminal_id'), { phase: 'worktree' })
+		// Always create a fresh terminal — the initial one may have hooks running in it
+		const wtProjectId = existingWorktree?.id
+			?? state.projects.find(p => p.path === worktreePath)?.id
+			// Re-fetch state to find the newly created worktree project
+			?? (await this.client.getState()).projects.find(p => p.path === worktreePath)?.id
+
+		if (!wtProjectId) {
+			throw Object.assign(new Error('Could not find worktree project in Okena'), { phase: 'worktree' })
+		}
+
+		try {
+			const result = await this.client.action<{ terminal_ids?: string[] }>({
+				action: 'split_terminal',
+				project_id: wtProjectId,
+				path: [],
+				direction: 'horizontal',
+			})
+			terminalId = result.terminal_ids?.[0] ?? null
+		} catch {
+			// Fallback to create_terminal if split fails
+			try {
+				const result = await this.client.action<{ terminal_ids?: string[] }>({
+					action: 'create_terminal',
+					project_id: wtProjectId,
+				})
+				terminalId = result.terminal_ids?.[0] ?? null
+			} catch {
+				terminalId = null
 			}
 		}
 
+		if (!terminalId) {
+			throw Object.assign(new Error('Failed to create terminal in worktree project'), { phase: 'worktree' })
+		}
+
 		log.success('okena', `Worktree at ${worktreePath} (terminal: ${terminalId})`)
+		excludeVigilFiles(worktreePath)
 
 		// Rename terminal with task title
-		const wtProjectId = existingWorktree?.id ?? (state.projects.find(p => p.path === worktreePath)?.id)
-		if (wtProjectId && terminalId) {
-			try {
-				await this.client.action({
-					action: 'rename_terminal',
-					project_id: wtProjectId,
-					terminal_id: terminalId,
-					name: taskTitle,
-				})
-			} catch {
-				// Non-critical
-			}
+		try {
+			await this.client.action({
+				action: 'rename_terminal',
+				project_id: wtProjectId,
+				terminal_id: terminalId,
+				name: taskTitle,
+			})
+		} catch {
+			// Non-critical
 		}
 
 		// Write prompt to file in worktree
@@ -155,6 +188,13 @@ export class OkenaSolver implements Solver {
 
 		log.info('okena', `Waiting for claude to finish (timeout: ${solverConfig.timeoutMinutes}m)`)
 		while (!existsSync(exitCodeFile)) {
+			if (signal?.aborted) {
+				// Send Ctrl+C to the terminal to kill claude
+				try {
+					await this.client.action({ action: 'send_special_key', terminal_id: terminalId, key: 'ctrl_c' })
+				} catch { /* best effort */ }
+				throw Object.assign(new Error('Task cancelled'), { name: 'AbortError' })
+			}
 			if (Date.now() - startTime > timeoutMs) {
 				throw Object.assign(new Error('Claude timed out in Okena terminal'), { phase: 'solve' })
 			}

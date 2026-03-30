@@ -1,7 +1,9 @@
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { log } from '../util/logger.js'
+
+const VIGIL_EXCLUDE_PATTERNS = ['.vigil-*']
 
 export function createWorktree(
 	repoPath: string,
@@ -39,6 +41,21 @@ export function createWorktree(
 
 	log.success('worktree', `Created worktree at ${worktreePath} (branch: ${branchName})`)
 	return worktreePath
+}
+
+/**
+ * Add vigil temp file patterns to the worktree's git exclude so they're invisible to git.
+ * Uses $GIT_DIR/info/exclude which is per-worktree and never committed.
+ */
+export function excludeVigilFiles(worktreePath: string): void {
+	try {
+		const gitDir = execSync('git rev-parse --git-dir', { cwd: worktreePath, encoding: 'utf-8' }).trim()
+		const excludePath = join(worktreePath, gitDir, 'info', 'exclude')
+		mkdirSync(join(worktreePath, gitDir, 'info'), { recursive: true })
+		appendFileSync(excludePath, `\n# Vigil temp files\n${VIGIL_EXCLUDE_PATTERNS.join('\n')}\n`)
+	} catch {
+		log.warn('worktree', 'Could not write git exclude patterns')
+	}
 }
 
 export function pushBranch(worktreePath: string, branchName: string): void {

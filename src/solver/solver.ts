@@ -7,6 +7,8 @@ export interface SolveParams {
 	prompt: string
 	taskTitle: string
 	solverConfig: VigilConfig['solver']
+	signal?: AbortSignal
+	outputLogPath?: string
 }
 
 export interface SolveResult {

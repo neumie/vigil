@@ -1,3 +1,5 @@
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Hono } from 'hono'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
@@ -78,11 +80,11 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		return c.json({ data: db.getStats() })
 	})
 
-	// Retry a failed task
+	// Retry a failed/cancelled task
 	api.post('/tasks/:id/retry', c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
-		if (task.status !== 'failed') return c.json({ error: 'Task is not failed' }, 400)
+		if (task.status !== 'failed' && task.status !== 'cancelled') return c.json({ error: 'Task is not failed or cancelled' }, 400)
 		db.updateTask(task.id, {
 			status: 'queued',
 			errorMessage: null,
@@ -92,6 +94,55 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		})
 		queue.enqueue(task.id)
 		return c.json({ data: { message: 'Task re-enqueued' } })
+	})
+
+	// Cancel a running/queued task
+	api.post('/tasks/:id/cancel', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		if (task.status !== 'processing' && task.status !== 'queued') {
+			return c.json({ error: 'Task is not active' }, 400)
+		}
+		const cancelled = queue.cancel(task.id)
+		if (!cancelled && task.status === 'queued') {
+			db.updateTask(task.id, {
+				status: 'cancelled',
+				errorMessage: 'Cancelled by user',
+				completedAt: new Date().toISOString(),
+			})
+			db.insertEvent(task.id, 'task_cancelled')
+		}
+		return c.json({ data: { message: 'Cancellation requested' } })
+	})
+
+	// Stream task output (incremental via offset)
+	api.get('/tasks/:id/output', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+
+		const logPath = resolve(process.cwd(), 'logs', `${c.req.param('id')}.log`)
+		const offset = Number(c.req.query('offset') ?? 0)
+
+		try {
+			const fd = openSync(logPath, 'r')
+			const stat = fstatSync(fd)
+			const size = stat.size
+
+			if (offset >= size) {
+				closeSync(fd)
+				return c.json({ data: { content: '', offset: size, done: task.status !== 'processing' } })
+			}
+
+			const buf = Buffer.alloc(size - offset)
+			readSync(fd, buf, 0, buf.length, offset)
+			closeSync(fd)
+
+			return c.json({
+				data: { content: buf.toString('utf-8'), offset: size, done: task.status !== 'processing' },
+			})
+		} catch {
+			return c.json({ data: { content: '', offset: 0, done: task.status !== 'processing' } })
+		}
 	})
 
 	// Force poll

@@ -8,7 +8,7 @@ import { processTask } from './worker.js'
 
 export class TaskQueue {
 	private pending: string[] = []
-	private active = new Map<string, { title: string; startedAt: string }>()
+	private active = new Map<string, { title: string; startedAt: string; controller: AbortController }>()
 	private running = false
 
 	constructor(
@@ -38,6 +38,22 @@ export class TaskQueue {
 		}
 	}
 
+	cancel(taskId: string): boolean {
+		// Cancel active task
+		const entry = this.active.get(taskId)
+		if (entry) {
+			entry.controller.abort()
+			return true
+		}
+		// Remove from pending queue
+		const idx = this.pending.indexOf(taskId)
+		if (idx !== -1) {
+			this.pending.splice(idx, 1)
+			return true
+		}
+		return false
+	}
+
 	getStatus(): QueueStatus {
 		return {
 			pending: this.pending.length,
@@ -45,7 +61,8 @@ export class TaskQueue {
 			maxConcurrency: this.config.solver.concurrency,
 			activeTasks: Array.from(this.active.entries()).map(([taskId, info]) => ({
 				taskId,
-				...info,
+				title: info.title,
+				startedAt: info.startedAt,
 			})),
 		}
 	}
@@ -58,9 +75,10 @@ export class TaskQueue {
 			const task = this.db.getTask(taskId)
 			const title = task?.title ?? taskId
 
-			this.active.set(taskId, { title, startedAt: new Date().toISOString() })
+			const controller = new AbortController()
+			this.active.set(taskId, { title, startedAt: new Date().toISOString(), controller })
 
-			processTask(taskId, this.config, this.db, this.provider, this.solver).finally(() => {
+			processTask(taskId, this.config, this.db, this.provider, this.solver, controller.signal).finally(() => {
 				this.active.delete(taskId)
 				this.processNext()
 			})
