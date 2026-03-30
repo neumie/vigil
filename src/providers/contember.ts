@@ -4,12 +4,13 @@ import type { DiscoveredTask, TaskContext, TaskProvider } from './provider.js'
 // -- GraphQL queries/mutations --
 
 const LIST_NEW_TASKS = `
-query ListNewTasks($projectSlug: String!, $createdAfter: DateTime!) {
+query ListNewTasks($projectSlug: String!, $createdAfter: DateTime!, $statuses: [TaskStatus!]!) {
   listTask(
     filter: {
       project: { slug: { eq: $projectSlug } }
       createdAt: { gte: $createdAfter }
       archivedAt: { isNull: true }
+      status: { in: $statuses }
     }
     orderBy: [{ createdAt: asc }]
     limit: 50
@@ -28,7 +29,7 @@ query ListNewTasks($projectSlug: String!, $createdAfter: DateTime!) {
 `
 
 const GET_TASK_CONTEXT = `
-query GetTaskContext($taskId: String!) {
+query GetTaskContext($taskId: UUID!) {
   getTask(by: { id: $taskId }) {
     id
     title
@@ -42,7 +43,6 @@ query GetTaskContext($taskId: String!) {
       references { file { url fileName fileType } }
     }
     comments(
-      filter: { deletedAt: { isNull: true } }
       orderBy: [{ createdAt: asc }]
     ) {
       id
@@ -62,7 +62,7 @@ query GetTaskContext($taskId: String!) {
 `
 
 const CREATE_COMMENT = `
-mutation CreateComment($taskId: String!, $contentData: Json!, $isPublic: Boolean!) {
+mutation CreateComment($taskId: UUID!, $contentData: Json!, $isPublic: Boolean!) {
   createComment(data: {
     task: { connect: { id: $taskId } }
     isPublic: $isPublic
@@ -82,6 +82,8 @@ export interface ContemberProviderConfig {
 	apiBaseUrl: string
 	projectSlug: string
 	apiToken: string
+	taskBaseUrl?: string
+	statuses: string[]
 }
 
 // -- Provider --
@@ -90,16 +92,19 @@ export class ContemberProvider implements TaskProvider {
 	readonly name = 'Contember'
 	private url: string
 	private token: string
+	private statuses: string[]
 
 	constructor(config: ContemberProviderConfig) {
 		this.url = `${config.apiBaseUrl}/content/${config.projectSlug}/live`
 		this.token = config.apiToken
+		this.statuses = config.statuses
 	}
 
 	async pollNewTasks(projectSlug: string, since: string): Promise<DiscoveredTask[]> {
 		const data = await this.query<{ listTask: RawTask[] }>(LIST_NEW_TASKS, {
 			projectSlug,
 			createdAfter: since,
+			statuses: this.statuses,
 		})
 
 		return data.listTask.map(t => ({
@@ -201,6 +206,7 @@ export class ContemberProvider implements TaskProvider {
 	// -- Internal GraphQL --
 
 	private async query<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+		log.info('contember', `GraphQL → ${this.url}`, variables)
 		const res = await fetch(this.url, {
 			method: 'POST',
 			headers: {
@@ -209,6 +215,8 @@ export class ContemberProvider implements TaskProvider {
 			},
 			body: JSON.stringify({ query, variables }),
 		})
+
+		log.info('contember', `GraphQL ← ${res.status}`)
 
 		if (!res.ok) {
 			const text = await res.text()

@@ -1,6 +1,7 @@
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { TaskProvider } from '../providers/provider.js'
+import type { Solver } from '../solver/solver.js'
 import type { QueueStatus } from '../types.js'
 import { log } from '../util/logger.js'
 import { processTask } from './worker.js'
@@ -14,6 +15,7 @@ export class TaskQueue {
 		private config: VigilConfig,
 		private db: DB,
 		private provider: TaskProvider,
+		private solver: Solver,
 	) {}
 
 	start() {
@@ -58,7 +60,7 @@ export class TaskQueue {
 
 			this.active.set(taskId, { title, startedAt: new Date().toISOString() })
 
-			processTask(taskId, this.config, this.db, this.provider).finally(() => {
+			processTask(taskId, this.config, this.db, this.provider, this.solver).finally(() => {
 				this.active.delete(taskId)
 				this.processNext()
 			})

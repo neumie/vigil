@@ -35,10 +35,12 @@ export async function dispatch(
 				db.updateTask(taskId, { prUrl, prDraft: 0 })
 				db.insertEvent(taskId, 'pr_created', { url: prUrl, draft: false })
 
-				const commentId = await provider.postComment(task.clientcareId, `**Vigil**: Solved (trivial). PR: ${prUrl}`)
-				if (commentId) {
-					db.updateTask(taskId, { commentId })
-					db.insertEvent(taskId, 'comment_posted', { commentId })
+				if (config.github.postComments) {
+					const commentId = await provider.postComment(task.clientcareId, `**Vigil**: Solved (trivial). PR: ${prUrl}`)
+					if (commentId) {
+						db.updateTask(taskId, { commentId })
+						db.insertEvent(taskId, 'comment_posted', { commentId })
+					}
 				}
 			}
 			break
@@ -58,13 +60,15 @@ export async function dispatch(
 				db.updateTask(taskId, { prUrl, prDraft: 1 })
 				db.insertEvent(taskId, 'pr_created', { url: prUrl, draft: true })
 
-				const commentId = await provider.postComment(
-					task.clientcareId,
-					`**Vigil**: Solved (draft PR for review). PR: ${prUrl}`,
-				)
-				if (commentId) {
-					db.updateTask(taskId, { commentId })
-					db.insertEvent(taskId, 'comment_posted', { commentId })
+				if (config.github.postComments) {
+					const commentId = await provider.postComment(
+						task.clientcareId,
+						`**Vigil**: Solved (draft PR for review). PR: ${prUrl}`,
+					)
+					if (commentId) {
+						db.updateTask(taskId, { commentId })
+						db.insertEvent(taskId, 'comment_posted', { commentId })
+					}
 				}
 			}
 			break
@@ -73,34 +77,38 @@ export async function dispatch(
 		case 'complex': {
 			pushBranch(worktreePath, branchName)
 
-			let md = `**Vigil**: Partial solution on branch \`${branchName}\`.\n\n`
-			md += `**Summary**: ${result.summary}\n\n`
-			if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
-			if (result.remainingWork?.length) {
-				md += '**Remaining work**:\n'
-				for (const item of result.remainingWork) md += `- ${item}\n`
-			}
+			if (config.github.postComments) {
+				let md = `**Vigil**: Partial solution on branch \`${branchName}\`.\n\n`
+				md += `**Summary**: ${result.summary}\n\n`
+				if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
+				if (result.remainingWork?.length) {
+					md += '**Remaining work**:\n'
+					for (const item of result.remainingWork) md += `- ${item}\n`
+				}
 
-			const commentId = await provider.postComment(task.clientcareId, md)
-			if (commentId) {
-				db.updateTask(taskId, { commentId })
-				db.insertEvent(taskId, 'comment_posted', { commentId })
+				const commentId = await provider.postComment(task.clientcareId, md)
+				if (commentId) {
+					db.updateTask(taskId, { commentId })
+					db.insertEvent(taskId, 'comment_posted', { commentId })
+				}
 			}
 			break
 		}
 
 		case 'unclear': {
-			let md = '**Vigil**: Cannot proceed — task needs clarification.\n\n'
-			if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
-			if (result.questionsForRequester?.length) {
-				md += '**Questions**:\n'
-				for (const q of result.questionsForRequester) md += `- ${q}\n`
-			}
+			if (config.github.postComments) {
+				let md = '**Vigil**: Cannot proceed — task needs clarification.\n\n'
+				if (result.analysis) md += `**Analysis**:\n${result.analysis}\n\n`
+				if (result.questionsForRequester?.length) {
+					md += '**Questions**:\n'
+					for (const q of result.questionsForRequester) md += `- ${q}\n`
+				}
 
-			const commentId = await provider.postComment(task.clientcareId, md)
-			if (commentId) {
-				db.updateTask(taskId, { commentId })
-				db.insertEvent(taskId, 'comment_posted', { commentId })
+				const commentId = await provider.postComment(task.clientcareId, md)
+				if (commentId) {
+					db.updateTask(taskId, { commentId })
+					db.insertEvent(taskId, 'comment_posted', { commentId })
+				}
 			}
 			break
 		}

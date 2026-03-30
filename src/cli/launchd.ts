@@ -96,6 +96,9 @@ export function load(): void {
 	mkdirSync(PLIST_DIR, { recursive: true })
 
 	const env: Record<string, string> = {}
+	if (process.env.PATH) {
+		env.PATH = process.env.PATH
+	}
 	if (process.env.VIGIL_CONFIG) {
 		env.VIGIL_CONFIG = process.env.VIGIL_CONFIG
 	}

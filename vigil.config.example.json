@@ -24,6 +24,7 @@
   },
   "github": {
     "createPrs": true,
+    "postComments": false,
     "prPrefix": "[Vigil]"
   }
 }

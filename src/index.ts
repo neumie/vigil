@@ -4,6 +4,8 @@ import { Poller } from './poller/poller.js'
 import { createProvider } from './providers/registry.js'
 import { TaskQueue } from './queue/queue.js'
 import { createApp } from './server/app.js'
+import { DefaultSolver } from './solver/default-solver.js'
+import type { Solver } from './solver/solver.js'
 import { log } from './util/logger.js'
 
 async function main() {
@@ -20,7 +22,22 @@ async function main() {
 	const provider = createProvider(config.provider)
 	log.info('vigil', `Provider: ${provider.name}`)
 
-	const queue = new TaskQueue(config, db, provider)
+	let solver: Solver
+	if (config.solver.type === 'okena') {
+		try {
+			const { createOkenaSolver } = await import('./extensions/okena/solver.js')
+			solver = await createOkenaSolver(config)
+			log.success('vigil', 'Solver: Okena (tasks will be visible in Okena)')
+		} catch (err) {
+			log.warn('vigil', `Okena solver unavailable, falling back to default: ${err instanceof Error ? err.message : err}`)
+			solver = new DefaultSolver()
+		}
+	} else {
+		solver = new DefaultSolver()
+	}
+	log.info('vigil', `Solver: ${config.solver.type}`)
+
+	const queue = new TaskQueue(config, db, provider, solver)
 
 	// Recover tasks that were processing when we last shut down
 	const stale = db.getProcessingTaskIds()

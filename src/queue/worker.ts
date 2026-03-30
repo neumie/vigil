@@ -2,15 +2,20 @@ import { dispatch } from '../actions/dispatcher.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { TaskProvider } from '../providers/provider.js'
-import { invokeClaude } from '../solver/invoker.js'
 import { parseClaudeOutput } from '../solver/output-parser.js'
 import { buildPrompt } from '../solver/prompt-builder.js'
 import { parseResultFile, parseTierFromOutput } from '../solver/result-parser.js'
+import type { Solver } from '../solver/solver.js'
 import { log } from '../util/logger.js'
 import { slugify } from '../util/slug.js'
-import { createWorktree } from '../worktree/manager.js'
 
-export async function processTask(taskId: string, config: VigilConfig, db: DB, provider: TaskProvider): Promise<void> {
+export async function processTask(
+	taskId: string,
+	config: VigilConfig,
+	db: DB,
+	provider: TaskProvider,
+	solver: Solver,
+): Promise<void> {
 	const task = db.getTask(taskId)
 	if (!task) throw new Error(`Task ${taskId} not found in DB`)
 
@@ -32,34 +37,16 @@ export async function processTask(taskId: string, config: VigilConfig, db: DB, p
 		const prompt = buildPrompt(taskContext, config.solver.transformer)
 		db.updateTask(taskId, { taskContext: prompt })
 
-		// Phase 2: Create git worktree
+		// Phase 2+3: Create worktree + invoke Claude (delegated to solver)
 		const branchName = `vigil/${slugify(task.title)}`
-		log.info('worker', `Creating worktree for branch: ${branchName}`)
-		let worktreePath: string
-		try {
-			worktreePath = createWorktree(
-				projectConfig.repoPath,
-				projectConfig.baseBranch,
-				branchName,
-				projectConfig.worktreeDir,
-			)
-		} catch (err) {
-			throw Object.assign(new Error(`Worktree creation failed: ${err instanceof Error ? err.message : err}`), {
-				phase: 'worktree',
-			})
-		}
+		const { worktreePath, invokeResult } = await solver.solve({
+			projectConfig,
+			branchName,
+			prompt,
+			taskTitle: task.title,
+			solverConfig: config.solver,
+		})
 		db.updateTask(taskId, { worktreePath, branchName })
-
-		// Phase 3: Invoke Claude Code
-		log.info('worker', `Invoking Claude Code in ${worktreePath}`)
-		let invokeResult: Awaited<ReturnType<typeof invokeClaude>>
-		try {
-			invokeResult = await invokeClaude(worktreePath, prompt, config.solver)
-		} catch (err) {
-			throw Object.assign(new Error(`Claude invocation failed: ${err instanceof Error ? err.message : err}`), {
-				phase: 'solve',
-			})
-		}
 		db.updateTask(taskId, {
 			claudeExitCode: invokeResult.exitCode,
 			claudeRawOutput: invokeResult.stdout,

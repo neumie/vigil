@@ -4,11 +4,12 @@ import { StatusBadge } from './StatusBadge'
 interface Props {
 	status: DaemonStatus | null
 	tasks: TaskRecord[]
+	taskBaseUrl?: string
 	onSelectTask: (id: string) => void
 	onRetry: (id: string) => void
 }
 
-export function Dashboard({ status, tasks, onSelectTask, onRetry }: Props) {
+export function Dashboard({ status, tasks, taskBaseUrl, onSelectTask, onRetry }: Props) {
 	const active = tasks.filter(t => t.status === 'processing')
 	const queued = tasks.filter(t => t.status === 'queued')
 	const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed')
@@ -29,7 +30,7 @@ export function Dashboard({ status, tasks, onSelectTask, onRetry }: Props) {
 			{active.length > 0 && (
 				<Section title="Active">
 					{active.map(t => (
-						<TaskRow key={t.id} task={t} onClick={() => onSelectTask(t.id)} />
+						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} />
 					))}
 				</Section>
 			)}
@@ -38,7 +39,7 @@ export function Dashboard({ status, tasks, onSelectTask, onRetry }: Props) {
 			{queued.length > 0 && (
 				<Section title="Queue">
 					{queued.map(t => (
-						<TaskRow key={t.id} task={t} onClick={() => onSelectTask(t.id)} />
+						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} />
 					))}
 				</Section>
 			)}
@@ -49,7 +50,7 @@ export function Dashboard({ status, tasks, onSelectTask, onRetry }: Props) {
 					<p style={{ color: '#71717a', padding: 16 }}>No completed tasks yet.</p>
 				) : (
 					completed.slice(0, 20).map(t => (
-						<TaskRow key={t.id} task={t} onClick={() => onSelectTask(t.id)} onRetry={
+						<TaskRow key={t.id} task={t} taskBaseUrl={taskBaseUrl} onClick={() => onSelectTask(t.id)} onRetry={
 							t.status === 'failed' ? () => onRetry(t.id) : undefined
 						} />
 					))
@@ -90,7 +91,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 	)
 }
 
-function TaskRow({ task, onClick, onRetry }: { task: TaskRecord; onClick: () => void; onRetry?: () => void }) {
+function TaskRow({ task, taskBaseUrl, onClick, onRetry }: { task: TaskRecord; taskBaseUrl?: string; onClick: () => void; onRetry?: () => void }) {
 	const elapsed = task.startedAt
 		? formatDuration(new Date(task.completedAt ?? Date.now()).getTime() - new Date(task.startedAt).getTime())
 		: null
@@ -114,6 +115,17 @@ function TaskRow({ task, onClick, onRetry }: { task: TaskRecord; onClick: () => 
 			<span style={{ flex: 1, fontSize: 14 }}>{task.title}</span>
 			<span style={{ fontSize: 12, color: '#71717a' }}>{task.projectSlug}</span>
 			{elapsed && <span style={{ fontSize: 12, color: '#52525b' }}>{elapsed}</span>}
+			{taskBaseUrl && (
+				<a
+					href={`${taskBaseUrl}${task.clientcareId}`}
+					target="_blank"
+					rel="noreferrer"
+					onClick={e => e.stopPropagation()}
+					style={{ fontSize: 12, color: '#a78bfa' }}
+				>
+					Source
+				</a>
+			)}
 			{task.prUrl && (
 				<a
 					href={task.prUrl}

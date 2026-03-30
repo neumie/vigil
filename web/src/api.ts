@@ -57,7 +57,12 @@ export interface DaemonStatus {
 	pollInterval: number
 }
 
+export interface AppConfig {
+	taskBaseUrl?: string
+}
+
 export const api = {
+	config: () => fetchJSON<AppConfig>('/config'),
 	status: () => fetchJSON<DaemonStatus>('/status'),
 	tasks: (params?: string) => fetchJSON<TaskRecord[]>(`/tasks${params ? `?${params}` : ''}`),
 	task: (id: string) => fetchJSON<TaskRecord>(`/tasks/${id}`),
