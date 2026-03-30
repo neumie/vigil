@@ -9,3 +9,4 @@ web/node_modules/
 vigil.config.json
 .env
 .claude/
+logs/
