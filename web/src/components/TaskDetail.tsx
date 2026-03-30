@@ -4,11 +4,12 @@ import { StatusBadge } from './StatusBadge'
 
 interface Props {
 	task: TaskRecord
+	taskBaseUrl?: string
 	onBack: () => void
 	onRetry: () => void
 }
 
-export function TaskDetail({ task, onBack, onRetry }: Props) {
+export function TaskDetail({ task, taskBaseUrl, onBack, onRetry }: Props) {
 	const files = task.filesChanged ? JSON.parse(task.filesChanged) as string[] : []
 
 	return (
@@ -27,6 +28,7 @@ export function TaskDetail({ task, onBack, onRetry }: Props) {
 			{/* Meta grid */}
 			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
 				<MetaCard label="Project" value={task.projectSlug} />
+				{taskBaseUrl && <MetaCard label="Source" value={`${taskBaseUrl}${task.clientcareId}`} link />}
 				<MetaCard label="Confidence" value={task.solverConfidence != null ? `${(task.solverConfidence * 100).toFixed(0)}%` : '—'} />
 				<MetaCard label="Branch" value={task.branchName ?? '—'} mono />
 				<MetaCard label="Worktree" value={task.worktreePath ?? '—'} mono />

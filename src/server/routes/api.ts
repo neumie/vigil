@@ -68,6 +68,7 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 					model: config.solver.model,
 					timeoutMinutes: config.solver.timeoutMinutes,
 				},
+				taskBaseUrl: config.provider.type === 'contember' ? config.provider.taskBaseUrl : undefined,
 			},
 		})
 	})

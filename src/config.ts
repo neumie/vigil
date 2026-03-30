@@ -7,6 +7,8 @@ const contemberProviderSchema = z.object({
 	apiBaseUrl: z.string().url(),
 	projectSlug: z.string(),
 	apiToken: z.string().min(1),
+	taskBaseUrl: z.string().optional(),
+	statuses: z.array(z.string()).default(['new']),
 })
 
 // Future providers go here as union members
@@ -25,10 +27,12 @@ const configSchema = z.object({
 	polling: z
 		.object({
 			intervalSeconds: z.number().min(5).default(60),
+			since: z.string().optional(),
 		})
 		.default({}),
 	solver: z
 		.object({
+			type: z.enum(['default', 'okena']).default('default'),
 			concurrency: z.number().min(1).max(10).default(2),
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
@@ -45,6 +49,7 @@ const configSchema = z.object({
 	github: z
 		.object({
 			createPrs: z.boolean().default(true),
+			postComments: z.boolean().default(true),
 			prPrefix: z.string().default('[Vigil]'),
 		})
 		.default({}),

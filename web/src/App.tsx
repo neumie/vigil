@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { type DaemonStatus, type TaskRecord, api } from './api'
+import { type AppConfig, type DaemonStatus, type TaskRecord, api } from './api'
 import { Dashboard } from './components/Dashboard'
 import { TaskDetail } from './components/TaskDetail'
 
@@ -7,6 +7,11 @@ export function App() {
 	const [status, setStatus] = useState<DaemonStatus | null>(null)
 	const [tasks, setTasks] = useState<TaskRecord[]>([])
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+	const [config, setConfig] = useState<AppConfig>({})
+
+	useEffect(() => {
+		api.config().then(setConfig).catch(() => {})
+	}, [])
 
 	const refresh = useCallback(async () => {
 		try {
@@ -48,7 +53,7 @@ export function App() {
 			</header>
 
 			{selectedTask ? (
-				<TaskDetail task={selectedTask} onBack={() => setSelectedTaskId(null)} onRetry={async () => {
+				<TaskDetail task={selectedTask} taskBaseUrl={config.taskBaseUrl} onBack={() => setSelectedTaskId(null)} onRetry={async () => {
 					await api.retry(selectedTask.id)
 					refresh()
 				}} />
@@ -56,6 +61,7 @@ export function App() {
 				<Dashboard
 					status={status}
 					tasks={tasks}
+					taskBaseUrl={config.taskBaseUrl}
 					onSelectTask={id => setSelectedTaskId(id)}
 					onRetry={async id => {
 						await api.retry(id)
