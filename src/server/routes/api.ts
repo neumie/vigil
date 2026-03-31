@@ -115,6 +115,23 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		return c.json({ data: { message: 'Cancellation requested' } })
 	})
 
+	// Update task status manually
+	api.post('/tasks/:id/status', async c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		const body = await c.req.json<{ status: string }>()
+		const validStatuses = ['completed', 'failed', 'cancelled', 'skipped']
+		if (!validStatuses.includes(body.status)) {
+			return c.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, 400)
+		}
+		db.updateTask(task.id, {
+			status: body.status,
+			completedAt: new Date().toISOString(),
+		})
+		db.insertEvent(task.id, 'status_changed', { status: body.status, manual: true })
+		return c.json({ data: { message: `Status set to ${body.status}` } })
+	})
+
 	// Stream task output (incremental via offset)
 	api.get('/tasks/:id/output', c => {
 		const task = db.getTask(c.req.param('id'))

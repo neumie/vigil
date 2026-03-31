@@ -8,9 +8,10 @@ interface Props {
 	taskBaseUrl?: string
 	onRetry: () => void
 	onCancel: () => void
+	onSetStatus: (status: string) => void
 }
 
-export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel }: Props) {
+export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }: Props) {
 	const files = task.filesChanged ? JSON.parse(task.filesChanged) as string[] : []
 	const isActive = task.status === 'processing'
 
@@ -28,10 +29,16 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel }: Props) {
 						}}>Cancel</button>
 					)}
 					{(task.status === 'failed' || task.status === 'cancelled') && (
-						<button onClick={onRetry} style={{
-							marginLeft: 'auto', padding: '4px 12px', background: 'var(--amber-dim)', border: '1px solid color-mix(in srgb, var(--amber) 40%, transparent)',
-							borderRadius: 'var(--radius-sm)', color: 'var(--amber)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
-						}}>Retry</button>
+						<div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+							<button onClick={() => onSetStatus('completed')} style={{
+								padding: '4px 12px', background: 'var(--green-dim)', border: '1px solid color-mix(in srgb, var(--green) 40%, transparent)',
+								borderRadius: 'var(--radius-sm)', color: 'var(--green)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
+							}}>Mark Complete</button>
+							<button onClick={onRetry} style={{
+								padding: '4px 12px', background: 'var(--amber-dim)', border: '1px solid color-mix(in srgb, var(--amber) 40%, transparent)',
+								borderRadius: 'var(--radius-sm)', color: 'var(--amber)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
+							}}>Retry</button>
+						</div>
 					)}
 				</div>
 				<h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.3 }}>{task.title}</h2>

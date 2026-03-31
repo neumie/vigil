@@ -64,6 +64,7 @@ export function App() {
 							taskBaseUrl={config.taskBaseUrl}
 							onRetry={() => handleRetry(selectedTask.id)}
 							onCancel={() => handleCancel(selectedTask.id)}
+							onSetStatus={async (status) => { await api.setStatus(selectedTask.id, status); refresh() }}
 						/>
 					) : (
 						<EmptyState
