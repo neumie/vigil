@@ -154,6 +154,10 @@ export class OkenaSolver implements Solver {
 			// Non-critical
 		}
 
+		// Wait for hatch/MCP setup in the hook terminal to finish
+		log.info('okena', 'Waiting for MCP servers to initialize...')
+		await sleep(15000)
+
 		// Write prompt to file in worktree
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
 		const exitCodeFile = join(worktreePath, '.vigil-exit-code')
