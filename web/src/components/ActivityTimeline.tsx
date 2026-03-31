@@ -56,7 +56,7 @@ export function ActivityTimeline({ taskId }: { taskId: string }) {
 				const payload = event.payload ? JSON.parse(event.payload) : null
 				const icon = eventIcons[event.eventType] ?? '>>'
 				const color = eventColors[event.eventType] ?? 'var(--text-3)'
-				const time = event.createdAt.slice(11, 19)
+				const time = new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 				const label = formatEvent(event.eventType, payload)
 
 				return (
