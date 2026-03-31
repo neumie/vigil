@@ -34,11 +34,11 @@ export function App() {
 
 	useEffect(() => {
 		if (activeCount > 0) {
-			document.title = `(${activeCount}) Vigil`
+			document.title = `🔵 (${activeCount}) Vigil`
 		} else if (queuedCount > 0) {
-			document.title = `[${queuedCount}] Vigil`
+			document.title = `🟡 [${queuedCount}] Vigil`
 		} else {
-			document.title = 'Vigil'
+			document.title = '⚫ Vigil'
 		}
 	}, [activeCount, queuedCount])
 
