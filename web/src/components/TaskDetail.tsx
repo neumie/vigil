@@ -16,20 +16,33 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }
 	const isActive = task.status === 'processing'
 
 	return (
-		<div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 900 }}>
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 860, margin: '0 auto' }}>
 			{/* Header */}
-			<div>
-				<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+			<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 					<StatusBadge value={task.status} type="status" />
 					{task.tier && <StatusBadge value={task.tier} type="tier" />}
-					{isActive && (
-						<button onClick={onCancel} style={{
-							marginLeft: 'auto', padding: '4px 12px', background: 'var(--red-dim)', border: '1px solid color-mix(in srgb, var(--red) 40%, transparent)',
-							borderRadius: 'var(--radius-sm)', color: 'var(--red)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
-						}}>Cancel</button>
+				</div>
+				<h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.35 }}>{task.title}</h2>
+
+				{/* Actions row */}
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					{taskBaseUrl && (
+						<a href={`${taskBaseUrl}${task.clientcareId}`} target="_blank" rel="noreferrer"
+							style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+							View source
+						</a>
 					)}
+					{task.prUrl && (
+						<a href={task.prUrl} target="_blank" rel="noreferrer"
+							style={{ fontSize: 12, color: 'var(--blue)', textDecoration: 'none', fontWeight: 500 }}>
+							{formatPrLabel(task.prUrl)}
+						</a>
+					)}
+					<div style={{ flex: 1 }} />
+					{isActive && <StatusAction label="Cancel" color="var(--red)" onClick={onCancel} />}
 					{task.status !== 'processing' && task.status !== 'queued' && (
-						<div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+						<>
 							{task.status !== 'completed' && <StatusAction label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />}
 							{task.status !== 'failed' && <StatusAction label="Failed" color="var(--red)" onClick={() => onSetStatus('failed')} />}
 							{task.status !== 'cancelled' && <StatusAction label="Cancel" color="var(--amber)" onClick={() => onSetStatus('cancelled')} />}
@@ -37,35 +50,34 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }
 							{(task.status === 'failed' || task.status === 'cancelled') && (
 								<StatusAction label="Retry" color="var(--accent)" onClick={onRetry} />
 							)}
-						</div>
+						</>
 					)}
 				</div>
-				<h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.3 }}>{task.title}</h2>
 			</div>
 
 			{/* Meta */}
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
 				<Meta label="Project" value={task.projectSlug} />
-				{taskBaseUrl && <Meta label="Source" value={`${taskBaseUrl}${task.clientcareId}`} link />}
 				{task.solverConfidence != null && <Meta label="Confidence" value={`${(task.solverConfidence * 100).toFixed(0)}%`} />}
 				{task.branchName && <Meta label="Branch" value={task.branchName} mono />}
-				{task.prUrl && <Meta label="PR" value={task.prUrl} link />}
 				{task.errorMessage && <Meta label={`Error (${task.errorPhase ?? '?'})`} value={task.errorMessage} error />}
 			</div>
 
 			{/* Summary */}
 			{task.solverSummary && (
 				<Card title="Summary">
-					<p style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.6 }}>{task.solverSummary}</p>
+					<p style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.7 }}>{task.solverSummary}</p>
 				</Card>
 			)}
 
 			{/* Files changed */}
 			{files.length > 0 && (
 				<Card title={`Files Changed (${files.length})`}>
-					{files.map(f => (
-						<div key={f} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-2)', padding: '2px 0' }}>{f}</div>
-					))}
+					<div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+						{files.map(f => (
+							<div key={f} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-2)', padding: '3px 0' }}>{f}</div>
+						))}
+					</div>
 				</Card>
 			)}
 
@@ -84,26 +96,25 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }
 	)
 }
 
-function Meta({ label, value, mono, link, error }: {
-	label: string; value: string; mono?: boolean; link?: boolean; error?: boolean
+function formatPrLabel(url: string): string {
+	const match = url.match(/\/pull\/(\d+)/)
+	return match ? `PR #${match[1]}` : 'Pull Request'
+}
+
+function Meta({ label, value, mono, error }: {
+	label: string; value: string; mono?: boolean; error?: boolean
 }) {
 	return (
 		<div style={{
-			padding: '8px 12px', background: 'var(--bg-2)',
+			padding: '10px 14px', background: 'var(--bg-2)',
 			border: `1px solid ${error ? 'color-mix(in srgb, var(--red) 30%, transparent)' : 'var(--border)'}`,
 			borderRadius: 'var(--radius-sm)',
 		}}>
-			<div style={{ fontSize: 10, color: error ? 'var(--red)' : 'var(--text-4)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{label}</div>
-			{link ? (
-				<a href={value} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', wordBreak: 'break-all', textDecoration: 'none' }}>
-					{value.length > 60 ? `${value.slice(0, 60)}...` : value}
-				</a>
-			) : (
-				<div style={{
-					fontSize: 12, color: error ? 'color-mix(in srgb, var(--red) 70%, white)' : 'var(--text-1)',
-					fontFamily: mono ? 'var(--font-mono)' : 'inherit', wordBreak: 'break-all',
-				}}>{value}</div>
-			)}
+			<div style={{ fontSize: 10, color: error ? 'var(--red)' : 'var(--text-4)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</div>
+			<div style={{
+				fontSize: 13, color: error ? 'color-mix(in srgb, var(--red) 70%, white)' : 'var(--text-1)',
+				fontFamily: mono ? 'var(--font-mono)' : 'inherit', wordBreak: 'break-all', lineHeight: 1.4,
+			}}>{value}</div>
 		</div>
 	)
 }
@@ -111,18 +122,18 @@ function Meta({ label, value, mono, link, error }: {
 function StatusAction({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
 	return (
 		<button onClick={onClick} style={{
-			padding: '4px 12px', background: `color-mix(in srgb, ${color} 15%, transparent)`,
-			border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+			padding: '5px 14px', background: `color-mix(in srgb, ${color} 12%, transparent)`,
+			border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
 			borderRadius: 'var(--radius-sm)', color, cursor: 'pointer', fontSize: 12,
-			fontFamily: 'var(--font-sans)', fontWeight: 500,
+			fontFamily: 'var(--font-sans)', fontWeight: 500, transition: 'all 150ms',
 		}}>{label}</button>
 	)
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
-		<div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
-			<h3 style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-4)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</h3>
+		<div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20 }}>
+			<h3 style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-4)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</h3>
 			{children}
 		</div>
 	)

@@ -6,24 +6,24 @@ export function EmptyState({ taskCount, activeCount }: { taskCount: number; acti
 			alignItems: 'center',
 			justifyContent: 'center',
 			height: '100%',
-			gap: 12,
-			color: 'var(--text-4)',
+			gap: 8,
 		}}>
-			<div style={{ fontSize: 40, opacity: 0.3 }}>&#9678;</div>
 			{taskCount === 0 ? (
 				<>
-					<p style={{ fontSize: 15, color: 'var(--text-3)' }}>No tasks yet</p>
-					<p style={{ fontSize: 13 }}>Vigil is polling for new tasks. They'll appear here when discovered.</p>
+					<p style={{ fontSize: 14, color: 'var(--text-3)', fontWeight: 500 }}>No tasks yet</p>
+					<p style={{ fontSize: 13, color: 'var(--text-4)' }}>Waiting for new tasks to arrive.</p>
 				</>
 			) : activeCount > 0 ? (
 				<>
-					<p style={{ fontSize: 15, color: 'var(--text-3)' }}>{activeCount} task{activeCount > 1 ? 's' : ''} processing</p>
-					<p style={{ fontSize: 13 }}>Select a task from the sidebar to view details.</p>
+					<p style={{ fontSize: 14, color: 'var(--text-3)', fontWeight: 500 }}>
+						{activeCount} task{activeCount > 1 ? 's' : ''} processing
+					</p>
+					<p style={{ fontSize: 13, color: 'var(--text-4)' }}>Select a task to view details.</p>
 				</>
 			) : (
 				<>
-					<p style={{ fontSize: 15, color: 'var(--text-3)' }}>Select a task</p>
-					<p style={{ fontSize: 13 }}>Click a task in the sidebar to view its details and output.</p>
+					<p style={{ fontSize: 14, color: 'var(--text-3)', fontWeight: 500 }}>Select a task</p>
+					<p style={{ fontSize: 13, color: 'var(--text-4)' }}>Pick one from the sidebar to see details and output.</p>
 				</>
 			)}
 		</div>

@@ -57,7 +57,7 @@ export function App() {
 					onRetry={handleRetry}
 					onCancel={handleCancel}
 				/>
-				<main style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+				<main style={{ flex: 1, overflow: 'auto', padding: '32px 40px' }}>
 					{selectedTask ? (
 						<TaskDetail
 							task={selectedTask}
