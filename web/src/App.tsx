@@ -29,6 +29,18 @@ export function App() {
 	useInterval(refresh, 5000)
 
 	const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) ?? null : null
+	const activeCount = tasks.filter(t => t.status === 'processing').length
+	const queuedCount = tasks.filter(t => t.status === 'queued').length
+
+	useEffect(() => {
+		if (activeCount > 0) {
+			document.title = `(${activeCount}) Vigil`
+		} else if (queuedCount > 0) {
+			document.title = `[${queuedCount}] Vigil`
+		} else {
+			document.title = 'Vigil'
+		}
+	}, [activeCount, queuedCount])
 
 	const handleRetry = async (id: string) => {
 		await api.retry(id)
