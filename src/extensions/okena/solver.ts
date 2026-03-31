@@ -209,6 +209,11 @@ export class OkenaSolver implements Solver {
 
 		log.info('okena', `Claude exited with code ${exitCode}`)
 
+		// Exit code 130 = SIGINT (Ctrl+C in terminal) — treat as user cancellation
+		if (exitCode === 130) {
+			throw Object.assign(new Error('Task cancelled (Ctrl+C in terminal)'), { name: 'AbortError' })
+		}
+
 		// Cleanup temp files
 		for (const f of [promptFile, exitCodeFile]) {
 			try {
