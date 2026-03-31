@@ -3,7 +3,7 @@ import { getTransformer } from '../transformers/transformer.js'
 
 const SOLVER_INSTRUCTIONS = `You are solving a task from a project management system. The task may be written in any language — understand it regardless.
 
-Follow the /task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
+Follow the /almanac:task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
 
 When the implementation is complete, use /almanac:ship to create the PR. Do NOT create a draft — create a regular PR unless the task is complex.
 
@@ -27,6 +27,7 @@ After shipping, write a \`.solver-result.json\` file in the repository root:
 \`\`\`
 
 If you created a PR via /almanac:ship, set \`prReady: true\` and include the PR URL in \`prUrl\`.
+Use /almanac:commit for all commits.
 Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex → prReady: false, unclear → prReady: false (no code changes).
 
 ### Critical rules:
@@ -34,7 +35,6 @@ Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex
 - NEVER add features, refactor, or "improve" beyond what was requested
 - NEVER commit files you didn't intentionally change
 - If you cannot verify the described issue exists, classify as UNCLEAR and list questions
-- Use /commit for all commits
 
 ---
 
