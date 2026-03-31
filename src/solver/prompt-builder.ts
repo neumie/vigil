@@ -5,9 +5,11 @@ const SOLVER_INSTRUCTIONS = `You are solving a task from a project management sy
 
 Follow the /task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
 
+When the implementation is complete, use /almanac:ship to create the PR. Do NOT create a draft — create a regular PR unless the task is complex.
+
 ## Additional rules for automated solving
 
-After /task-start completes, write a \`.solver-result.json\` file in the repository root:
+After shipping, write a \`.solver-result.json\` file in the repository root:
 
 \`\`\`json
 {
@@ -24,7 +26,8 @@ After /task-start completes, write a \`.solver-result.json\` file in the reposit
 }
 \`\`\`
 
-Map tiers: trivial → prReady: true, simple/moderate → prReady: true (draft), complex → prReady: false, unclear → prReady: false (no code changes).
+If you created a PR via /almanac:ship, set \`prReady: true\` and include the PR URL in \`prUrl\`.
+Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex → prReady: false, unclear → prReady: false (no code changes).
 
 ### Critical rules:
 - NEVER change code that works correctly unless the task specifically asks for it

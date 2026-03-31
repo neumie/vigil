@@ -53,6 +53,7 @@ export interface SolverResult {
 	prReady: boolean
 	prTitle?: string
 	prBody?: string
+	prUrl?: string
 }
 
 export interface ClaudeEvent {
