@@ -154,9 +154,12 @@ export class OkenaSolver implements Solver {
 			// Non-critical
 		}
 
-		// Wait for hatch/MCP setup in the hook terminal to finish
-		log.info('okena', 'Waiting for MCP servers to initialize...')
-		await sleep(15000)
+		// Wait for hook setup (e.g. hatch/MCP servers) if configured
+		const delayMs = solverConfig.setupDelaySeconds * 1000
+		if (delayMs > 0) {
+			log.info('okena', `Waiting ${solverConfig.setupDelaySeconds}s for setup to finish...`)
+			await sleep(delayMs)
+		}
 
 		// Write prompt to file in worktree
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
