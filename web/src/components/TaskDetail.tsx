@@ -28,16 +28,15 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }
 							borderRadius: 'var(--radius-sm)', color: 'var(--red)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
 						}}>Cancel</button>
 					)}
-					{(task.status === 'failed' || task.status === 'cancelled') && (
+					{task.status !== 'processing' && task.status !== 'queued' && (
 						<div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-							<button onClick={() => onSetStatus('completed')} style={{
-								padding: '4px 12px', background: 'var(--green-dim)', border: '1px solid color-mix(in srgb, var(--green) 40%, transparent)',
-								borderRadius: 'var(--radius-sm)', color: 'var(--green)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
-							}}>Mark Complete</button>
-							<button onClick={onRetry} style={{
-								padding: '4px 12px', background: 'var(--amber-dim)', border: '1px solid color-mix(in srgb, var(--amber) 40%, transparent)',
-								borderRadius: 'var(--radius-sm)', color: 'var(--amber)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
-							}}>Retry</button>
+							{task.status !== 'completed' && <StatusAction label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />}
+							{task.status !== 'failed' && <StatusAction label="Failed" color="var(--red)" onClick={() => onSetStatus('failed')} />}
+							{task.status !== 'cancelled' && <StatusAction label="Cancel" color="var(--amber)" onClick={() => onSetStatus('cancelled')} />}
+							{task.status !== 'skipped' && <StatusAction label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />}
+							{(task.status === 'failed' || task.status === 'cancelled') && (
+								<StatusAction label="Retry" color="var(--accent)" onClick={onRetry} />
+							)}
 						</div>
 					)}
 				</div>
@@ -106,6 +105,17 @@ function Meta({ label, value, mono, link, error }: {
 				}}>{value}</div>
 			)}
 		</div>
+	)
+}
+
+function StatusAction({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+	return (
+		<button onClick={onClick} style={{
+			padding: '4px 12px', background: `color-mix(in srgb, ${color} 15%, transparent)`,
+			border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+			borderRadius: 'var(--radius-sm)', color, cursor: 'pointer', fontSize: 12,
+			fontFamily: 'var(--font-sans)', fontWeight: 500,
+		}}>{label}</button>
 	)
 }
 
