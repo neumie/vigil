@@ -77,6 +77,7 @@ export const api = {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ status }),
 		}).then(r => r.json()).then(r => r.data),
+	prStatus: (id: string) => fetchJSON<{ state: string | null; merged?: boolean; mergedAt?: string }>(`/tasks/${id}/pr-status`),
 	output: (id: string, offset = 0) =>
 		fetchJSON<{ content: string; offset: number; done: boolean }>(`/tasks/${id}/output?offset=${offset}`),
 	triggerPoll: () => postJSON<{ message: string }>('/poll/trigger'),

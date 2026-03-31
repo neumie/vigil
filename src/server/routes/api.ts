@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
@@ -130,6 +131,24 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		})
 		db.insertEvent(task.id, 'status_changed', { status: body.status, manual: true })
 		return c.json({ data: { message: `Status set to ${body.status}` } })
+	})
+
+	// Check PR status via gh CLI
+	api.get('/tasks/:id/pr-status', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		if (!task.prUrl) return c.json({ data: { state: null } })
+
+		try {
+			const json = execSync(`gh pr view "${task.prUrl}" --json state,merged,mergedAt,url`, {
+				encoding: 'utf-8',
+				timeout: 10000,
+				stdio: ['pipe', 'pipe', 'pipe'],
+			})
+			return c.json({ data: JSON.parse(json) })
+		} catch {
+			return c.json({ data: { state: 'unknown' } })
+		}
 	})
 
 	// Stream task output (incremental via offset)
