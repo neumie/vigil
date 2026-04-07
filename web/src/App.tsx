@@ -11,6 +11,7 @@ export function App() {
 	const [tasks, setTasks] = useState<TaskRecord[]>([])
 	const [config, setConfig] = useState<AppConfig>({})
 	const { selectedTaskId, selectTask } = useHashRoute()
+	const [projectFilter, setProjectFilter] = useState<string | null>(null)
 
 	useEffect(() => {
 		api.config().then(setConfig).catch(() => {})
@@ -27,6 +28,12 @@ export function App() {
 	}, [])
 
 	useInterval(refresh, 5000)
+
+	const filteredTasks = projectFilter
+		? tasks.filter(t => t.projectSlug === projectFilter)
+		: tasks
+
+	const projectSlugs = [...new Set(tasks.map(t => t.projectSlug))]
 
 	const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) ?? null : null
 	const activeCount = tasks.filter(t => t.status === 'processing').length
@@ -58,16 +65,24 @@ export function App() {
 				status={status}
 				onPoll={() => api.triggerPoll().then(refresh)}
 				onRefresh={refresh}
+				onTogglePause={() => {
+					const action = status?.queue.paused ? api.resumeQueue : api.pauseQueue
+					action().then(refresh)
+				}}
 			/>
 			<div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 				<TaskList
-					tasks={tasks}
+					tasks={filteredTasks}
 					status={status}
 					selectedId={selectedTaskId}
 					taskBaseUrl={config.taskBaseUrl}
 					onSelect={selectTask}
 					onRetry={handleRetry}
 					onCancel={handleCancel}
+					onSkip={async (id) => { await api.setStatus(id, 'skipped'); refresh() }}
+					projects={projectSlugs}
+					selectedProject={projectFilter}
+					onProjectChange={setProjectFilter}
 				/>
 				<main style={{ flex: 1, overflow: 'auto', padding: '32px 40px' }}>
 					{selectedTask ? (
