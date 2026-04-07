@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
 import type { VigilConfig } from '../../config.js'
@@ -7,7 +7,7 @@ import type { DB } from '../../db/client.js'
 import type { Poller } from '../../poller/poller.js'
 import type { TaskQueue } from '../../queue/queue.js'
 
-export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller: Poller) {
+export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue: TaskQueue, poller: Poller) {
 	const api = new Hono()
 
 	// Daemon status
@@ -76,16 +76,26 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		})
 	})
 
+	// Full config (for settings page)
+	api.get('/config/full', c => {
+		try {
+			const raw = readFileSync(configPath, 'utf-8')
+			return c.json({ data: JSON.parse(raw) })
+		} catch (err) {
+			return c.json({ error: 'Failed to read config file' }, 500)
+		}
+	})
+
 	// Stats
 	api.get('/stats', c => {
 		return c.json({ data: db.getStats() })
 	})
 
-	// Retry a failed/cancelled task
+	// Re-queue a task (reset and put back in queue)
 	api.post('/tasks/:id/retry', c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
-		if (task.status !== 'failed' && task.status !== 'cancelled') return c.json({ error: 'Task is not failed or cancelled' }, 400)
+		if (task.status === 'processing' || task.status === 'queued') return c.json({ error: 'Task is already active or queued' }, 400)
 		db.updateTask(task.id, {
 			status: 'queued',
 			errorMessage: null,
@@ -179,6 +189,17 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		} catch {
 			return c.json({ data: { content: '', offset: 0, done: task.status !== 'processing' } })
 		}
+	})
+
+	// Pause/resume queue
+	api.post('/queue/pause', c => {
+		queue.pause()
+		return c.json({ data: { paused: true } })
+	})
+
+	api.post('/queue/resume', c => {
+		queue.resume()
+		return c.json({ data: { paused: false } })
 	})
 
 	// Force poll

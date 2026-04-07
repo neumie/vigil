@@ -54,14 +54,30 @@ const configSchema = z.object({
 			prPrefix: z.string().default('[Vigil]'),
 		})
 		.default({}),
+	chat: z
+		.object({
+			enabled: z.boolean().default(false),
+			secret: z.string().min(16),
+			expiryDays: z.number().min(1).default(7),
+			baseUrl: z.string().url().optional(),
+			tunnel: z.boolean().default(false),
+			timeoutMinutes: z.number().min(1).default(120),
+			webhook: z
+				.object({
+					url: z.string().url(),
+					headers: z.record(z.string()).optional(),
+				})
+				.optional(),
+		})
+		.optional(),
 })
 
 export type VigilConfig = z.infer<typeof configSchema>
 export type ProjectConfig = z.infer<typeof projectSchema>
 
-export function loadConfig(configPath?: string): VigilConfig {
+export function loadConfig(configPath?: string): { config: VigilConfig; configPath: string } {
 	const path = configPath ?? process.env.VIGIL_CONFIG ?? resolve(process.cwd(), 'vigil.config.json')
 	const raw = readFileSync(path, 'utf-8')
 	const json = JSON.parse(raw)
-	return configSchema.parse(json)
+	return { config: configSchema.parse(json), configPath: path }
 }
