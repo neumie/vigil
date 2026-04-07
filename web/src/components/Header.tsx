@@ -4,9 +4,12 @@ interface Props {
 	status: DaemonStatus | null
 	onPoll: () => void
 	onRefresh: () => void
+	onTogglePause: () => void
 }
 
-export function Header({ status, onPoll, onRefresh }: Props) {
+export function Header({ status, onPoll, onRefresh, onTogglePause }: Props) {
+	const paused = status?.queue.paused ?? true
+
 	return (
 		<header style={{
 			display: 'flex',
@@ -21,13 +24,23 @@ export function Header({ status, onPoll, onRefresh }: Props) {
 				<h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.02em' }}>
 					vigil
 				</h1>
-				{status && (
-					<span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-						{status.projects.join(', ')} &middot; {status.pollInterval}s
-					</span>
-				)}
 			</div>
-			<div style={{ display: 'flex', gap: 6 }}>
+			<div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+				<a href='/settings' style={{
+					padding: '5px 12px',
+					color: 'var(--text-2)',
+					textDecoration: 'none',
+					fontSize: 12,
+					fontWeight: 500,
+				}}>
+					Settings
+				</a>
+				<HeaderButton
+					onClick={onTogglePause}
+					active={!paused}
+				>
+					{paused ? 'Start' : 'Running'}
+				</HeaderButton>
 				<HeaderButton onClick={onPoll}>Poll</HeaderButton>
 				<HeaderButton onClick={onRefresh}>Refresh</HeaderButton>
 			</div>
@@ -35,16 +48,17 @@ export function Header({ status, onPoll, onRefresh }: Props) {
 	)
 }
 
-function HeaderButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function HeaderButton({ onClick, children, active }: { onClick: () => void; children: React.ReactNode; active?: boolean }) {
 	return (
 		<button
 			onClick={onClick}
 			style={{
 				padding: '5px 12px',
-				background: 'var(--bg-2)',
-				border: '1px solid var(--border)',
+				background: active ? 'var(--green)' : 'var(--bg-2)',
+				border: '1px solid',
+				borderColor: active ? 'var(--green)' : 'var(--border)',
 				borderRadius: 'var(--radius-sm)',
-				color: 'var(--text-2)',
+				color: active ? '#fff' : 'var(--text-2)',
 				cursor: 'pointer',
 				fontSize: 12,
 				fontFamily: 'var(--font-sans)',
@@ -52,12 +66,16 @@ function HeaderButton({ onClick, children }: { onClick: () => void; children: Re
 				transition: 'all 150ms',
 			}}
 			onMouseEnter={e => {
-				e.currentTarget.style.borderColor = 'var(--border-hover)'
-				e.currentTarget.style.color = 'var(--text-1)'
+				if (!active) {
+					e.currentTarget.style.borderColor = 'var(--border-hover)'
+					e.currentTarget.style.color = 'var(--text-1)'
+				}
 			}}
 			onMouseLeave={e => {
-				e.currentTarget.style.borderColor = 'var(--border)'
-				e.currentTarget.style.color = 'var(--text-2)'
+				if (!active) {
+					e.currentTarget.style.borderColor = 'var(--border)'
+					e.currentTarget.style.color = 'var(--text-2)'
+				}
 			}}
 		>
 			{children}
