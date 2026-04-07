@@ -1,7 +1,8 @@
 import { execSync } from 'node:child_process'
-import { closeSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
+import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
 import type { Poller } from '../../poller/poller.js'
@@ -83,6 +84,21 @@ export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue
 			return c.json({ data: JSON.parse(raw) })
 		} catch (err) {
 			return c.json({ error: 'Failed to read config file' }, 500)
+		}
+	})
+
+	// Update config (validates and writes to disk)
+	api.put('/config', async c => {
+		const body = await c.req.json()
+		const result = configSchema.safeParse(body)
+		if (!result.success) {
+			return c.json({ error: 'Validation failed', details: result.error.flatten() }, 400)
+		}
+		try {
+			writeFileSync(configPath, JSON.stringify(body, null, '\t'), 'utf-8')
+			return c.json({ data: { message: 'Config saved. Restart Vigil for changes to take effect.' } })
+		} catch (err) {
+			return c.json({ error: `Failed to write config: ${err instanceof Error ? err.message : err}` }, 500)
 		}
 	})
 

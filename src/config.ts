@@ -21,7 +21,7 @@ const projectSchema = z.object({
 	worktreeDir: z.string().optional(),
 })
 
-const configSchema = z.object({
+export const configSchema = z.object({
 	provider: providerSchema,
 	projects: z.array(projectSchema).min(1),
 	polling: z
