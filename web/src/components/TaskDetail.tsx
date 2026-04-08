@@ -7,9 +7,11 @@ import { StatusBadge } from './StatusBadge'
 interface Props {
 	task: TaskRecord
 	taskBaseUrl?: string
+	onStart: () => void
 	onRetry: () => void
 	onCancel: () => void
 	onSetStatus: (status: string) => void
+	onDelete: () => void
 }
 
 interface PrStatus {
@@ -18,7 +20,7 @@ interface PrStatus {
 	mergedAt?: string
 }
 
-export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }: Props) {
+export function TaskDetail({ task, taskBaseUrl, onStart, onRetry, onCancel, onSetStatus, onDelete }: Props) {
 	const files = task.filesChanged ? JSON.parse(task.filesChanged) as string[] : []
 	const isActive = task.status === 'processing'
 	const [prStatus, setPrStatus] = useState<PrStatus | null>(null)
@@ -99,15 +101,35 @@ export function TaskDetail({ task, taskBaseUrl, onRetry, onCancel, onSetStatus }
 
 			{/* Actions */}
 			<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 32 }}>
-				{isActive && <ActionBtn label="Cancel" color="var(--red)" onClick={onCancel} />}
+				{task.status === 'queued' && <ActionBtn label="Start" color="var(--accent)" onClick={onStart} />}
+				{(isActive || task.status === 'queued') && <ActionBtn label="Cancel" color="var(--red)" onClick={onCancel} />}
+				{task.status === 'queued' && <ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />}
 				{task.status !== 'processing' && task.status !== 'queued' && (
 					<>
+						<ActionBtn label="Re-queue" color="var(--accent)" onClick={onRetry} />
 						{task.status !== 'completed' && <ActionBtn label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />}
-						{(task.status === 'failed' || task.status === 'cancelled') && <ActionBtn label="Retry" color="var(--accent)" onClick={onRetry} />}
 						{task.status !== 'skipped' && <ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />}
 					</>
 				)}
+				<ActionBtn label="Delete" color="var(--red)" onClick={onDelete} />
 			</div>
+
+			{/* Task description */}
+			{task.taskContext && (
+				<Section title="Task description">
+					<pre style={{
+						fontSize: 12,
+						color: 'var(--text-2)',
+						lineHeight: 1.6,
+						whiteSpace: 'pre-wrap',
+						wordBreak: 'break-word',
+						fontFamily: 'var(--font-sans)',
+						margin: 0,
+					}}>
+						{extractTaskDescription(task.taskContext)}
+					</pre>
+				</Section>
+			)}
 
 			{/* Summary */}
 			{task.solverSummary && (
@@ -189,6 +211,13 @@ function ActionBtn({ label, color, onClick }: { label: string; color: string; on
 			fontFamily: 'var(--font-sans)', fontWeight: 500, transition: 'all 150ms',
 		}}>{label}</button>
 	)
+}
+
+function extractTaskDescription(taskContext: string): string {
+	const marker = '## Task Context'
+	const idx = taskContext.indexOf(marker)
+	if (idx === -1) return taskContext
+	return taskContext.slice(idx + marker.length).trim()
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

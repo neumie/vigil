@@ -13,15 +13,16 @@ export function App() {
 	const { selectedTaskId, selectTask } = useHashRoute()
 	const [projectFilter, setProjectFilter] = useState<string | null>(null)
 
-	useEffect(() => {
-		api.config().then(setConfig).catch(() => {})
-	}, [])
-
 	const refresh = useCallback(async () => {
 		try {
-			const [s, t] = await Promise.all([api.status(), api.tasks()])
+			const [s, t, c] = await Promise.all([api.status(), api.tasks(), api.config() as Promise<any>])
 			setStatus(s)
 			setTasks(t)
+			const projectColors: Record<string, string> = {}
+			for (const p of c.projects ?? []) {
+				if (p.color) projectColors[p.slug] = p.color
+			}
+			setConfig({ ...c, projectColors })
 		} catch (err) {
 			console.error('Failed to refresh:', err)
 		}
@@ -75,23 +76,22 @@ export function App() {
 					tasks={filteredTasks}
 					status={status}
 					selectedId={selectedTaskId}
-					taskBaseUrl={config.taskBaseUrl}
 					onSelect={selectTask}
-					onRetry={handleRetry}
-					onCancel={handleCancel}
-					onSkip={async (id) => { await api.setStatus(id, 'skipped'); refresh() }}
 					projects={projectSlugs}
 					selectedProject={projectFilter}
 					onProjectChange={setProjectFilter}
+					projectColors={config.projectColors ?? {}}
 				/>
 				<main style={{ flex: 1, overflow: 'auto', padding: '32px 40px' }}>
 					{selectedTask ? (
 						<TaskDetail
 							task={selectedTask}
 							taskBaseUrl={config.taskBaseUrl}
+							onStart={async () => { await api.start(selectedTask.id); refresh() }}
 							onRetry={() => handleRetry(selectedTask.id)}
 							onCancel={() => handleCancel(selectedTask.id)}
 							onSetStatus={async (status) => { await api.setStatus(selectedTask.id, status); refresh() }}
+							onDelete={async () => { await api.deleteTask(selectedTask.id); selectTask(null); refresh() }}
 						/>
 					) : (
 						<EmptyState

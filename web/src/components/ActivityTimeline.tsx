@@ -50,9 +50,15 @@ export function ActivityTimeline({ taskId }: { taskId: string }) {
 		return <p style={{ color: 'var(--text-4)', fontSize: 13 }}>No events recorded.</p>
 	}
 
+	// Collapse consecutive duplicate event types (e.g. repeated task_queued from restarts)
+	const deduped = events.filter((event, i) => {
+		if (i === 0) return true
+		return event.eventType !== events[i - 1].eventType
+	})
+
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-			{events.map(event => {
+			{deduped.map(event => {
 				const payload = event.payload ? JSON.parse(event.payload) : null
 				const icon = eventIcons[event.eventType] ?? '>>'
 				const color = eventColors[event.eventType] ?? 'var(--text-3)'

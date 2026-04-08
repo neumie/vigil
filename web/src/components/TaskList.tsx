@@ -9,17 +9,14 @@ interface Props {
 	tasks: TaskRecord[]
 	status: DaemonStatus | null
 	selectedId: string | null
-	taskBaseUrl?: string
 	onSelect: (id: string | null) => void
-	onRetry: (id: string) => void
-	onCancel: (id: string) => void
-	onSkip: (id: string) => void
 	projects: string[]
 	selectedProject: string | null
 	onProjectChange: (slug: string | null) => void
+	projectColors: Record<string, string>
 }
 
-export function TaskList({ tasks, status, selectedId, taskBaseUrl, onSelect, onRetry, onCancel, onSkip, projects, selectedProject, onProjectChange }: Props) {
+export function TaskList({ tasks, status, selectedId, onSelect, projects, selectedProject, onProjectChange, projectColors }: Props) {
 	const [tab, setTab] = useState<Tab>('queued')
 
 	const active = tasks.filter(t => t.status === 'processing')
@@ -104,15 +101,26 @@ export function TaskList({ tasks, status, selectedId, taskBaseUrl, onSelect, onR
 							key={t.id}
 							task={t}
 							selected={t.id === selectedId}
-							taskBaseUrl={taskBaseUrl}
 							onClick={() => onSelect(t.id)}
-							onCancel={(t.status === 'processing' || t.status === 'queued') ? () => onCancel(t.id) : undefined}
-							onSkip={t.status === 'queued' ? () => onSkip(t.id) : undefined}
-							onRetry={(t.status !== 'processing' && t.status !== 'queued') ? () => onRetry(t.id) : undefined}
+							projectColor={projectColors[t.projectSlug]}
 						/>
 					))
 				)}
 			</div>
+
+			{/* Settings link */}
+			<a href="/settings" style={{
+				display: 'block',
+				padding: '10px 16px',
+				borderTop: '1px solid var(--border)',
+				color: 'var(--text-4)',
+				textDecoration: 'none',
+				fontSize: 12,
+				fontWeight: 500,
+				flexShrink: 0,
+			}}>
+				Settings
+			</a>
 		</aside>
 	)
 }
@@ -159,14 +167,11 @@ function TabButton({ active, count, onClick, children }: {
 	)
 }
 
-function TaskRow({ task, selected, taskBaseUrl, onClick, onRetry, onCancel, onSkip }: {
+function TaskRow({ task, selected, onClick, projectColor }: {
 	task: TaskRecord
 	selected: boolean
-	taskBaseUrl?: string
 	onClick: () => void
-	onRetry?: () => void
-	onCancel?: () => void
-	onSkip?: () => void
+	projectColor?: string
 }) {
 	const elapsed = useRelativeTime(task.startedAt)
 
@@ -180,56 +185,42 @@ function TaskRow({ task, selected, taskBaseUrl, onClick, onRetry, onCancel, onSk
 				padding: '10px 16px',
 				borderBottom: '1px solid var(--border)',
 				cursor: 'pointer',
-				background: selected ? 'var(--accent-dim)' : 'transparent',
-				borderLeft: selected ? '2px solid var(--accent)' : '2px solid transparent',
+				background: selected ? 'var(--bg-2)' : 'transparent',
+				borderLeft: `3px solid ${projectColor ?? 'transparent'}`,
 				transition: 'background 150ms',
 			}}
 			onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'var(--bg-2)' }}
 			onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent' }}
 		>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-				<StatusBadge value={task.status} type="status" />
-				{task.tier && <StatusBadge value={task.tier} type="tier" />}
-				{elapsed && <span style={{ fontSize: 11, color: 'var(--text-4)', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{elapsed}</span>}
+				<span style={{ fontSize: 10, color: projectColor ?? 'var(--text-4)', fontWeight: 500 }}>{task.projectSlug}</span>
+				<span style={{ fontSize: 10, color: 'var(--text-4)', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>
+					{elapsed ?? formatTime(task.queuedAt)}
+				</span>
 			</div>
 			<div style={{ fontSize: 13, color: selected ? 'var(--text-0)' : 'var(--text-1)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
 				{task.title}
 			</div>
-			<div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-				<span style={{ color: 'var(--text-4)' }}>{task.projectSlug}</span>
-				{taskBaseUrl && (
-					<a href={`${taskBaseUrl}${task.clientcareId}`} target="_blank" rel="noreferrer"
-						onClick={e => e.stopPropagation()} style={{ color: 'var(--accent)', textDecoration: 'none' }}>
-						source
-					</a>
-				)}
-				{task.prUrl && (
-					<a href={task.prUrl} target="_blank" rel="noreferrer"
-						onClick={e => e.stopPropagation()} style={{ color: 'var(--blue)', textDecoration: 'none' }}>
-						PR
-					</a>
-				)}
-				<span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-					{onSkip && (
-						<button onClick={e => { e.stopPropagation(); onSkip() }}
-							style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-							Skip
-						</button>
-					)}
-					{onCancel && (
-						<button onClick={e => { e.stopPropagation(); onCancel() }}
-							style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-							Cancel
-						</button>
-					)}
-					{onRetry && (
-						<button onClick={e => { e.stopPropagation(); onRetry() }}
-							style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-							Re-queue
-						</button>
-					)}
-				</span>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+				<StatusBadge value={task.status} type="status" />
+				{task.tier && <StatusBadge value={task.tier} type="tier" />}
 			</div>
 		</div>
 	)
+}
+
+function formatTime(iso: string): string {
+	const d = new Date(iso)
+	const now = new Date()
+	const diffMs = now.getTime() - d.getTime()
+	const diffMin = Math.floor(diffMs / 60000)
+	const diffHr = Math.floor(diffMin / 60)
+	const diffDays = Math.floor(diffHr / 24)
+
+	if (diffMin < 1) return 'just now'
+	if (diffMin < 60) return `${diffMin}m ago`
+	if (diffHr < 24) return `${diffHr}h ago`
+	if (diffDays === 1) return 'yesterday'
+	if (diffDays < 7) return `${diffDays}d ago`
+	return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }

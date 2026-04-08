@@ -39,6 +39,7 @@ export interface TaskRecord {
 	branchName: string | null
 	prUrl: string | null
 	prDraft: number | null
+	taskContext: string | null
 	queuedAt: string
 	startedAt: string | null
 	completedAt: string | null
@@ -71,6 +72,7 @@ export interface DaemonStatus {
 
 export interface AppConfig {
 	taskBaseUrl?: string
+	projectColors?: Record<string, string>
 }
 
 export const api = {
@@ -81,8 +83,11 @@ export const api = {
 	taskEvents: (id: string) => fetchJSON<EventEntry[]>(`/tasks/${id}/events`),
 	queue: () => fetchJSON<QueueStatus>('/queue'),
 	stats: () => fetchJSON<Record<string, number>>('/stats'),
+	start: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/start`),
 	retry: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/retry`),
 	cancel: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/cancel`),
+	deleteTask: (id: string) =>
+		fetch(`${BASE}/tasks/${id}`, { method: 'DELETE' }).then(r => r.json()).then(r => r.data),
 	setStatus: (id: string, status: string) =>
 		fetch(`${BASE}/tasks/${id}/status`, {
 			method: 'POST',
