@@ -1,13 +1,14 @@
 import { execSync } from 'node:child_process'
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
+import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
 import type { Poller } from '../../poller/poller.js'
 import type { TaskQueue } from '../../queue/queue.js'
 
-export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller: Poller) {
+export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue: TaskQueue, poller: Poller) {
 	const api = new Hono()
 
 	// Daemon status
@@ -38,6 +39,32 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		return c.json({ data: tasks })
 	})
 
+	// Look up task by clientcare ID
+	api.get('/tasks/by-clientcare-id/:id', c => {
+		const task = db.getTaskByClientcareId(c.req.param('id'))
+		if (!task) return c.json({ data: null })
+		return c.json({ data: task })
+	})
+
+	// Create task by clientcare ID
+	api.post('/tasks', async c => {
+		const body = await c.req.json<{ clientcareId: string; projectSlug: string; title: string }>()
+		if (!body.clientcareId || !body.projectSlug || !body.title) {
+			return c.json({ error: 'Missing required fields: clientcareId, projectSlug, title' }, 400)
+		}
+		const existing = db.getTaskByClientcareId(body.clientcareId)
+		if (existing) {
+			return c.json({ data: existing })
+		}
+		const { randomUUID } = await import('node:crypto')
+		const id = randomUUID()
+		db.insertTask({ id, clientcareId: body.clientcareId, projectSlug: body.projectSlug, title: body.title })
+		db.insertEvent(id, 'task_discovered', { source: 'extension' })
+		queue.enqueue(id)
+		const task = db.getTask(id)!
+		return c.json({ data: task }, 201)
+	})
+
 	// Single task detail
 	api.get('/tasks/:id', c => {
 		const task = db.getTask(c.req.param('id'))
@@ -56,24 +83,72 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		return c.json({ data: queue.getStatus() })
 	})
 
-	// Config (sanitized)
+	// Config (sanitized, read from disk to pick up changes)
 	api.get('/config', c => {
-		return c.json({
-			data: {
-				projects: config.projects.map(p => ({
-					slug: p.slug,
-					repoPath: p.repoPath,
-					baseBranch: p.baseBranch,
-				})),
-				polling: config.polling,
-				solver: {
-					concurrency: config.solver.concurrency,
-					model: config.solver.model,
-					timeoutMinutes: config.solver.timeoutMinutes,
+		try {
+			const raw = JSON.parse(readFileSync(configPath, 'utf-8'))
+			return c.json({
+				data: {
+					projects: (raw.projects ?? []).map((p: Record<string, unknown>) => ({
+						slug: p.slug,
+						repoPath: p.repoPath,
+						baseBranch: p.baseBranch ?? 'main',
+						color: p.color,
+					})),
+					polling: raw.polling ?? config.polling,
+					solver: {
+						concurrency: raw.solver?.concurrency ?? config.solver.concurrency,
+						model: raw.solver?.model ?? config.solver.model,
+						timeoutMinutes: raw.solver?.timeoutMinutes ?? config.solver.timeoutMinutes,
+					},
+					taskBaseUrl: raw.provider?.taskBaseUrl,
 				},
-				taskBaseUrl: config.provider.type === 'contember' ? config.provider.taskBaseUrl : undefined,
-			},
-		})
+			})
+		} catch {
+			// Fallback to in-memory config if file read fails
+			return c.json({
+				data: {
+					projects: config.projects.map(p => ({
+						slug: p.slug,
+						repoPath: p.repoPath,
+						baseBranch: p.baseBranch,
+						color: p.color,
+					})),
+					polling: config.polling,
+					solver: {
+						concurrency: config.solver.concurrency,
+						model: config.solver.model,
+						timeoutMinutes: config.solver.timeoutMinutes,
+					},
+					taskBaseUrl: config.provider.type === 'contember' ? config.provider.taskBaseUrl : undefined,
+				},
+			})
+		}
+	})
+
+	// Full config (for settings page)
+	api.get('/config/full', c => {
+		try {
+			const raw = readFileSync(configPath, 'utf-8')
+			return c.json({ data: JSON.parse(raw) })
+		} catch (err) {
+			return c.json({ error: 'Failed to read config file' }, 500)
+		}
+	})
+
+	// Update config (validates and writes to disk)
+	api.put('/config', async c => {
+		const body = await c.req.json()
+		const result = configSchema.safeParse(body)
+		if (!result.success) {
+			return c.json({ error: 'Validation failed', details: result.error.flatten() }, 400)
+		}
+		try {
+			writeFileSync(configPath, JSON.stringify(body, null, '\t'), 'utf-8')
+			return c.json({ data: { message: 'Config saved. Restart Vigil for changes to take effect.' } })
+		} catch (err) {
+			return c.json({ error: `Failed to write config: ${err instanceof Error ? err.message : err}` }, 500)
+		}
 	})
 
 	// Stats
@@ -81,11 +156,30 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		return c.json({ data: db.getStats() })
 	})
 
-	// Retry a failed/cancelled task
+	// Process a single task immediately (bypasses pause)
+	api.post('/tasks/:id/start', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		if (task.status === 'processing') return c.json({ error: 'Task is already processing' }, 400)
+		if (task.status !== 'queued') {
+			db.updateTask(task.id, {
+				status: 'queued',
+				errorMessage: null,
+				errorPhase: null,
+				startedAt: null,
+				completedAt: null,
+			})
+		}
+		const started = queue.processOne(task.id)
+		if (!started) return c.json({ error: 'Could not start task' }, 500)
+		return c.json({ data: { message: 'Task started' } })
+	})
+
+	// Re-queue a task (reset and put back in queue)
 	api.post('/tasks/:id/retry', c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
-		if (task.status !== 'failed' && task.status !== 'cancelled') return c.json({ error: 'Task is not failed or cancelled' }, 400)
+		if (task.status === 'processing' || task.status === 'queued') return c.json({ error: 'Task is already active or queued' }, 400)
 		db.updateTask(task.id, {
 			status: 'queued',
 			errorMessage: null,
@@ -95,6 +189,17 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		})
 		queue.enqueue(task.id)
 		return c.json({ data: { message: 'Task re-enqueued' } })
+	})
+
+	// Delete a task entirely
+	api.delete('/tasks/:id', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		if (task.status === 'processing') {
+			queue.cancel(task.id)
+		}
+		db.deleteTask(task.id)
+		return c.json({ data: { message: 'Task deleted' } })
 	})
 
 	// Cancel a running/queued task
@@ -179,6 +284,17 @@ export function apiRoutes(config: VigilConfig, db: DB, queue: TaskQueue, poller:
 		} catch {
 			return c.json({ data: { content: '', offset: 0, done: task.status !== 'processing' } })
 		}
+	})
+
+	// Pause/resume queue
+	api.post('/queue/pause', c => {
+		queue.pause()
+		return c.json({ data: { paused: true } })
+	})
+
+	api.post('/queue/resume', c => {
+		queue.resume()
+		return c.json({ data: { paused: false } })
 	})
 
 	// Force poll

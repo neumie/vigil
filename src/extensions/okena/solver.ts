@@ -53,7 +53,7 @@ export class OkenaSolver implements Solver {
 		)
 
 		let worktreePath: string
-		let terminalId: string | null
+		let terminalId: string | null = null
 
 		if (existingWorktree) {
 			// Reuse existing worktree — just need a terminal
@@ -102,56 +102,33 @@ export class OkenaSolver implements Solver {
 			}
 
 			worktreePath = wt.path
-		}
+			terminalId = wt.terminal_id
 
-		// Always create a fresh terminal — the initial one may have hooks running in it
-		const wtProjectId = existingWorktree?.id
-			?? state.projects.find(p => p.path === worktreePath)?.id
-			// Re-fetch state to find the newly created worktree project
-			?? (await this.client.getState()).projects.find(p => p.path === worktreePath)?.id
-
-		if (!wtProjectId) {
-			throw Object.assign(new Error('Could not find worktree project in Okena'), { phase: 'worktree' })
-		}
-
-		try {
-			const result = await this.client.action<{ terminal_ids?: string[] }>({
-				action: 'split_terminal',
-				project_id: wtProjectId,
-				path: [],
-				direction: 'horizontal',
-			})
-			terminalId = result.terminal_ids?.[0] ?? null
-		} catch {
-			// Fallback to create_terminal if split fails
-			try {
-				const result = await this.client.action<{ terminal_ids?: string[] }>({
-					action: 'create_terminal',
-					project_id: wtProjectId,
-				})
-				terminalId = result.terminal_ids?.[0] ?? null
-			} catch {
-				terminalId = null
+			if (!terminalId) {
+				throw Object.assign(new Error('Failed to create terminal in new worktree'), { phase: 'worktree' })
 			}
 		}
 
-		if (!terminalId) {
-			throw Object.assign(new Error('Failed to create terminal in worktree project'), { phase: 'worktree' })
-		}
+		// Find the worktree project ID for rename/commands
+		const wtProjectId = existingWorktree?.id
+			?? state.projects.find(p => p.path === worktreePath)?.id
+			?? (await this.client.getState()).projects.find(p => p.path === worktreePath)?.id
 
 		log.success('okena', `Worktree at ${worktreePath} (terminal: ${terminalId})`)
 		excludeVigilFiles(worktreePath)
 
 		// Rename terminal with task title
-		try {
-			await this.client.action({
-				action: 'rename_terminal',
-				project_id: wtProjectId,
-				terminal_id: terminalId,
-				name: taskTitle,
-			})
-		} catch {
-			// Non-critical
+		if (wtProjectId) {
+			try {
+				await this.client.action({
+					action: 'rename_terminal',
+					project_id: wtProjectId,
+					terminal_id: terminalId,
+					name: taskTitle,
+				})
+			} catch {
+				// Non-critical
+			}
 		}
 
 		// Wait for hook setup (e.g. hatch/MCP servers) if configured
@@ -163,18 +140,16 @@ export class OkenaSolver implements Solver {
 
 		// Write prompt to file in worktree
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
-		const exitCodeFile = join(worktreePath, '.vigil-exit-code')
+		const resultFile = join(worktreePath, '.solver-result.json')
 		writeFileSync(promptFile, prompt, 'utf-8')
 
-		// Run claude interactively — pass prompt as positional arg via command substitution
-		// Vigil reads .solver-result.json from worktree for results
+		// Run claude in the terminal
 		const args = ['claude', '--dangerously-skip-permissions']
 		if (solverConfig.model) {
 			args.push('--model', solverConfig.model)
 		}
-		const command = `${args.join(' ')} "$(cat .vigil-prompt.txt)"; echo $? > .vigil-exit-code`
+		const command = `${args.join(' ')} "$(cat .vigil-prompt.txt)"`
 
-		// Run command in Okena terminal
 		log.info('okena', `Running claude in terminal ${terminalId}`)
 		try {
 			await this.client.action({
@@ -189,14 +164,13 @@ export class OkenaSolver implements Solver {
 			)
 		}
 
-		// Poll for completion
+		// Poll for .solver-result.json — Claude writes this when done solving
 		const timeoutMs = solverConfig.timeoutMinutes * 60 * 1000
 		const startTime = Date.now()
 
-		log.info('okena', `Waiting for claude to finish (timeout: ${solverConfig.timeoutMinutes}m)`)
-		while (!existsSync(exitCodeFile)) {
+		log.info('okena', `Waiting for .solver-result.json (timeout: ${solverConfig.timeoutMinutes}m)`)
+		while (!existsSync(resultFile)) {
 			if (signal?.aborted) {
-				// Send Ctrl+C to the terminal to kill claude
 				try {
 					await this.client.action({ action: 'send_special_key', terminal_id: terminalId, key: 'ctrl_c' })
 				} catch { /* best effort */ }
@@ -211,29 +185,19 @@ export class OkenaSolver implements Solver {
 		// Small delay to ensure file is fully written
 		await sleep(500)
 
-		// Read results
-		const exitCode = Number.parseInt(readFileSync(exitCodeFile, 'utf-8').trim(), 10)
+		log.success('okena', 'Claude finished — .solver-result.json detected')
 
-		log.info('okena', `Claude exited with code ${exitCode}`)
-
-		// Exit code 130 = SIGINT (Ctrl+C in terminal) — treat as user cancellation
-		if (exitCode === 130) {
-			throw Object.assign(new Error('Task cancelled (Ctrl+C in terminal)'), { name: 'AbortError' })
-		}
-
-		// Cleanup temp files
-		for (const f of [promptFile, exitCodeFile]) {
-			try {
-				if (existsSync(f)) unlinkSync(f)
-			} catch {
-				// Non-critical
-			}
+		// Cleanup prompt file
+		try {
+			if (existsSync(promptFile)) unlinkSync(promptFile)
+		} catch {
+			// Non-critical
 		}
 
 		return {
 			worktreePath,
 			branchName,
-			invokeResult: { exitCode, stdout: '', stderr: '' },
+			invokeResult: { exitCode: 0, stdout: '', stderr: '' },
 		}
 	}
 }

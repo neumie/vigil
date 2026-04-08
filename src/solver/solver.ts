@@ -5,6 +5,7 @@ export interface SolveParams {
 	projectConfig: ProjectConfig
 	branchName: string
 	prompt: string
+	chatPrompt?: string
 	taskTitle: string
 	solverConfig: VigilConfig['solver']
 	signal?: AbortSignal

@@ -54,4 +54,29 @@ CREATE TABLE schema_version (
 );
 `,
 	},
+	{
+		version: 2,
+		sql: `
+CREATE TABLE chat_sessions (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL,
+  token      TEXT NOT NULL UNIQUE,
+  status     TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE TABLE chat_messages (
+  id         TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES chat_sessions(id),
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_chat_sessions_task ON chat_sessions(task_id);
+CREATE INDEX idx_chat_sessions_token ON chat_sessions(token);
+CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
+`,
+	},
 ]

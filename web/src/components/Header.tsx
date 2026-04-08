@@ -4,15 +4,18 @@ interface Props {
 	status: DaemonStatus | null
 	onPoll: () => void
 	onRefresh: () => void
+	onTogglePause: () => void
 }
 
-export function Header({ status, onPoll, onRefresh }: Props) {
+export function Header({ status, onPoll, onRefresh, onTogglePause }: Props) {
+	const paused = status?.queue.paused ?? true
+
 	return (
 		<header style={{
 			display: 'flex',
 			alignItems: 'center',
 			justifyContent: 'space-between',
-			padding: '12px 24px',
+			padding: '10px 24px',
 			borderBottom: '1px solid var(--border)',
 			background: 'var(--bg-1)',
 			flexShrink: 0,
@@ -21,46 +24,46 @@ export function Header({ status, onPoll, onRefresh }: Props) {
 				<h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.02em' }}>
 					vigil
 				</h1>
-				{status && (
-					<span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-						{status.projects.join(', ')} &middot; {status.pollInterval}s
-					</span>
-				)}
 			</div>
-			<div style={{ display: 'flex', gap: 6 }}>
-				<HeaderButton onClick={onPoll}>Poll</HeaderButton>
-				<HeaderButton onClick={onRefresh}>Refresh</HeaderButton>
+			<div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+				<span style={{
+					color: 'var(--text-4)',
+					fontSize: 12,
+					cursor: 'pointer',
+				}} onClick={onPoll}>
+					Poll now
+				</span>
+				{/* Processing toggle */}
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+					<span style={{ fontSize: 11, color: paused ? 'var(--text-4)' : 'var(--green)', fontWeight: 500 }}>
+						{paused ? 'Paused' : 'Running'}
+					</span>
+					<button
+						onClick={onTogglePause}
+						style={{
+							width: 36,
+							height: 20,
+							borderRadius: 10,
+							border: 'none',
+							cursor: 'pointer',
+							background: paused ? 'var(--bg-3)' : 'var(--green)',
+							position: 'relative',
+							transition: 'background 150ms',
+						}}
+					>
+						<span style={{
+							position: 'absolute',
+							top: 2,
+							left: paused ? 2 : 18,
+							width: 16,
+							height: 16,
+							borderRadius: '50%',
+							background: '#fff',
+							transition: 'left 150ms',
+						}} />
+					</button>
+				</div>
 			</div>
 		</header>
-	)
-}
-
-function HeaderButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-	return (
-		<button
-			onClick={onClick}
-			style={{
-				padding: '5px 12px',
-				background: 'var(--bg-2)',
-				border: '1px solid var(--border)',
-				borderRadius: 'var(--radius-sm)',
-				color: 'var(--text-2)',
-				cursor: 'pointer',
-				fontSize: 12,
-				fontFamily: 'var(--font-sans)',
-				fontWeight: 500,
-				transition: 'all 150ms',
-			}}
-			onMouseEnter={e => {
-				e.currentTarget.style.borderColor = 'var(--border-hover)'
-				e.currentTarget.style.color = 'var(--text-1)'
-			}}
-			onMouseLeave={e => {
-				e.currentTarget.style.borderColor = 'var(--border)'
-				e.currentTarget.style.color = 'var(--text-2)'
-			}}
-		>
-			{children}
-		</button>
 	)
 }
