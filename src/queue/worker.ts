@@ -5,7 +5,7 @@ import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { TaskProvider } from '../providers/provider.js'
 import { parseClaudeOutput } from '../solver/output-parser.js'
-import { buildPrompt } from '../solver/prompt-builder.js'
+import { buildChatPrompt, buildPrompt } from '../solver/prompt-builder.js'
 import { parseResultFile, parseTierFromOutput } from '../solver/result-parser.js'
 import type { Solver } from '../solver/solver.js'
 import { log } from '../util/logger.js'
@@ -46,12 +46,18 @@ export async function processTask(
 		const prompt = buildPrompt(taskContext, config.solver.transformer)
 		db.updateTask(taskId, { taskContext: prompt })
 
+		// Build chat prompt if chat is enabled
+		const chatPrompt = config.chat?.enabled
+			? buildChatPrompt(taskContext, taskId, config.solver.transformer)
+			: undefined
+
 		// Phase 2+3: Create worktree + invoke Claude (delegated to solver)
 		const branchName = `vigil/${slugify(task.title)}`
 		const { worktreePath, invokeResult } = await solver.solve({
 			projectConfig,
 			branchName,
 			prompt,
+			chatPrompt,
 			taskTitle: task.title,
 			solverConfig: config.solver,
 			signal,

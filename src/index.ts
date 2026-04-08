@@ -48,13 +48,13 @@ async function main() {
 	for (const id of stale) {
 		log.warn('vigil', `Recovering stale processing task: ${id}`)
 		db.updateTask(id, { status: 'queued' })
-		queue.enqueue(id)
+		queue.enqueue(id, true)
 	}
 
 	// Re-enqueue any queued tasks from DB
 	const queued = db.getQueuedTaskIds()
 	for (const id of queued) {
-		queue.enqueue(id)
+		queue.enqueue(id, true)
 	}
 	if (queued.length > 0) {
 		log.info('vigil', `Re-enqueued ${queued.length} pending task(s) from DB`)

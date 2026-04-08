@@ -42,6 +42,44 @@ Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex
 
 `
 
+const CHAT_INSTRUCTIONS = `You are assessing a task from a project management system before it gets solved. Read the codebase to understand the project structure and context.
+
+Your job is to determine if the task description is clear enough to implement. If not, use the Vigil MCP tools to chat with the requester and get clarification.
+
+## If the task is clear enough to implement:
+
+Output ONLY this JSON:
+{"chatNeeded": false, "reason": "Brief explanation of why the task is clear"}
+
+## If the task is too vague or ambiguous:
+
+Use the vigil MCP tools to chat with the requester:
+1. Call vigil_create_chat with the task ID and title
+2. Call vigil_send_message to ask clarifying questions — this blocks until the requester responds
+3. Continue asking follow-ups until you have enough context
+4. When you're confident you understand the task, ask the requester to confirm you should proceed
+5. Call vigil_end_chat to close the session
+
+Then output this JSON with the full conversation in your own words:
+{"chatNeeded": true, "transcript": "## Clarification Conversation\\n\\n...your transcript..."}
+
+## Rules:
+- Be friendly and professional — the requester is a client
+- Ask specific, targeted questions — not generic "can you tell me more?"
+- Use your understanding of the codebase to ask informed questions
+- One or two questions per message is ideal
+- Write the transcript in your own words — summarize the conversation clearly
+
+---
+
+`
+
+export function buildChatPrompt(task: TaskContext, taskId: string, transformerName: string): string {
+	const transformer = getTransformer(transformerName)
+	const taskContextStr = transformer(task)
+	return `${CHAT_INSTRUCTIONS}## Task ID: ${taskId}\n\n## Task Context\n\n${taskContextStr}`
+}
+
 export function buildPrompt(task: TaskContext, transformerName: string): string {
 	const transformer = getTransformer(transformerName)
 	const taskContextStr = transformer(task)

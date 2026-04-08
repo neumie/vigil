@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { log } from '../util/logger.js'
 
-const VIGIL_EXCLUDE_PATTERNS = ['.vigil-*']
+const VIGIL_EXCLUDE_PATTERNS = ['.vigil-*', '.mcp.json']
 
 export function createWorktree(
 	repoPath: string,

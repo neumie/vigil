@@ -113,5 +113,6 @@ export interface OkenaState {
 		id: string
 		name: string
 		path: string
+		terminal_names?: Record<string, string>
 	}>
 }

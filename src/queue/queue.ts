@@ -10,6 +10,7 @@ export class TaskQueue {
 	private pending: string[] = []
 	private active = new Map<string, { title: string; startedAt: string; controller: AbortController }>()
 	private running = false
+	private paused = true
 
 	constructor(
 		private config: VigilConfig,
@@ -20,8 +21,8 @@ export class TaskQueue {
 
 	start() {
 		this.running = true
-		log.info('queue', `Queue started (concurrency: ${this.config.solver.concurrency})`)
-		this.processNext()
+		log.info('queue', `Queue started (concurrency: ${this.config.solver.concurrency}, paused: ${this.paused})`)
+		if (!this.paused) this.processNext()
 	}
 
 	stop() {
@@ -29,13 +30,50 @@ export class TaskQueue {
 		log.info('queue', 'Queue stopped')
 	}
 
-	enqueue(taskId: string) {
+	pause() {
+		this.paused = true
+		log.info('queue', 'Queue paused — tasks will be queued but not processed')
+	}
+
+	resume() {
+		this.paused = false
+		log.info('queue', 'Queue resumed')
+		this.processNext()
+	}
+
+	isPaused(): boolean {
+		return this.paused
+	}
+
+	enqueue(taskId: string, silent = false) {
 		if (!this.pending.includes(taskId) && !this.active.has(taskId)) {
 			this.pending.push(taskId)
-			safeInsertEvent(this.db, taskId, 'task_queued')
+			if (!silent) safeInsertEvent(this.db, taskId, 'task_queued')
 			log.info('queue', `Enqueued task ${taskId} (pending: ${this.pending.length})`)
-			if (this.running) this.processNext()
+			if (this.running && !this.paused) this.processNext()
 		}
+	}
+
+	/** Process a single task immediately, bypassing pause state. */
+	processOne(taskId: string): boolean {
+		// Remove from pending if it's there
+		const idx = this.pending.indexOf(taskId)
+		if (idx !== -1) this.pending.splice(idx, 1)
+
+		if (this.active.has(taskId)) return false // already running
+
+		const task = this.db.getTask(taskId)
+		if (!task) return false
+
+		const controller = new AbortController()
+		this.active.set(taskId, { title: task.title, startedAt: new Date().toISOString(), controller })
+
+		processTask(taskId, this.config, this.db, this.provider, this.solver, controller.signal).finally(() => {
+			this.active.delete(taskId)
+			if (!this.paused) this.processNext()
+		})
+
+		return true
 	}
 
 	cancel(taskId: string): boolean {
@@ -56,6 +94,7 @@ export class TaskQueue {
 
 	getStatus(): QueueStatus {
 		return {
+			paused: this.paused,
 			pending: this.pending.length,
 			active: this.active.size,
 			maxConcurrency: this.config.solver.concurrency,
@@ -68,7 +107,7 @@ export class TaskQueue {
 	}
 
 	private processNext() {
-		if (!this.running) return
+		if (!this.running || this.paused) return
 		while (this.active.size < this.config.solver.concurrency && this.pending.length > 0) {
 			const taskId = this.pending.shift()
 			if (!taskId) break

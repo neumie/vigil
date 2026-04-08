@@ -19,6 +19,7 @@ const projectSchema = z.object({
 	repoPath: z.string(),
 	baseBranch: z.string().default('main'),
 	worktreeDir: z.string().optional(),
+	color: z.string().optional(),
 })
 
 export const configSchema = z.object({
