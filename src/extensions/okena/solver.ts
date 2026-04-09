@@ -39,7 +39,18 @@ export class OkenaSolver implements Solver {
 			)
 		}
 
-		// Ensure main repo is on base branch (previous failed attempts may have left it on a vigil branch)
+		// Fetch and switch to base branch (previous attempts may have left it on a vigil branch)
+		try {
+			execSync(`git fetch origin "${projectConfig.baseBranch}"`, { cwd: projectConfig.repoPath, stdio: 'pipe' })
+		} catch {
+			log.warn('okena', `Could not fetch origin/${projectConfig.baseBranch}`)
+		}
+		// Ensure origin/HEAD points to the configured base branch (Okena uses this to determine start point)
+		try {
+			execSync(`git remote set-head origin "${projectConfig.baseBranch}"`, { cwd: projectConfig.repoPath, stdio: 'pipe' })
+		} catch {
+			// Non-critical
+		}
 		try {
 			execSync(`git checkout "${projectConfig.baseBranch}"`, { cwd: projectConfig.repoPath, stdio: 'pipe' })
 		} catch {
@@ -84,7 +95,8 @@ export class OkenaSolver implements Solver {
 					branch: branchName,
 					create_branch: true,
 				})
-			} catch {
+			} catch (firstErr) {
+				log.warn('okena', `create_branch=true failed: ${firstErr instanceof Error ? firstErr.message : firstErr}`)
 				try {
 					log.info('okena', 'Branch already exists, reusing')
 					wt = await this.client.action<CreateWorktreeResponse>({
