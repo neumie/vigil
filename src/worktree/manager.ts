@@ -59,6 +59,40 @@ export function excludeVigilFiles(worktreePath: string): void {
 }
 
 export function pushBranch(worktreePath: string, branchName: string): void {
-	execSync(`git push -u origin "${branchName}"`, { cwd: worktreePath, stdio: 'pipe' })
-	log.success('worktree', `Pushed branch ${branchName}`)
+	try {
+		execSync(`git push -u origin "${branchName}"`, { cwd: worktreePath, stdio: 'pipe' })
+		log.success('worktree', `Pushed branch ${branchName}`)
+	} catch {
+		// Branch may have been renamed (e.g. by /almanac:ship) or already pushed
+		const currentBranch = getCurrentBranch(worktreePath)
+		if (currentBranch && currentBranch !== branchName) {
+			log.info('worktree', `Branch was renamed to ${currentBranch}, pushing that instead`)
+			execSync(`git push -u origin "${currentBranch}"`, { cwd: worktreePath, stdio: 'pipe' })
+			log.success('worktree', `Pushed branch ${currentBranch}`)
+			return
+		}
+		// Check if there's simply nothing to push (Claude already pushed)
+		if (currentBranch && isBranchOnRemote(worktreePath, currentBranch)) {
+			log.info('worktree', `Branch ${currentBranch} already exists on remote, skipping push`)
+			return
+		}
+		throw new Error(`Failed to push branch ${branchName} — refspec not found and no remote branch detected`)
+	}
+}
+
+function getCurrentBranch(cwd: string): string | null {
+	try {
+		return execSync('git branch --show-current', { cwd, encoding: 'utf-8' }).trim() || null
+	} catch {
+		return null
+	}
+}
+
+function isBranchOnRemote(cwd: string, branch: string): boolean {
+	try {
+		execSync(`git ls-remote --exit-code origin "refs/heads/${branch}"`, { cwd, stdio: 'pipe' })
+		return true
+	} catch {
+		return false
+	}
 }
