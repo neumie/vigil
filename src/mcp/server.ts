@@ -32,7 +32,8 @@ export function createMcpServer(config: VigilConfig, db: DB, provider: TaskProvi
 
 			const token = signToken(randomUUID(), config.chat.secret, config.chat.expiryDays)
 			const session = db.createChatSession(taskId, token)
-			const chatUrl = `${config.chat.baseUrl}/chat/${token}`
+			const baseUrl = config.chat.baseUrl ?? `http://localhost:${config.server.port}`
+			const chatUrl = `${baseUrl}/chat/${token}`
 
 			log.info('mcp', `Created chat session ${session.id} for task ${taskId}`)
 

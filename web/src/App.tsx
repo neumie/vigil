@@ -87,6 +87,7 @@ export function App() {
 						<TaskDetail
 							task={selectedTask}
 							taskBaseUrl={config.taskBaseUrl}
+							chatEnabled={status?.chatEnabled ?? false}
 							onStart={async () => { await api.start(selectedTask.id); refresh() }}
 							onRetry={() => handleRetry(selectedTask.id)}
 							onCancel={() => handleCancel(selectedTask.id)}
