@@ -113,10 +113,17 @@ export function TaskDetail({ task, taskBaseUrl, chatEnabled, onStart, onRetry, o
 				{task.status === 'queued' && <ActionBtn label="Start" color="var(--accent)" onClick={onStart} />}
 				{(isActive || task.status === 'queued') && <ActionBtn label="Cancel" color="var(--red)" onClick={onCancel} />}
 				{task.status === 'queued' && <ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />}
-				{task.status !== 'processing' && task.status !== 'queued' && (
+				{task.status === 'review' && (
+					<>
+						<ActionBtn label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />
+						<ActionBtn label="Re-queue" color="var(--accent)" onClick={onRetry} />
+					</>
+				)}
+				{task.status !== 'processing' && task.status !== 'queued' && task.status !== 'review' && (
 					<>
 						<ActionBtn label="Re-queue" color="var(--accent)" onClick={onRetry} />
 						{task.status !== 'completed' && <ActionBtn label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />}
+						{task.status !== 'review' && <ActionBtn label="Review" color="var(--amber)" onClick={() => onSetStatus('review')} />}
 						{task.status !== 'skipped' && <ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />}
 					</>
 				)}
@@ -175,7 +182,7 @@ export function TaskDetail({ task, taskBaseUrl, chatEnabled, onStart, onRetry, o
 			)}
 
 			{/* Live Output */}
-			{(isActive || task.status === 'failed' || task.status === 'cancelled') && (
+			{(isActive || task.status === 'failed' || task.status === 'cancelled' || task.status === 'review') && (
 				<Section title="Output">
 					<LiveOutput taskId={task.id} isActive={isActive} />
 				</Section>

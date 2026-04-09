@@ -229,7 +229,7 @@ export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
 		const body = await c.req.json<{ status: string }>()
-		const validStatuses = ['completed', 'failed', 'cancelled', 'skipped']
+		const validStatuses = ['completed', 'review', 'failed', 'cancelled', 'skipped']
 		if (!validStatuses.includes(body.status)) {
 			return c.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, 400)
 		}

@@ -105,14 +105,13 @@ export async function processTask(
 		try {
 			await dispatch(taskId, solverResult, config, db, provider, projectConfig)
 		} catch (err) {
-			throw Object.assign(new Error(`Action dispatch failed: ${err instanceof Error ? err.message : err}`), {
-				phase: 'action',
-			})
+			log.warn('worker', `Action dispatch failed: ${err instanceof Error ? err.message : err}`)
+			db.insertEvent(taskId, 'dispatch_failed', { error: (err as Error).message })
 		}
 
-		db.updateTask(taskId, { status: 'completed', completedAt: new Date().toISOString() })
+		db.updateTask(taskId, { status: 'review', completedAt: new Date().toISOString() })
 		db.insertEvent(taskId, 'action_completed')
-		log.success('worker', `Task completed: ${task.title} [${solverResult.tier}]`)
+		log.success('worker', `Task ready for review: ${task.title} [${solverResult.tier}]`)
 	} catch (err) {
 		const error = err as Error & { phase?: string }
 		const isCancelled = error.name === 'AbortError' || signal?.aborted
