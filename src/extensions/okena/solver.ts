@@ -104,6 +104,20 @@ export class OkenaSolver implements Solver {
 			worktreePath = wt.path
 			terminalId = wt.terminal_id
 
+			// If the default worktree had 0 terminals, create_worktree returns no terminal
+			if (!terminalId) {
+				log.info('okena', 'No terminal from create_worktree, creating one explicitly')
+				const wtProject = (await this.client.getState()).projects.find(p => p.path === worktreePath)
+				if (!wtProject) {
+					throw Object.assign(new Error('Worktree project not found after creation'), { phase: 'worktree' })
+				}
+				const result = await this.client.action<{ terminal_ids?: string[] }>({
+					action: 'create_terminal',
+					project_id: wtProject.id,
+				})
+				terminalId = result.terminal_ids?.[0] ?? null
+			}
+
 			if (!terminalId) {
 				throw Object.assign(new Error('Failed to create terminal in new worktree'), { phase: 'worktree' })
 			}

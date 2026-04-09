@@ -235,6 +235,13 @@ export class DB {
 		return row ? this.mapChatSessionRow(row) : null
 	}
 
+	getChatSessionsByTaskId(taskId: string): ChatSession[] {
+		const rows = this.db
+			.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at DESC')
+			.all(taskId) as Record<string, unknown>[]
+		return rows.map(r => this.mapChatSessionRow(r))
+	}
+
 	completeChatSession(sessionId: string): void {
 		this.db
 			.prepare("UPDATE chat_sessions SET status = 'completed', completed_at = datetime('now') WHERE id = ?")

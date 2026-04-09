@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { closeSync, fstatSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
+import { signToken } from '../../chat/token.js'
 import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
@@ -20,6 +22,7 @@ export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue
 				queue: queueStatus,
 				projects: config.projects.map(p => p.slug),
 				pollInterval: config.polling.intervalSeconds,
+				chatEnabled: config.chat?.enabled ?? false,
 			},
 		})
 	})
@@ -284,6 +287,42 @@ export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue
 		} catch {
 			return c.json({ data: { content: '', offset: 0, done: task.status !== 'processing' } })
 		}
+	})
+
+	// Chat sessions for a task
+	api.get('/tasks/:id/chat', c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+
+		const sessions = db.getChatSessionsByTaskId(task.id)
+		const baseUrl = config.chat?.baseUrl ?? `http://localhost:${config.server.port}`
+		const result = sessions.map(s => ({
+			...s,
+			messages: db.getChatMessages(s.id),
+			chatUrl: config.chat?.enabled ? `${baseUrl}/chat/${s.token}` : null,
+		}))
+		return c.json({ data: result })
+	})
+
+	// Create manual chat session
+	api.post('/tasks/:id/chat', async c => {
+		const task = db.getTask(c.req.param('id'))
+		if (!task) return c.json({ error: 'Not found' }, 404)
+		if (!config.chat?.enabled) return c.json({ error: 'Chat is not enabled in config' }, 400)
+
+		const body = await c.req.json<{ message?: string }>().catch(() => ({ message: undefined }))
+		const token = signToken(randomUUID(), config.chat.secret, config.chat.expiryDays)
+		const session = db.createChatSession(task.id, token)
+		const baseUrl = config.chat.baseUrl ?? `http://localhost:${config.server.port}`
+		const chatUrl = `${baseUrl}/chat/${token}`
+
+		if (body.message?.trim()) {
+			db.addChatMessage(session.id, 'assistant', body.message.trim())
+		}
+
+		db.insertEvent(task.id, 'chat_created', { sessionId: session.id, manual: true })
+
+		return c.json({ data: { session, chatUrl } }, 201)
 	})
 
 	// Pause/resume queue
