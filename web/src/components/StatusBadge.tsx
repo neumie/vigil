@@ -9,6 +9,7 @@ const statusColors: Record<string, string> = {
 	queued: 'var(--text-3)',
 	processing: 'var(--blue)',
 	completed: 'var(--green)',
+	review: 'var(--amber)',
 	failed: 'var(--red)',
 	cancelled: 'var(--amber)',
 	skipped: 'var(--text-3)',

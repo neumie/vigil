@@ -19,9 +19,9 @@ interface Props {
 export function TaskList({ tasks, status, selectedId, onSelect, projects, selectedProject, onProjectChange, projectColors }: Props) {
 	const [tab, setTab] = useState<Tab>('queued')
 
-	const active = tasks.filter(t => t.status === 'processing' || t.status === 'failed')
+	const active = tasks.filter(t => t.status === 'processing' || t.status === 'failed' || t.status === 'review')
 	const queued = tasks.filter(t => t.status === 'queued')
-	const archived = tasks.filter(t => t.status !== 'processing' && t.status !== 'failed' && t.status !== 'queued')
+	const archived = tasks.filter(t => !['processing', 'failed', 'review', 'queued'].includes(t.status))
 
 	const tabItems: { key: Tab; label: string; count: number }[] = [
 		{ key: 'active', label: 'Active', count: active.length },
