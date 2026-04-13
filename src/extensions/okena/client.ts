@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { log } from '../../util/logger.js'
+import { join } from 'node:path'
 
 interface CliConfig {
 	token: string
@@ -13,43 +12,45 @@ interface RemoteConfig {
 	pid: number
 }
 
+interface OkenaCredentials {
+	token: string
+	baseUrl: string
+}
+
+const EXPIRED_TOKEN_HINT =
+	'Okena CLI token expired or invalid. Re-register by running the okena binary (e.g. `okena state`), then restart vigil.'
+
 export class OkenaClient {
-	private token: string | null = null
-	private baseUrl: string | null = null
+	private configDir: string
 
 	constructor() {
-		const configDir =
+		this.configDir =
 			process.platform === 'darwin'
 				? join(homedir(), 'Library', 'Application Support', 'okena')
 				: join(homedir(), '.config', 'okena')
-		this.discover(configDir)
 	}
 
-	private discover(configDir: string) {
-		// Read CLI token
-		const cliPath = join(configDir, 'cli.json')
-		if (!existsSync(cliPath)) return
+	private loadCredentials(): OkenaCredentials | null {
+		const cliPath = join(this.configDir, 'cli.json')
+		if (!existsSync(cliPath)) return null
 
+		let token: string
 		try {
 			const cli: CliConfig = JSON.parse(readFileSync(cliPath, 'utf-8'))
-			this.token = cli.token
+			token = cli.token
 		} catch {
-			return
+			return null
 		}
 
-		// Read remote server info
-		const remotePath = join(configDir, 'remote.json')
-		if (!existsSync(remotePath)) return
+		const remotePath = join(this.configDir, 'remote.json')
+		if (!existsSync(remotePath)) return null
 
 		try {
 			const remote: RemoteConfig = JSON.parse(readFileSync(remotePath, 'utf-8'))
-			if (remote.pid && !this.isProcessAlive(remote.pid)) {
-				log.warn('okena', 'Okena not running (stale remote.json)')
-				return
-			}
-			this.baseUrl = `http://127.0.0.1:${remote.port}`
+			if (remote.pid && !this.isProcessAlive(remote.pid)) return null
+			return { token, baseUrl: `http://127.0.0.1:${remote.port}` }
 		} catch {
-			return
+			return null
 		}
 	}
 
@@ -63,30 +64,47 @@ export class OkenaClient {
 	}
 
 	async isAvailable(): Promise<boolean> {
-		if (!this.baseUrl || !this.token) return false
+		const creds = this.loadCredentials()
+		if (!creds) return false
 		try {
-			const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(2000) })
+			const res = await fetch(`${creds.baseUrl}/health`, { signal: AbortSignal.timeout(2000) })
 			return res.ok
 		} catch {
 			return false
 		}
 	}
 
-	async action<T = unknown>(payload: Record<string, unknown>): Promise<T> {
-		if (!this.baseUrl || !this.token) {
-			throw new Error('Okena not configured')
-		}
+	private async authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+		const creds = this.loadCredentials()
+		if (!creds) throw new Error('Okena not configured')
 
-		const res = await fetch(`${this.baseUrl}/v1/actions`, {
+		const send = (c: OkenaCredentials) =>
+			fetch(`${c.baseUrl}${path}`, {
+				...init,
+				headers: {
+					...(init.headers as Record<string, string> | undefined),
+					Authorization: `Bearer ${c.token}`,
+				},
+			})
+
+		const res = await send(creds)
+		if (res.status !== 401) return res
+
+		// Token may have been refreshed externally between read and send — re-read and retry once.
+		const fresh = this.loadCredentials()
+		if (!fresh || fresh.token === creds.token) return res
+		return send(fresh)
+	}
+
+	async action<T = unknown>(payload: Record<string, unknown>): Promise<T> {
+		const res = await this.authorizedFetch('/v1/actions', {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${this.token}`,
-			},
+			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload),
 		})
 
 		if (!res.ok) {
+			if (res.status === 401) throw new Error(`Okena action failed (401): ${EXPIRED_TOKEN_HINT}`)
 			const body = await res.text()
 			throw new Error(`Okena action failed (${res.status}): ${body}`)
 		}
@@ -95,15 +113,11 @@ export class OkenaClient {
 	}
 
 	async getState(): Promise<OkenaState> {
-		if (!this.baseUrl || !this.token) {
-			throw new Error('Okena not configured')
+		const res = await this.authorizedFetch('/v1/state')
+		if (!res.ok) {
+			if (res.status === 401) throw new Error(`Okena state failed (401): ${EXPIRED_TOKEN_HINT}`)
+			throw new Error(`Okena state failed (${res.status})`)
 		}
-
-		const res = await fetch(`${this.baseUrl}/v1/state`, {
-			headers: { Authorization: `Bearer ${this.token}` },
-		})
-
-		if (!res.ok) throw new Error(`Okena state failed (${res.status})`)
 		return res.json() as Promise<OkenaState>
 	}
 }
