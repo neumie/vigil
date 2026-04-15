@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onCleanup, Show, type Accessor } from 'solid-js'
-import { type TaskRecord, api } from './api'
+import { type TaskRecord, api, getServerUrl } from './api'
 
 const STATUS_COLORS: Record<string, string> = {
 	queued: '#808080',
@@ -22,6 +22,9 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [expanded, setExpanded] = createSignal(false)
 	const [error, setError] = createSignal<string | null>(null)
 	const [projects, setProjects] = createSignal<string[]>([])
+	const [serverUrl, setServerUrl] = createSignal<string>('http://localhost:7474')
+
+	getServerUrl().then(setServerUrl)
 
 	// Load projects on mount
 	api.config()
@@ -30,6 +33,11 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 			console.warn('[vigil]', err)
 			setError('Cannot connect to Vigil')
 		})
+
+	const dashboardUrl = () => {
+		const t = task()
+		return t ? `${serverUrl()}/#task/${t.id}` : null
+	}
 
 	// Poll for task data
 	createEffect(() => {
@@ -114,6 +122,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 				error={error}
 				projects={projects}
 				statusColor={statusColor}
+				dashboardUrl={dashboardUrl}
 				onCollapse={() => setExpanded(false)}
 				onSolve={solve}
 				onStart={() => doAction(() => api.start(task()!.id))}
@@ -170,6 +179,7 @@ function Card(props: {
 	error: Accessor<string | null>
 	projects: Accessor<string[]>
 	statusColor: Accessor<string>
+	dashboardUrl: Accessor<string | null>
 	onCollapse: () => void
 	onSolve: () => void
 	onStart: () => void
@@ -211,7 +221,20 @@ function Card(props: {
 									<span class="badge" style={{ color: tc()!, background: `${tc()!}20` }}>{t().tier}</span>
 								</Show>
 							</div>
-							<span class="close" on:click={props.onCollapse}>&times;</span>
+							<div class="card-header-actions">
+								<Show when={props.dashboardUrl()}>
+									<a
+										class="header-link"
+										href={props.dashboardUrl()!}
+										target="_blank"
+										rel="noreferrer"
+										title="Open in Vigil dashboard"
+									>
+										Open ↗
+									</a>
+								</Show>
+								<span class="close" on:click={props.onCollapse}>&times;</span>
+							</div>
 						</div>
 						<div class="card-body">
 							<Show when={t().solverSummary}><div class="card-summary">{t().solverSummary}</div></Show>
