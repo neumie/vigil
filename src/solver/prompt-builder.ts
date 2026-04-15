@@ -5,6 +5,8 @@ const SOLVER_INSTRUCTIONS = `You are solving a task from a project management sy
 
 Follow the /almanac:task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
 
+IMPORTANT: If the task context lists any attachments, always fetch and review them before starting — they often contain screenshots, mockups, logs, or specs that are essential to understanding the task.
+
 IMPORTANT: Always rename the branch using /almanac:branch-name — the auto-generated branch name is not descriptive.
 
 When the implementation is complete, use /almanac:ship to create the PR. Do NOT create a draft — create a regular PR unless the task is complex.
@@ -45,6 +47,8 @@ Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex
 const CHAT_INSTRUCTIONS = `You are assessing a task from a project management system before it gets solved. Read the codebase to understand the project structure and context.
 
 Your job is to determine if the task description is clear enough to implement. If not, use the Vigil MCP tools to chat with the requester and get clarification.
+
+IMPORTANT: If the task context lists any attachments, fetch and review them before deciding — screenshots, mockups, or specs may resolve ambiguity that the text alone leaves open.
 
 ## If the task is clear enough to implement:
 
