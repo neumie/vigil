@@ -104,6 +104,22 @@ const STYLES = `
 		border-radius: 3px;
 	}
 
+	.card-header-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.header-link {
+		color: #569cd6;
+		text-decoration: none;
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+	.header-link:hover { text-decoration: underline; }
+
 	.close {
 		color: #5a5a5a;
 		font-size: 16px;
