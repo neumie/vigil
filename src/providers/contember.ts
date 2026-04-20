@@ -1,5 +1,5 @@
 import { log } from '../util/logger.js'
-import type { DiscoveredTask, TaskContext, TaskProvider } from './provider.js'
+import type { DiscoveredTask, TaskContext, TaskProvider, TaskSummary } from './provider.js'
 
 // -- GraphQL queries/mutations --
 
@@ -24,6 +24,15 @@ query ListNewTasks($projectSlug: String!, $createdAfter: DateTime!, $statuses: [
     timeEstimate
     module { name }
     project { id slug name repositoryUrl aiMode }
+  }
+}
+`
+
+const GET_TASK_SUMMARY = `
+query GetTaskSummary($taskId: UUID!) {
+  getTask(by: { id: $taskId }) {
+    title
+    project { slug }
   }
 }
 `
@@ -113,6 +122,16 @@ export class ContemberProvider implements TaskProvider {
 			createdAt: t.createdAt,
 			projectSlug,
 		}))
+	}
+
+	async resolveTaskSummary(externalId: string): Promise<TaskSummary | null> {
+		const data = await this.query<{
+			getTask: { title?: string | null; project?: { slug?: string | null } | null } | null
+		}>(GET_TASK_SUMMARY, { taskId: externalId })
+		const slug = data.getTask?.project?.slug
+		const title = data.getTask?.title
+		if (!slug || !title) return null
+		return { projectSlug: slug, title }
 	}
 
 	async getTaskContext(externalId: string): Promise<TaskContext | null> {

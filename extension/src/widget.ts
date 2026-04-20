@@ -119,8 +119,7 @@ export class VigilWidget {
 
 	private async solve() {
 		if (!this.currentTaskId || this.projects.length === 0) return
-		const title = document.title || 'Untitled task'
-		await this.action(() => api.createTask(this.currentTaskId!, this.projects[0], title))
+		await this.action(() => api.createTask(this.currentTaskId!))
 	}
 
 	destroy() {

@@ -57,8 +57,8 @@ export const api = {
 	findTask: (clientcareId: string) =>
 		fetchAPI<TaskRecord | null>(`/tasks/by-clientcare-id/${clientcareId}`),
 
-	createTask: (clientcareId: string, projectSlug: string, title: string) =>
-		postAPI<TaskRecord>('/tasks', { clientcareId, projectSlug, title }),
+	createTask: (clientcareId: string) =>
+		postAPI<TaskRecord>('/tasks', { clientcareId }),
 
 	start: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/start`),
 	retry: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/retry`),
