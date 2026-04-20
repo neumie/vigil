@@ -27,7 +27,7 @@ export function createApp(config: VigilConfig, configPath: string, db: DB, queue
 
 	app.use('*', cors())
 
-	app.route('/api', apiRoutes(config, configPath, db, queue, poller))
+	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider))
 	app.route('/api/chat', chatRoutes(config, db))
 
 	// MCP endpoint for Claude CLI chat tools

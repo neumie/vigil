@@ -84,8 +84,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	async function solve() {
 		const id = props.taskId()
 		if (!id || projects().length === 0) return
-		const title = document.title || 'Untitled task'
-		await doAction(() => api.createTask(id, projects()[0], title))
+		await doAction(() => api.createTask(id))
 	}
 
 	async function handleDelete() {

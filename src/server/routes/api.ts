@@ -8,9 +8,17 @@ import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
 import type { Poller } from '../../poller/poller.js'
+import type { TaskProvider } from '../../providers/provider.js'
 import type { TaskQueue } from '../../queue/queue.js'
 
-export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue: TaskQueue, poller: Poller) {
+export function apiRoutes(
+	config: VigilConfig,
+	configPath: string,
+	db: DB,
+	queue: TaskQueue,
+	poller: Poller,
+	provider: TaskProvider,
+) {
 	const api = new Hono()
 
 	// Daemon status
@@ -49,19 +57,35 @@ export function apiRoutes(config: VigilConfig, configPath: string, db: DB, queue
 		return c.json({ data: task })
 	})
 
-	// Create task by clientcare ID
+	// Create task by clientcare ID — server resolves projectSlug and title from the provider
 	api.post('/tasks', async c => {
-		const body = await c.req.json<{ clientcareId: string; projectSlug: string; title: string }>()
-		if (!body.clientcareId || !body.projectSlug || !body.title) {
-			return c.json({ error: 'Missing required fields: clientcareId, projectSlug, title' }, 400)
+		const body = await c.req.json<{ clientcareId: string }>()
+		if (!body.clientcareId) {
+			return c.json({ error: 'Missing required field: clientcareId' }, 400)
 		}
 		const existing = db.getTaskByClientcareId(body.clientcareId)
 		if (existing) {
 			return c.json({ data: existing })
 		}
-		const { randomUUID } = await import('node:crypto')
+
+		const summary = await provider.resolveTaskSummary(body.clientcareId)
+		if (!summary) {
+			return c.json({ error: `Task ${body.clientcareId} not found in ${provider.name}` }, 404)
+		}
+		if (!config.projects.some(p => p.slug === summary.projectSlug)) {
+			return c.json(
+				{ error: `Project '${summary.projectSlug}' is not configured in vigil.config.json` },
+				400,
+			)
+		}
+
 		const id = randomUUID()
-		db.insertTask({ id, clientcareId: body.clientcareId, projectSlug: body.projectSlug, title: body.title })
+		db.insertTask({
+			id,
+			clientcareId: body.clientcareId,
+			projectSlug: summary.projectSlug,
+			title: summary.title,
+		})
 		db.insertEvent(id, 'task_discovered', { source: 'extension' })
 		queue.enqueue(id)
 		const task = db.getTask(id)!

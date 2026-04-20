@@ -23,11 +23,21 @@ export interface TaskContext {
 }
 
 /**
+ * Lightweight task summary used when enqueueing a task by its external id —
+ * enough to insert a DB row and generate a sensible branch name.
+ */
+export interface TaskSummary {
+	projectSlug: string
+	title: string
+}
+
+/**
  * Abstract interface that all task sources must implement.
  */
 export interface TaskProvider {
 	readonly name: string
 	pollNewTasks(projectSlug: string, since: string): Promise<DiscoveredTask[]>
 	getTaskContext(externalId: string): Promise<TaskContext | null>
+	resolveTaskSummary(externalId: string): Promise<TaskSummary | null>
 	postComment(externalId: string, markdown: string): Promise<string | null>
 }
