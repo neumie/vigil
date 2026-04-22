@@ -7,6 +7,8 @@ Follow the /almanac:task-start skill to begin. This will guide you through explo
 
 IMPORTANT: If the task context lists any attachments, always fetch and review them before starting — they often contain screenshots, mockups, logs, or specs that are essential to understanding the task.
 
+IMPORTANT: If the task affects UI behaviour (which most of these do), verify the fix end-to-end with \`agent-browser\` before shipping — navigate to the relevant page, reproduce the scenario from the task, and confirm the new behaviour matches what was requested. Do not claim a UI task is done without having seen it work in the browser.
+
 IMPORTANT: Always rename the branch using /almanac:branch-name — the auto-generated branch name is not descriptive.
 
 When the implementation is complete, use /almanac:ship to create the PR. Do NOT create a draft — create a regular PR unless the task is complex.
