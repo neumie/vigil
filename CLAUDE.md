@@ -1,68 +1,71 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Pipeline: poll -> solve -> tier -> dispatch.
 
-## What is Vigil
+## Self-maintenance
 
-Vigil is an AI-powered task automation daemon. It polls an external task source (via a pluggable provider system) for new tasks, invokes Claude Code CLI to analyze and solve them, classifies complexity into tiers (trivial/simple/complex/unclear), and takes appropriate actions (create PRs, post comments, request clarification). A React dashboard provides real-time monitoring. Currently supports Contember CMS as a task source, with the provider interface designed for adding others (GitHub Issues, Linear, etc.).
+When you discover an undocumented gotcha, abstraction, mandatory pattern, or a subsystem missing from this file, **update CLAUDE.md before finishing the task**. Stale instructions cost the next agent more than they cost you to fix now.
 
-## Commands
+## Mandatory abstractions
 
-```bash
-# Backend
-npm run dev          # Run with tsx watch mode
-npm run build        # TypeScript compile to dist/
-npm run start        # Run compiled dist/index.js
-npm run lint         # Biome check
-npm run lint:fix     # Biome check --fix
+Three discriminated unions / interfaces gate where code goes. Bypass them and the daemon silently desyncs.
 
-# Frontend (web/)
-npm run dev:web      # Vite dev server on :7475 (proxies /api to :7474)
-npm run build:web    # Vite production build
-```
+- **`TaskProvider`** (`src/providers/provider.ts`) — every external task source goes through this. Never import `contember.ts` (or any provider impl) outside `src/providers/`.
+  - Implement four methods: `pollNewTasks`, `getTaskContext`, `resolveTaskSummary`, `postComment`. `resolveTaskSummary` seeds a new task row when `vigil run <externalId>` is invoked.
+  - Extend the discriminated union in `src/config.ts`, register in `src/providers/registry.ts`.
+- **`Solver`** (`src/solver/solver.ts`) — every code-execution backend implements `solve(SolveParams) → SolveResult`. Never spawn `claude` (or any agent CLI) outside a `Solver` impl; reuse `src/solver/invoker.ts` (which wraps `spawn-claude.ts` / `chat-invoker.ts`) instead of re-implementing process spawning. Wired in `src/index.ts` from `config.solver.type` (`'default' | 'okena'`). To add a backend: implement `Solver`, extend the enum in `src/config.ts`, branch in `src/index.ts`.
+- **`TaskTransformer`** (`src/transformers/transformer.ts`) — every prompt-shape change goes through a transformer. Never inline prompt strings in `worker.ts`, `prompt-builder.ts`, or solver code. To change prompt content: edit the existing transformer or add a new one and register it in the `transformers` map.
 
-No test framework is configured yet.
+## Where new code goes
 
-## Configuration
+| Adding…                                  | Goes in                              |
+|------------------------------------------|--------------------------------------|
+| Support for a new task source            | `src/providers/<name>.ts` + registry |
+| Different code-execution backend         | `src/solver/` or `src/extensions/<x>/` + `src/index.ts` switch |
+| Different prompt shape per project       | `src/transformers/<name>.ts` + map   |
+| New tier-driven action (PR, comment, …)  | `src/actions/dispatcher.ts`          |
+| New chat/MCP tool exposed to the solver  | `src/mcp/server.ts` (register via `server.tool(...)`) |
+| New dashboard endpoint                   | `src/server/routes/api.ts` (mounted from `app.ts`) |
+| DB column or query                       | `src/db/schema.ts` (append to `MIGRATIONS`) + `src/db/client.ts` |
 
-Config loads from `VIGIL_CONFIG` env var path or `./vigil.config.json` (see `vigil.config.example.json`). Validated with Zod in `src/config.ts`. The `provider` field is a discriminated union keyed on `type` (currently only `"contember"`). Other key settings: project repos, polling interval, solver concurrency/timeout/model, GitHub PR options, server port (default 7474).
+## Pipeline (`src/queue/worker.ts`)
 
-## Architecture
+Five phases. Don't reorder, don't skip.
 
-**Data flow:** Task Source (via Provider) → Poller → DB + Queue → Worker → Claude CLI → Result Parser → Action Dispatcher → PRs/Comments back to source
+1. **Poll** — `provider.getTaskContext(externalId)`
+2. **Worktree + Solve** — delegated to the active `Solver`. Returns `{ worktreePath, branchName, invokeResult }`.
+3. **Parse output** — `parseClaudeOutput(stdout)` → DB events for the dashboard timeline.
+4. **Parse result** — `parseResultFile(worktreePath)` reads `.solver-result.json`. Falls back to `parseTierFromOutput(stdout)`. **Both paths must keep working** — agents who change the JSON contract must update both, or the dispatcher silently misroutes tiers.
+5. **Dispatch** — `dispatch()` routes by tier: trivial→ready PR, simple→draft PR, complex→push branch, unclear→post questions / open chat.
 
-### Provider system (`src/providers/`)
+## Subsystems
 
-The `TaskProvider` interface (`provider.ts`) abstracts all interaction with external task sources. Core methods: `pollNewTasks()`, `getTaskContext()`, `postComment()`. Each provider maps its native format to provider-agnostic types (`DiscoveredTask`, `TaskContext`). The registry (`registry.ts`) is a factory that instantiates the correct provider from config. Currently only `ContemberProvider` (`contember.ts`) exists — it contains all Contember-specific logic including GraphQL queries and SlateJS conversion.
+- **`src/chat/`** — clarification chat. Signed tokens gate every route; never expose `session.id` over the wire, only the token.
+- **`src/mcp/server.ts`** — MCP server the running solver talks to. New solver capabilities go here as tools, not on the dispatcher.
+- **`src/cli/`** — `vigil` binary wrapping launchd: `start` / `stop` / `status` / `logs` / `run`. **`vigil run <id>` executes one task and exits** — use it to debug a single task without re-polling or restarting the daemon.
+- **`src/extensions/okena/`** — alternative `Solver` (local Okena daemon instead of `claude` CLI). Loaded via dynamic `import()` in `src/index.ts` with `DefaultSolver` fallback. Don't hard-import it.
 
-To add a new provider: implement `TaskProvider`, add its config to the discriminated union in `src/config.ts`, and register it in `src/providers/registry.ts`.
+### Directory rules
 
-### Core pipeline (`src/queue/worker.ts`)
+- **`extension/`** — host permissions: `http://localhost:*/*` only. Never add tunnel/public URLs (manifest is canonical: `extension/manifest.json`).
+- **`web/`** — React 19 only. Never downgrade; code uses 19-only features (Actions, `use`, ref-as-prop).
 
-The worker processes tasks in 5 phases:
-1. **Poll** — fetch full task context via provider's `getTaskContext()`
-2. **Worktree** — create isolated git worktree for the task
-3. **Solve** — invoke `claude` CLI with a constructed prompt, collect output
-4. **Parse** — read `.solver-result.json` from worktree (fallback: parse stdout)
-5. **Action** — dispatch based on tier: trivial→ready PR, simple→draft PR, complex→push branch, unclear→post questions
+## Gotchas
 
-### Key modules
+- **Worktree cwd.** Solver code runs with the worktree as `cwd`. Reading `process.cwd()` from anywhere outside `Solver` impls or the worker hits the wrong tree (or the daemon's tree). Prefer paths derived from `worktreePath` / `projectConfig.repoPath`. Exception: module-load-time daemon paths (config, DB, logs) capture the daemon's startup cwd — that's intended. Note: `src/server/routes/api.ts:291` resolves `process.cwd()` per request to read the log path — that works only because the daemon never `chdir`s, so don't copy the pattern into code that might run after a `cwd` change.
+- **Optional solver imports.** Extension solvers (e.g. `src/extensions/okena/`) load via dynamic `import()` in `src/index.ts` with a `DefaultSolver` fallback on failure. Never add a top-level static import for an optional/extension solver — an unavailable optional dep would crash startup. Mirror the okena pattern.
+- **Claude can pre-ship.** If `.solver-result.json` carries `prUrl`, `dispatcher.ts` records it and skips tier routing entirely (Claude shipped via `/almanac:ship`). Don't add tier-only side effects assuming dispatch always runs the tier branch.
+- **Okena token rotation.** Okena rotates the CLI token; `OkenaClient` reloads `~/Library/Application Support/okena/cli.json` per call. Never cache the token in memory — long-running daemons will start returning HTTP 401 silently. Newly registered tokens activate only after Okena itself restarts.
+- **Silent solver fallback.** If `config.solver.type === 'okena'` but Okena is unavailable, `src/index.ts` logs a warning and falls back to `DefaultSolver`. Don't assume the configured type is the active type — read the startup log or `solver.constructor.name`.
+- **Result-file fallback is fragile.** Phase 4 reads `.solver-result.json` first, then falls back to `parseTierFromOutput` over stdout, which only matches a *flat* JSON object containing `"tier"` (no nested objects). If you change the `.solver-result.json` schema, update the Zod schema in `result-parser.ts` *and* the fallback parser, or tiers misroute under partial failures.
+- **MCP transports rotate every 30 min.** `src/mcp/server.ts` keeps a per-session transport map with a 30-min TTL. Tools that block longer than that (e.g. `vigil_send_message`'s 24h wait) must key their state by `sessionId` / DB rows, not by transport closure or in-memory state on the transport — otherwise they lose context across rotation.
+- **`config.chat.baseUrl` is mutated at runtime.** When `config.chat.tunnel === true`, `tunnel.ts` overwrites `config.chat.baseUrl` after Cloudflare assigns a URL. Code that reads `baseUrl` before tunnel start gets the config-file value; after start gets the tunnel URL. Read it lazily, not at module load.
+- **Chat token vs session id.** `chat_sessions` rows have both `id` (DB primary key) and `token` (signed, expiring). HTTP/URLs/logs: token only — `id` is not signature-verified, leaking it bypasses the gate. MCP tools: `sessionId` is the addressing key — don't "fix" them to take the token.
+- **Stale processing tasks.** `src/index.ts` re-enqueues anything stuck in `processing` on startup. Don't write code that assumes "processing" means "currently running" — it might be a recovered task from a prior crash.
+- **Legacy `clientcareId`.** The DB column is named `clientcare_id` (`clientcareId` in TS) but holds the provider-agnostic external ID (predates the provider abstraction). Don't read it as Contember-specific; don't rename without a migration.
 
-- **`src/poller/poller.ts`** — interval-based polling via provider, tracks `lastTaskSeen` timestamp to avoid duplicates
-- **`src/queue/queue.ts`** — concurrent task processing with configurable concurrency limit
-- **`src/solver/invoker.ts`** — spawns `claude` CLI, passes prompt via stdin, respects timeout
-- **`src/solver/prompt-builder.ts`** — constructs the full prompt from provider-agnostic `TaskContext`, including tier definitions
-- **`src/solver/result-parser.ts`** — Zod-validated parsing of `.solver-result.json` with stdout fallback
-- **`src/actions/dispatcher.ts`** — routes completed tasks to PR creation (`gh` CLI) or source comments via provider
-- **`src/worktree/manager.ts`** — creates/pushes git worktrees per task
-- **`src/db/client.ts`** — SQLite (better-sqlite3) wrapper for tasks, poll state, event log
-- **`src/server/`** — Hono API serving task data, queue status, stats; serves the web dashboard
+## Build & run
 
-### Frontend (`web/`)
-
-React 19 + TypeScript + Vite. Dashboard polls the API every 5 seconds. Main views: `Dashboard.tsx` (task list with stats cards) and `TaskDetail.tsx` (timeline, files changed, metadata). Status/tier badges use color coding (green=trivial, blue=simple, amber=complex, red=unclear).
-
-## Code Style
-
-- Biome: tabs, single quotes, no semicolons, 120 char line width
-- TypeScript strict mode, ES2022 target, Node16 modules
+- **Ports.** Backend `:7474`, frontend dev server `:7475` proxying `/api` to backend.
+- **Verification.** No test framework — don't claim a fix is verified by tests. Run `npm run dev` and exercise the affected path end-to-end (poll → solve → dispatch, or whatever phase you touched).
+- **Config.** Loads from `VIGIL_CONFIG` env or `./vigil.config.json`. **`src/config.ts` is the canonical schema** — read it instead of duplicating fields here.
