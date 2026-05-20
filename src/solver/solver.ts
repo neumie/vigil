@@ -55,8 +55,18 @@ export interface PlanningSessionParams {
 	solverConfig: VigilConfig['solver']
 	/** If set, reuse this worktree instead of creating a new one. */
 	existingWorktreePath?: string
-	/** Built lazily because the planning prompt is worktree-aware. */
-	buildPrompt: (worktreePath: string) => string
+	/**
+	 * Short instructions passed to the agent as a single shell arg. Must be
+	 * free of backticks and unescaped dollar signs (the okena run_command
+	 * shell layer would expand them).
+	 */
+	prompt: string
+	/**
+	 * Markdown to write to `<worktree>/docs/plans/<planDirName>/context.md`
+	 * BEFORE the agent spawns. The planning prompt instructs the agent to
+	 * read this file first.
+	 */
+	contextMarkdown: string
 	signal?: AbortSignal
 }
 

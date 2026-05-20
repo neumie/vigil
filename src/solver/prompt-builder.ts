@@ -48,36 +48,34 @@ Map tiers: trivial → prReady: true, simple/moderate → prReady: true, complex
 `
 }
 
-function planningInstructions(planDirName: string): string {
-	return `You are helping the user PLAN a task before it gets solved autonomously. This is an interactive session — chat with the user, don't take actions on your own.
-
-Briefly read the codebase to understand the surface area touched by this task (don't go deep — exploration is for the planning skills below).
-
-Then greet the user with a 2-3 sentence summary of what you understand about the task, and ASK what they want to do. Options to surface:
-
-- Run \`/grill-me ${planDirName}\` to stress-test decisions interactively. Writes \`docs/plans/${planDirName}/brief.md\`.
-- Run \`/grill-plan ${planDirName}\` to challenge their plan against the existing domain model.
-- Run \`/prd-create\` once they have a brief, to synthesize a PRD into \`docs/plans/${planDirName}/prd.md\`.
-- Run \`/almanac:complexity-assess\` to rate scope/risk.
-- Just talk through it conversationally.
-
-WAIT for direction. Don't start grilling or writing artifacts unsolicited. If the user gives a vague answer, ask one targeted clarifying question.
-
-Everything the user decides should land under \`docs/plans/${planDirName}/\` — that's where the autonomous solver reads from when the task runs. Skills like \`/grill-me\` and \`/prd-create\` write there automatically when invoked with the name argument.
-
-Do NOT run \`/almanac:ship\` or commit code changes in this session. Planning only.
-
-When the user is done planning, tell them they can trigger the autonomous run from the Vigil dashboard / extension.
-
----
-
-`
-}
-
-export function buildPlanningPrompt(task: TaskContext, transformerName: string, ctx: TransformerContext): string {
-	const transformer = getTransformer(transformerName)
-	const taskContextStr = transformer(task, ctx)
-	return `${planningInstructions(ctx.planDirName)}## Task Context\n\n${taskContextStr}`
+/**
+ * Short, CLI-safe planning instructions passed to the agent as a single
+ * shell arg. The task context is NOT inlined — it lives at
+ * `docs/plans/<planDirName>/context.md` and the agent reads it from disk.
+ * Avoid backticks and dollar signs so the okena run_command shell layer
+ * doesn't try to expand them.
+ */
+export function buildPlanningPrompt(planDirName: string): string {
+	// Only `planDirName` is interpolated — and it's slugified (alphanumeric +
+	// dashes), so safe to embed in a shell command without escaping. No user-
+	// controlled content (the task title etc. lives in context.md).
+	return [
+		'You are helping the user plan a task before it gets solved autonomously.',
+		'',
+		`Task context is at docs/plans/${planDirName}/context.md — read it first.`,
+		'',
+		'Then briefly greet the user with what you understand and ask what they want to do. Options:',
+		`- /grill-me ${planDirName} for interactive decision stress-testing (writes brief.md)`,
+		`- /grill-plan ${planDirName} to challenge the plan against the domain model`,
+		'- /prd-create to synthesize a PRD',
+		'- /almanac:complexity-assess to rate scope and risk',
+		'- just talk it through',
+		'',
+		'Wait for direction. Do not write artifacts unsolicited. Do not ship code or commit changes — planning only.',
+		`Anything you write should land under docs/plans/${planDirName}/.`,
+		'',
+		'When the user is done, they trigger the autonomous run from the Vigil extension.',
+	].join('\n')
 }
 
 const CHAT_INSTRUCTIONS = `You are assessing a task from a project management system before it gets solved. Read the codebase to understand the project structure and context.

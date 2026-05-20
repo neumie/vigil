@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { VigilConfig } from '../../config.js'
 import { log } from '../../util/logger.js'
@@ -163,7 +163,7 @@ export class OkenaSolver implements Solver {
 	}
 
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
-		const { projectConfig, branchName, taskTitle, solverConfig, buildPrompt, existingWorktreePath } = params
+		const { projectConfig, branchName, planDirName, taskTitle, solverConfig, prompt, contextMarkdown, existingWorktreePath } = params
 
 		// Ensure the worktree + a terminal exist. Mirror the solve() path:
 		// if there's already a worktree project at this path, reuse it and
@@ -212,16 +212,22 @@ export class OkenaSolver implements Solver {
 			// Non-critical
 		}
 
-		// Write planning prompt to worktree
-		const promptFile = join(worktreePath, '.vigil-planning-prompt.txt')
-		writeFileSync(promptFile, buildPrompt(worktreePath), 'utf-8')
+		// Write task context to docs/plans/<planDirName>/context.md so the
+		// planning agent (and the user) can read it. The prompt below tells
+		// the agent to read this file as its first action.
+		const planDir = join(worktreePath, 'docs', 'plans', planDirName)
+		mkdirSync(planDir, { recursive: true })
+		writeFileSync(join(planDir, 'context.md'), contextMarkdown, 'utf-8')
 
-		// Run claude interactively (no --print / -p; agent stays alive for the user)
+		// Run claude interactively (no --print / -p; agent stays alive for the user).
+		// Prompt is short and CLI-safe (no backticks, no $) — embedded directly
+		// rather than via a temp file, so we don't litter the worktree root.
 		const args = ['claude', '--dangerously-skip-permissions']
 		if (solverConfig.model) {
 			args.push('--model', solverConfig.model)
 		}
-		const command = `${args.join(' ')} "$(cat .vigil-planning-prompt.txt)"`
+		const escaped = prompt.replace(/"/g, '\\"')
+		const command = `${args.join(' ')} "${escaped}"`
 
 		log.info('okena', `Starting planning session in terminal ${terminalId}`)
 		try {

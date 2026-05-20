@@ -12,6 +12,7 @@ import type { TaskProvider } from '../../providers/provider.js'
 import type { TaskQueue } from '../../queue/queue.js'
 import { buildPlanningPrompt } from '../../solver/prompt-builder.js'
 import type { Solver } from '../../solver/solver.js'
+import { formatTaskContext } from '../../transformers/default.js'
 import { computePlanDirName, slugify } from '../../util/slug.js'
 
 export function apiRoutes(
@@ -210,14 +211,15 @@ export function apiRoutes(
 			return c.json({ error: 'Task not found in source system' }, 502)
 		}
 
-		// One call — solver creates/reuses the worktree, creates/reuses a single
-		// planning terminal, and spawns the planning agent in it. Avoids the
-		// double-terminal bug we'd get from a separate prepareWorktree step.
+		// One call — solver creates/reuses the worktree, writes context.md,
+		// creates/reuses a single planning terminal, and spawns the planning
+		// agent in it. Task context lives at docs/plans/<planDirName>/context.md
+		// for the agent (and the user) to read.
+		const contextMarkdown = formatTaskContext(taskContext)
+		const prompt = buildPlanningPrompt(planDirName)
 		let worktreePath: string
 		let hint: string
 		try {
-			const planningPromptBuilder = (wt: string) =>
-				buildPlanningPrompt(taskContext, config.solver.transformer, { planDirName, worktreePath: wt })
 			const session = await solver.startPlanningSession({
 				projectConfig,
 				branchName,
@@ -225,7 +227,8 @@ export function apiRoutes(
 				taskTitle: task.title,
 				solverConfig: config.solver,
 				existingWorktreePath,
-				buildPrompt: planningPromptBuilder,
+				prompt,
+				contextMarkdown,
 			})
 			worktreePath = session.worktreePath
 			hint = session.hint
