@@ -24,15 +24,29 @@ export class DefaultSolver implements Solver {
 	}
 
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
-		// DefaultSolver has no terminal of its own to spawn into. Stage the
-		// planning prompt in the worktree so the user can paste/cat it into
-		// their own `claude` session.
-		const promptPath = join(params.worktreePath, '.vigil-planning-prompt.txt')
-		writeFileSync(promptPath, params.buildPrompt(params.worktreePath), 'utf-8')
+		// DefaultSolver has no terminal of its own to spawn into. Ensure the
+		// worktree exists, stage the planning prompt, return a hint for the
+		// user to run claude themselves.
+		let worktreePath: string
+		if (params.existingWorktreePath && existsSync(params.existingWorktreePath)) {
+			worktreePath = params.existingWorktreePath
+		} else {
+			const prep = await this.prepareWorktree({
+				projectConfig: params.projectConfig,
+				branchName: params.branchName,
+				taskTitle: params.taskTitle,
+				signal: params.signal,
+			})
+			worktreePath = prep.worktreePath
+		}
+
+		const promptPath = join(worktreePath, '.vigil-planning-prompt.txt')
+		writeFileSync(promptPath, params.buildPrompt(worktreePath), 'utf-8')
 		log.info('solver', `Planning prompt staged at ${promptPath}`)
 		return {
-			hint:
-				`Open a terminal in ${params.worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat .vigil-planning-prompt.txt)"`,
+			worktreePath,
+			branchName: params.branchName,
+			hint: `Open a terminal in ${worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat .vigil-planning-prompt.txt)"`,
 		}
 	}
 

@@ -163,25 +163,48 @@ export class OkenaSolver implements Solver {
 	}
 
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
-		const { worktreePath, taskTitle, solverConfig, buildPrompt } = params
+		const { projectConfig, branchName, taskTitle, solverConfig, buildPrompt, existingWorktreePath } = params
 
-		const state = await this.client.getState()
-		const wtProject = state.projects.find(p => p.path === worktreePath)
-		if (!wtProject) {
-			throw new Error(`Okena project not found for worktree path: ${worktreePath}`)
-		}
+		// Ensure the worktree + a terminal exist. Mirror the solve() path:
+		// if there's already a worktree project at this path, reuse it and
+		// pick (or create) a terminal in it; otherwise create the project +
+		// terminal in one shot via ensureWorktree.
+		let worktreePath: string
+		let wtProjectId: string
+		let terminalId: string
 
-		// Pick the most recent terminal in the project (the one prepareWorktree
-		// just created) or spawn a new one.
-		let terminalId = (await this.createTerminal(wtProject.id)) ?? null
-		if (!terminalId) {
-			throw new Error('Failed to create terminal for planning session')
+		if (existingWorktreePath) {
+			const state = await this.client.getState()
+			const wtProject = state.projects.find(p => p.path === existingWorktreePath)
+			if (!wtProject) {
+				throw new Error(`Okena project not found for worktree path: ${existingWorktreePath}`)
+			}
+			worktreePath = existingWorktreePath
+			wtProjectId = wtProject.id
+			// Reuse an existing planning terminal if present (name starts with
+			// "plan: "); otherwise spawn a fresh one. Prevents N stale terminals
+			// piling up when the user clicks Plan repeatedly.
+			const planTerminalEntry = Object.entries(wtProject.terminal_names ?? {})
+				.find(([, name]) => name.startsWith('plan: '))
+			if (planTerminalEntry) {
+				terminalId = planTerminalEntry[0]
+				log.info('okena', `Reusing existing planning terminal ${terminalId}`)
+			} else {
+				const fresh = await this.createTerminal(wtProject.id)
+				if (!fresh) throw new Error('Failed to create planning terminal in existing worktree')
+				terminalId = fresh
+			}
+		} else {
+			const ensured = await this.ensureWorktree(projectConfig.repoPath, projectConfig.baseBranch, branchName)
+			worktreePath = ensured.worktreePath
+			wtProjectId = ensured.wtProjectId
+			terminalId = ensured.terminalId
 		}
 
 		try {
 			await this.client.action({
 				action: 'rename_terminal',
-				project_id: wtProject.id,
+				project_id: wtProjectId,
 				terminal_id: terminalId,
 				name: `plan: ${taskTitle}`,
 			})
@@ -193,7 +216,7 @@ export class OkenaSolver implements Solver {
 		const promptFile = join(worktreePath, '.vigil-planning-prompt.txt')
 		writeFileSync(promptFile, buildPrompt(worktreePath), 'utf-8')
 
-		// Run claude interactively (NO --print / -p; agent stays alive for the user)
+		// Run claude interactively (no --print / -p; agent stays alive for the user)
 		const args = ['claude', '--dangerously-skip-permissions']
 		if (solverConfig.model) {
 			args.push('--model', solverConfig.model)
@@ -212,13 +235,10 @@ export class OkenaSolver implements Solver {
 		}
 
 		return {
-			hint: `Switch to Okena → open the project for branch (${this.shortPath(worktreePath)}). The planning session is running in the "plan: ${taskTitle}" terminal.`,
+			worktreePath,
+			branchName,
+			hint: `Switch to Okena → open the project for branch ${branchName}. The planning session is running in the "plan: ${taskTitle}" terminal.`,
 		}
-	}
-
-	private shortPath(path: string): string {
-		const parts = path.split('/')
-		return parts.slice(-2).join('/')
 	}
 
 	async prepareWorktree(params: PrepareWorktreeParams): Promise<PrepareWorktreeResult> {

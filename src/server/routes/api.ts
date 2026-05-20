@@ -202,23 +202,36 @@ export function apiRoutes(
 
 		const planDirName = task.planDirName ?? computePlanDirName(task.title)
 		const branchName = task.branchName ?? `vigil/${slugify(task.title)}`
+		const existingWorktreePath = task.worktreePath && existsSync(task.worktreePath) ? task.worktreePath : undefined
 
-		// Idempotent: if a worktree already exists on disk for this task, reuse it.
+		// Fetch task context so the planning prompt is informed.
+		const taskContext = await provider.getTaskContext(task.clientcareId)
+		if (!taskContext) {
+			return c.json({ error: 'Task not found in source system' }, 502)
+		}
+
+		// One call — solver creates/reuses the worktree, creates/reuses a single
+		// planning terminal, and spawns the planning agent in it. Avoids the
+		// double-terminal bug we'd get from a separate prepareWorktree step.
 		let worktreePath: string
-		if (task.worktreePath && existsSync(task.worktreePath)) {
-			worktreePath = task.worktreePath
-		} else {
-			try {
-				const result = await solver.prepareWorktree({
-					projectConfig,
-					branchName,
-					taskTitle: task.title,
-				})
-				worktreePath = result.worktreePath
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err)
-				return c.json({ error: `Worktree preparation failed: ${msg}` }, 500)
-			}
+		let hint: string
+		try {
+			const planningPromptBuilder = (wt: string) =>
+				buildPlanningPrompt(taskContext, config.solver.transformer, { planDirName, worktreePath: wt })
+			const session = await solver.startPlanningSession({
+				projectConfig,
+				branchName,
+				planDirName,
+				taskTitle: task.title,
+				solverConfig: config.solver,
+				existingWorktreePath,
+				buildPrompt: planningPromptBuilder,
+			})
+			worktreePath = session.worktreePath
+			hint = session.hint
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err)
+			return c.json({ error: `Planning session failed to start: ${msg}` }, 500)
 		}
 
 		// Write a per-task README the user lands on. Records task identity +
@@ -245,32 +258,6 @@ export function apiRoutes(
 			'',
 		].join('\n')
 		writeFileSync(readmePath, readmeBody, 'utf-8')
-
-		// Fetch task context so the planning prompt is informed.
-		const taskContext = await provider.getTaskContext(task.clientcareId)
-
-		// Start the interactive planning session (fire-and-forget — solver
-		// returns immediately, user interacts at their leisure).
-		let hint = ''
-		if (taskContext) {
-			const planningPromptBuilder = (wt: string) =>
-				buildPlanningPrompt(taskContext, config.solver.transformer, { planDirName, worktreePath: wt })
-			try {
-				const session = await solver.startPlanningSession({
-					worktreePath,
-					planDirName,
-					taskTitle: task.title,
-					solverConfig: config.solver,
-					buildPrompt: planningPromptBuilder,
-				})
-				hint = session.hint
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err)
-				return c.json({ error: `Planning session failed to start: ${msg}` }, 500)
-			}
-		} else {
-			hint = 'Task context could not be fetched — planning agent not started. Open the worktree and plan manually.'
-		}
 
 		db.updateTask(task.id, { worktreePath, branchName, planDirName })
 		db.insertEvent(task.id, 'plan_prepared', { worktreePath, branchName, planDirName })
