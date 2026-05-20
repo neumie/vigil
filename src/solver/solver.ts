@@ -48,15 +48,21 @@ export interface PrepareWorktreeResult {
 }
 
 export interface PlanningSessionParams {
-	worktreePath: string
+	projectConfig: ProjectConfig
+	branchName: string
 	planDirName: string
 	taskTitle: string
 	solverConfig: VigilConfig['solver']
+	/** If set, reuse this worktree instead of creating a new one. */
+	existingWorktreePath?: string
 	/** Built lazily because the planning prompt is worktree-aware. */
 	buildPrompt: (worktreePath: string) => string
+	signal?: AbortSignal
 }
 
 export interface PlanningSessionResult {
+	worktreePath: string
+	branchName: string
 	/**
 	 * Solver-specific human-readable hint to show the user. For okena: "Switch
 	 * to Okena, planning session is running in terminal X". For default: "Open
