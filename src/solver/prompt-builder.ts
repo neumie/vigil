@@ -66,7 +66,7 @@ export function buildPlanningPrompt(planDirName: string): string {
 		'',
 		`Step 1 — read the task context at docs/plans/${planDirName}/context.md.`,
 		'',
-		'Step 2 — if the context lists any attachments (screenshots, mockups, logs, specs), fetch and review them. They often contain information essential to understanding the task that the text alone leaves out.',
+		'Step 2 — if the context lists any attachments (screenshots, mockups, logs, specs), fetch and review them inline (read or view via the URL). DO NOT download or save them to disk — no attachments/ folder, no copies in the worktree. They are referenced by URL and that is enough.',
 		'',
 		'Step 3 — if the task touches UI behaviour, use agent-browser to navigate to the relevant page and observe the current behaviour with your own eyes. Reproducing the scenario at plan time is much cheaper than discovering misunderstandings during the autonomous solve.',
 		'',
