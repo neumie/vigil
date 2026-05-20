@@ -70,3 +70,4 @@ Five phases. Don't reorder, don't skip.
 - **Ports.** Backend `:7474`, frontend dev server `:7475` proxying `/api` to backend.
 - **Verification.** No test framework — don't claim a fix is verified by tests. Run `npm run dev` and exercise the affected path end-to-end (poll → solve → dispatch, or whatever phase you touched).
 - **Config.** Loads from `VIGIL_CONFIG` env or `./vigil.config.json`. **`src/config.ts` is the canonical schema** — read it instead of duplicating fields here.
+- **Runtime dep: almanac.** The solver prompt (`src/solver/prompt-builder.ts`) references `/almanac:task-start`, `/almanac:branch-name`, `/almanac:ship`, `/almanac:commit`. These resolve via the user's globally-installed `almanac` plugin — vigil does NOT vendor or install its own copies. If the daemon host is missing almanac, the spawned agent will silently fail to load those skills. Install via almanac's own setup (`bash install.sh && almanac install claude-code` in the almanac repo).
