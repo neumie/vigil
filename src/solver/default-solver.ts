@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { VigilConfig } from '../config.js'
 import { log } from '../util/logger.js'
@@ -25,7 +25,8 @@ export class DefaultSolver implements Solver {
 
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
 		// DefaultSolver has no terminal of its own to spawn into. Ensure the
-		// worktree exists, stage the planning prompt, return a hint for the
+		// worktree exists, write the task context to docs/plans/<id>/context.md
+		// so the planning agent can read it from disk, return a hint for the
 		// user to run claude themselves.
 		let worktreePath: string
 		if (params.existingWorktreePath && existsSync(params.existingWorktreePath)) {
@@ -40,13 +41,14 @@ export class DefaultSolver implements Solver {
 			worktreePath = prep.worktreePath
 		}
 
-		const promptPath = join(worktreePath, '.vigil-planning-prompt.txt')
-		writeFileSync(promptPath, params.buildPrompt(worktreePath), 'utf-8')
-		log.info('solver', `Planning prompt staged at ${promptPath}`)
+		const planDir = join(worktreePath, 'docs', 'plans', params.planDirName)
+		mkdirSync(planDir, { recursive: true })
+		writeFileSync(join(planDir, 'context.md'), params.contextMarkdown, 'utf-8')
+
 		return {
 			worktreePath,
 			branchName: params.branchName,
-			hint: `Open a terminal in ${worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat .vigil-planning-prompt.txt)"`,
+			hint: `Open a terminal in ${worktreePath} and run claude with this prompt:\n\n${params.prompt}`,
 		}
 	}
 

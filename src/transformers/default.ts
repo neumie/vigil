@@ -4,37 +4,7 @@ import type { TaskContext } from '../providers/provider.js'
 import type { TransformerContext } from './transformer.js'
 
 export function defaultTransformer(task: TaskContext, ctx: TransformerContext): string {
-	let context = ''
-
-	if (task.projectContext) {
-		context += `Project Context:\n${task.projectContext}\n\n`
-	}
-
-	context += `Task: ${task.title}\n`
-
-	if (task.metadata && Object.keys(task.metadata).length > 0) {
-		for (const [key, value] of Object.entries(task.metadata)) {
-			context += `${key}: ${value}\n`
-		}
-	}
-
-	if (task.description) {
-		context += `\nDescription:\n${task.description}\n`
-	}
-
-	if (task.attachments && task.attachments.length > 0) {
-		context += '\nAttachments:\n'
-		for (const a of task.attachments) {
-			context += `- ${a.name} -> ${a.url}\n`
-		}
-	}
-
-	if (task.comments && task.comments.length > 0) {
-		context += `\nComments (${task.comments.length}):\n`
-		for (const c of task.comments) {
-			context += `\n- [${c.createdAt}] ${c.author}\n${c.body || '(no text)'}\n`
-		}
-	}
+	let context = formatTaskContext(task)
 
 	const planArtifacts = readPlanArtifacts(ctx.worktreePath, ctx.planDirName)
 	if (planArtifacts) {
@@ -42,6 +12,48 @@ export function defaultTransformer(task: TaskContext, ctx: TransformerContext): 
 	}
 
 	return context
+}
+
+/**
+ * Format the task's identity, description, metadata, comments, and attachments
+ * as markdown. Used both by the default transformer (inline injection in the
+ * solver prompt) and by the plan endpoint (writing `docs/plans/<planDirName>/context.md`
+ * for the planning agent to read).
+ */
+export function formatTaskContext(task: TaskContext): string {
+	let out = ''
+
+	if (task.projectContext) {
+		out += `Project Context:\n${task.projectContext}\n\n`
+	}
+
+	out += `Task: ${task.title}\n`
+
+	if (task.metadata && Object.keys(task.metadata).length > 0) {
+		for (const [key, value] of Object.entries(task.metadata)) {
+			out += `${key}: ${value}\n`
+		}
+	}
+
+	if (task.description) {
+		out += `\nDescription:\n${task.description}\n`
+	}
+
+	if (task.attachments && task.attachments.length > 0) {
+		out += '\nAttachments:\n'
+		for (const a of task.attachments) {
+			out += `- ${a.name} -> ${a.url}\n`
+		}
+	}
+
+	if (task.comments && task.comments.length > 0) {
+		out += `\nComments (${task.comments.length}):\n`
+		for (const c of task.comments) {
+			out += `\n- [${c.createdAt}] ${c.author}\n${c.body || '(no text)'}\n`
+		}
+	}
+
+	return out
 }
 
 function readPlanArtifacts(worktreePath: string, planDirName: string): string | null {
