@@ -6,7 +6,6 @@ import type { DB } from '../db/client.js'
 import { resolveTaskWorkspace } from '../plan/identity.js'
 import { PlanWorkspace } from '../plan/workspace.js'
 import type { TaskProvider } from '../providers/provider.js'
-import { parseClaudeOutput } from '../solver/output-parser.js'
 import { buildPrompt } from '../solver/prompt-builder.js'
 import type { Solver } from '../solver/solver.js'
 import type { ErrorPhase } from '../types.js'
@@ -57,7 +56,7 @@ export async function processTask(
 		// builds it AFTER worktree creation so the task-context builder can read
 		// worktree-resident docs/plans/<planDirName>/*.md). Reuse a worktree if
 		// one was created earlier by the plan endpoint.
-		const { worktreePath, invokeResult } = await solver.solve({
+		const { worktreePath, outcome } = await solver.solve({
 			projectConfig,
 			branchName,
 			planDirName,
@@ -73,13 +72,12 @@ export async function processTask(
 		db.updateTask(taskId, { taskContext: buildPrompt(taskContext, { planDirName, worktreePath }) })
 		db.updateTask(taskId, { worktreePath, branchName })
 		db.updateTask(taskId, {
-			claudeExitCode: invokeResult.exitCode,
-			claudeRawOutput: invokeResult.stdout,
+			claudeExitCode: outcome.exitCode,
+			claudeRawOutput: outcome.rawOutput ?? null,
 		})
 
-		// Parse Claude's output into events for the dashboard
-		const events = parseClaudeOutput(invokeResult.stdout)
-		for (const event of events) {
+		// Persist the solver-produced event timeline for the dashboard.
+		for (const event of outcome.events) {
 			db.insertEvent(taskId, `claude_${event.type}`, { detail: event.detail, file: event.file })
 		}
 

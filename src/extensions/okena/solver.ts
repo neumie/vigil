@@ -300,10 +300,12 @@ export class OkenaSolver implements Solver {
 			// Non-critical
 		}
 
+		// Okena runs claude in its own terminal — no stdout is captured here, so
+		// there is no event timeline or raw output to report.
 		return {
 			worktreePath,
 			branchName,
-			invokeResult: { exitCode: 0, stdout: '', stderr: '' },
+			outcome: { events: [], exitCode: 0 },
 		}
 	}
 

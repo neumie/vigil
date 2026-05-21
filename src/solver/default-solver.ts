@@ -7,6 +7,7 @@ import { createWorktree, excludeVigilFiles } from '../worktree/manager.js'
 import { invokeChatSession } from './chat-invoker.js'
 import type { InvokeResult } from './invoker.js'
 import { invokeClaude } from './invoker.js'
+import { parseClaudeOutput } from './output-parser.js'
 import { buildChatPrompt, buildPlanningPrompt, buildPrompt } from './prompt-builder.js'
 import type { PlanningSessionParams, PlanningSessionResult, SolveParams, SolveResult, Solver } from './solver.js'
 
@@ -138,6 +139,14 @@ export class DefaultSolver implements Solver {
 			})
 		}
 
-		return { worktreePath, branchName, invokeResult }
+		return {
+			worktreePath,
+			branchName,
+			outcome: {
+				events: parseClaudeOutput(invokeResult.stdout),
+				exitCode: invokeResult.exitCode,
+				rawOutput: invokeResult.stdout,
+			},
+		}
 	}
 }

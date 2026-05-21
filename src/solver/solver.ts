@@ -1,6 +1,6 @@
 import type { ProjectConfig, VigilConfig } from '../config.js'
 import type { TaskContext } from '../providers/provider.js'
-import type { InvokeResult } from './invoker.js'
+import type { ClaudeEvent } from '../types.js'
 
 /**
  * Raw materials a solver needs to assemble its own prompts. The solver builds
@@ -56,10 +56,23 @@ export interface PlanningSessionResult {
 	hint: string
 }
 
+/**
+ * The solve's observable outcome, produced by each Solver adapter — keeps the
+ * default solver's stdout shape out of the shared interface. `events` is the
+ * dashboard timeline (DefaultSolver derives it from the CLI's JSON output;
+ * OkenaSolver has none today and returns `[]`). `rawOutput` is a default-solver
+ * artifact (captured stdout) and is absent for solvers that don't capture it.
+ */
+export interface SolveOutcome {
+	events: ClaudeEvent[]
+	exitCode: number | null
+	rawOutput?: string
+}
+
 export interface SolveResult {
 	worktreePath: string
 	branchName: string
-	invokeResult: InvokeResult
+	outcome: SolveOutcome
 }
 
 export interface Solver {
