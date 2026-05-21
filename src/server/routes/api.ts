@@ -12,7 +12,7 @@ import type { TaskProvider } from '../../providers/provider.js'
 import type { TaskQueue } from '../../queue/queue.js'
 import { buildPlanningPrompt } from '../../solver/prompt-builder.js'
 import type { Solver } from '../../solver/solver.js'
-import { formatTaskContext } from '../../transformers/default.js'
+import { formatTaskContext } from '../../task-context.js'
 import { computePlanDirName, slugify } from '../../util/slug.js'
 
 export function apiRoutes(

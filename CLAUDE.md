@@ -8,13 +8,14 @@ When you discover an undocumented gotcha, abstraction, mandatory pattern, or a s
 
 ## Mandatory abstractions
 
-Three discriminated unions / interfaces gate where code goes. Bypass them and the daemon silently desyncs.
+Two discriminated unions / interfaces gate where code goes. Bypass them and the daemon silently desyncs.
 
 - **`TaskProvider`** (`src/providers/provider.ts`) — every external task source goes through this. Never import `contember.ts` (or any provider impl) outside `src/providers/`.
   - Implement four methods: `pollNewTasks`, `getTaskContext`, `resolveTaskSummary`, `postComment`. `resolveTaskSummary` seeds a new task row when `vigil run <externalId>` is invoked.
   - Extend the discriminated union in `src/config.ts`, register in `src/providers/registry.ts`.
 - **`Solver`** (`src/solver/solver.ts`) — every code-execution backend implements `solve(SolveParams) → SolveResult`. Never spawn `claude` (or any agent CLI) outside a `Solver` impl; reuse `src/solver/invoker.ts` (which wraps `spawn-claude.ts` / `chat-invoker.ts`) instead of re-implementing process spawning. Wired in `src/index.ts` from `config.solver.type` (`'default' | 'okena'`). To add a backend: implement `Solver`, extend the enum in `src/config.ts`, branch in `src/index.ts`.
-- **`TaskTransformer`** (`src/transformers/transformer.ts`) — every prompt-shape change goes through a transformer. Never inline prompt strings in `worker.ts`, `prompt-builder.ts`, or solver code. To change prompt content: edit the existing transformer or add a new one and register it in the `transformers` map.
+
+Task-context + prompt assembly lives in `src/task-context.ts` (`formatTaskContext`, `buildTaskContext`) and `src/solver/prompt-builder.ts` (instruction templates). These are plain functions, not a pluggable seam — there was a per-project `TaskTransformer` registry but it was never used and got removed. If genuinely-different prompt shapes per project ever materialize, reintroduce a seam then.
 
 ## Where new code goes
 
@@ -22,7 +23,7 @@ Three discriminated unions / interfaces gate where code goes. Bypass them and th
 |------------------------------------------|--------------------------------------|
 | Support for a new task source            | `src/providers/<name>.ts` + registry |
 | Different code-execution backend         | `src/solver/` or `src/extensions/<x>/` + `src/index.ts` switch |
-| Different prompt shape per project       | `src/transformers/<name>.ts` + map   |
+| Prompt content / task-context shape      | `src/solver/prompt-builder.ts` + `src/task-context.ts` |
 | New tier-driven action (PR, comment, …)  | `src/actions/dispatcher.ts`          |
 | New chat/MCP tool exposed to the solver  | `src/mcp/server.ts` (register via `server.tool(...)`) |
 | New dashboard endpoint                   | `src/server/routes/api.ts` (mounted from `app.ts`) |

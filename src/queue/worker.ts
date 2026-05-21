@@ -56,10 +56,10 @@ export async function processTask(
 		// created the worktree, so the transformer can read worktree-resident
 		// files (e.g. docs/plans/<planDirName>/*.md).
 		const promptBuilder = (worktreePath: string) =>
-			buildPrompt(taskContext, config.solver.transformer, { planDirName, worktreePath })
+			buildPrompt(taskContext, { planDirName, worktreePath })
 		const chatPromptBuilder = config.chat?.enabled
 			? (worktreePath: string) =>
-					buildChatPrompt(taskContext, taskId, config.solver.transformer, { planDirName, worktreePath })
+					buildChatPrompt(taskContext, taskId, { planDirName, worktreePath })
 			: undefined
 
 		// Phase 2+3: Create worktree + invoke Claude (delegated to solver).
