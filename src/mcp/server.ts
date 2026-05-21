@@ -3,15 +3,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
 import { formatTranscript } from '../chat/format.js'
+import type { ChatLinks } from '../chat/links.js'
 import { emitSessionEvent, waitForSessionEvent } from '../chat/routes.js'
-import { signToken } from '../chat/token.js'
 import { sendWebhook } from '../chat/webhook.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { TaskProvider } from '../providers/provider.js'
 import { log } from '../util/logger.js'
 
-export function createMcpServer(config: VigilConfig, db: DB, provider: TaskProvider) {
+export function createMcpServer(config: VigilConfig, db: DB, provider: TaskProvider, chatLinks: ChatLinks) {
 	const server = new McpServer({
 		name: 'vigil',
 		version: '0.1.0',
@@ -30,10 +30,7 @@ export function createMcpServer(config: VigilConfig, db: DB, provider: TaskProvi
 				return { content: [{ type: 'text', text: 'Chat is not enabled in Vigil config.' }], isError: true }
 			}
 
-			const token = signToken(randomUUID(), config.chat.secret, config.chat.expiryDays)
-			const session = db.createChatSession(taskId, token)
-			const baseUrl = config.chat.baseUrl ?? `http://localhost:${config.server.port}`
-			const chatUrl = `${baseUrl}/chat/${token}`
+			const { session, chatUrl } = chatLinks.createSession(taskId)
 
 			log.info('mcp', `Created chat session ${session.id} for task ${taskId}`)
 

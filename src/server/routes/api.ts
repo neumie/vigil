@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { closeSync, fstatSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Hono } from 'hono'
-import { signToken } from '../../chat/token.js'
+import type { ChatLinks } from '../../chat/links.js'
 import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
@@ -23,6 +23,7 @@ export function apiRoutes(
 	poller: Poller,
 	provider: TaskProvider,
 	solver: Solver,
+	chatLinks: ChatLinks,
 ) {
 	const api = new Hono()
 
@@ -404,11 +405,10 @@ export function apiRoutes(
 		if (!task) return c.json({ error: 'Not found' }, 404)
 
 		const sessions = db.getChatSessionsByTaskId(task.id)
-		const baseUrl = config.chat?.baseUrl ?? `http://localhost:${config.server.port}`
 		const result = sessions.map(s => ({
 			...s,
 			messages: db.getChatMessages(s.id),
-			chatUrl: config.chat?.enabled ? `${baseUrl}/chat/${s.token}` : null,
+			chatUrl: config.chat?.enabled ? chatLinks.urlForToken(s.token) : null,
 		}))
 		return c.json({ data: result })
 	})
@@ -420,10 +420,7 @@ export function apiRoutes(
 		if (!config.chat?.enabled) return c.json({ error: 'Chat is not enabled in config' }, 400)
 
 		const body = await c.req.json<{ message?: string }>().catch(() => ({ message: undefined }))
-		const token = signToken(randomUUID(), config.chat.secret, config.chat.expiryDays)
-		const session = db.createChatSession(task.id, token)
-		const baseUrl = config.chat.baseUrl ?? `http://localhost:${config.server.port}`
-		const chatUrl = `${baseUrl}/chat/${token}`
+		const { session, chatUrl } = chatLinks.createSession(task.id)
 
 		if (body.message?.trim()) {
 			db.addChatMessage(session.id, 'assistant', body.message.trim())

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { ChatLinks } from '../chat/links.js'
 import { chatRoutes } from '../chat/routes.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
@@ -22,18 +23,27 @@ const MIME: Record<string, string> = {
 	'.ico': 'image/x-icon',
 }
 
-export function createApp(config: VigilConfig, configPath: string, db: DB, queue: TaskQueue, poller: Poller, provider: TaskProvider, solver: Solver) {
+export function createApp(
+	config: VigilConfig,
+	configPath: string,
+	db: DB,
+	queue: TaskQueue,
+	poller: Poller,
+	provider: TaskProvider,
+	solver: Solver,
+) {
 	const app = new Hono()
 	const webDir = resolve(import.meta.dirname, '../web')
+	const chatLinks = new ChatLinks(config, db)
 
 	app.use('*', cors())
 
-	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, solver))
+	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, solver, chatLinks))
 	app.route('/api/chat', chatRoutes(config, db))
 
 	// MCP endpoint for Claude CLI chat tools
 	if (config.chat?.enabled) {
-		const mcpServer = createMcpServer(config, db, provider)
+		const mcpServer = createMcpServer(config, db, provider, chatLinks)
 
 		app.all('/mcp', async c => {
 			const response = await handleMcpRequest(mcpServer, c.req.raw)

@@ -39,3 +39,13 @@ worker and the `/plan` endpoint so the two entry points can't drift.
 (`DefaultSolver` parses CLI output; `OkenaSolver` returns none today). The worker
 persists what it's given rather than parsing solver-specific stdout — keeps
 default-solver output shape out of the shared `Solver` interface.
+
+**ChatLinks** (`src/chat/links.ts`) — the deep module owning chat-link identity:
+where a clarification session lives on the wire and how it's addressed. Two
+invariants concentrate here so no call site can get them wrong: (1) lazy `baseUrl`
+resolution at call time, honoring the runtime tunnel mutation; (2) public URLs
+address a session by its signed `token`, never the DB `id`. The single
+construction site for `signToken(randomUUID(), …)` + `createChatSession`. Both the
+MCP chat tools and the dashboard API route through it; previously the
+`baseUrl ?? localhost` + `${baseUrl}/chat/${token}` derivation was copied across
+four sites.
