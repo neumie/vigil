@@ -1,9 +1,18 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { TaskContext } from '../providers/provider.js'
-import type { TransformerContext } from './transformer.js'
+import type { TaskContext } from './providers/provider.js'
 
-export function defaultTransformer(task: TaskContext, ctx: TransformerContext): string {
+export interface PlanContext {
+	/** Folder name under `<worktree>/docs/plans/` (e.g. `2026-05-20-add-user-avatar`). */
+	planDirName: string
+	worktreePath: string
+}
+
+/**
+ * Build the task-context block for an agent prompt: the formatted task plus
+ * any plan artifacts the user committed under `docs/plans/<planDirName>/`.
+ */
+export function buildTaskContext(task: TaskContext, ctx: PlanContext): string {
 	let context = formatTaskContext(task)
 
 	const planArtifacts = readPlanArtifacts(ctx.worktreePath, ctx.planDirName)
@@ -16,9 +25,8 @@ export function defaultTransformer(task: TaskContext, ctx: TransformerContext): 
 
 /**
  * Format the task's identity, description, metadata, comments, and attachments
- * as markdown. Used both by the default transformer (inline injection in the
- * solver prompt) and by the plan endpoint (writing `docs/plans/<planDirName>/context.md`
- * for the planning agent to read).
+ * as markdown. Used both for inline prompt injection and for writing
+ * `docs/plans/<planDirName>/context.md` for the planning agent.
  */
 export function formatTaskContext(task: TaskContext): string {
 	let out = ''

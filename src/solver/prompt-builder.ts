@@ -1,5 +1,5 @@
 import type { TaskContext } from '../providers/provider.js'
-import { getTransformer, type TransformerContext } from '../transformers/transformer.js'
+import { buildTaskContext, type PlanContext } from '../task-context.js'
 
 function solverInstructions(planDirName: string): string {
 	return `You are solving a task from a project management system. The task may be written in any language — understand it regardless.
@@ -120,14 +120,12 @@ Then output this JSON with the full conversation in your own words:
 
 `
 
-export function buildChatPrompt(task: TaskContext, taskId: string, transformerName: string, ctx: TransformerContext): string {
-	const transformer = getTransformer(transformerName)
-	const taskContextStr = transformer(task, ctx)
+export function buildChatPrompt(task: TaskContext, taskId: string, ctx: PlanContext): string {
+	const taskContextStr = buildTaskContext(task, ctx)
 	return `${CHAT_INSTRUCTIONS}## Task ID: ${taskId}\n\n## Task Context\n\n${taskContextStr}`
 }
 
-export function buildPrompt(task: TaskContext, transformerName: string, ctx: TransformerContext): string {
-	const transformer = getTransformer(transformerName)
-	const taskContextStr = transformer(task, ctx)
+export function buildPrompt(task: TaskContext, ctx: PlanContext): string {
+	const taskContextStr = buildTaskContext(task, ctx)
 	return `${solverInstructions(ctx.planDirName)}## Task Context\n\n${taskContextStr}`
 }
