@@ -86,24 +86,16 @@ async function run(): Promise<void> {
 	const { loadConfig } = await import('../config.js')
 	const { DB } = await import('../db/client.js')
 	const { createProvider } = await import('../providers/registry.js')
-	const { DefaultSolver } = await import('../solver/default-solver.js')
+	const { createSolver } = await import('../solver/registry.js')
 	const { processTask } = await import('../queue/worker.js')
 
 	const { config } = loadConfig()
 	const db = new DB()
 	const provider = createProvider(config.provider)
 
-	let solver: import('../solver/solver.js').Solver
-	if (config.solver.type === 'okena') {
-		try {
-			const { createOkenaSolver } = await import('../extensions/okena/solver.js')
-			solver = await createOkenaSolver(config)
-		} catch {
-			solver = new DefaultSolver(config)
-		}
-	} else {
-		solver = new DefaultSolver(config)
-	}
+	// Shared solver factory — owns the dynamic-import + logged-fallback invariant
+	// (previously the CLI swallowed an okena failure silently).
+	const solver = await createSolver(config)
 
 	// Look up task: first by task ID, then by clientcare ID
 	let task = db.getTask(id) ?? db.getTaskByClientcareId(id)

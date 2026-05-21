@@ -16,6 +16,15 @@ unclear`). Routes the dispatch action.
 
 **Provider** — the seam over external task sources (`ContemberProvider` today).
 
+**Solver registry** (`createSolver`, `src/solver/registry.ts`) — the single
+construction site for the active `Solver`, mirroring `providers/registry.ts`.
+Owns two invariants the daemon (`index.ts`) and CLI (`cli/vigil.ts`) previously
+duplicated: optional/extension solvers load via dynamic `import()` (never a
+static one — an unavailable optional dep crashes startup), and an unavailable
+configured solver falls back to `DefaultSolver` *with a log*. The CLI's copy had
+drifted into a silent `catch {}`, hiding the fallback from the operator; folding
+both callers through one factory makes that drift impossible.
+
 ## Deepened modules (this initiative)
 
 **SolverResult** — the structured outcome the agent writes to `solver-result.json`

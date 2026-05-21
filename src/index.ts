@@ -4,8 +4,7 @@ import { Poller } from './poller/poller.js'
 import { createProvider } from './providers/registry.js'
 import { TaskQueue } from './queue/queue.js'
 import { createApp } from './server/app.js'
-import { DefaultSolver } from './solver/default-solver.js'
-import type { Solver } from './solver/solver.js'
+import { createSolver } from './solver/registry.js'
 import { startTunnel } from './tunnel.js'
 import { log } from './util/logger.js'
 
@@ -23,23 +22,10 @@ async function main() {
 	const provider = createProvider(config.provider)
 	log.info('vigil', `Provider: ${provider.name}`)
 
-	let solver: Solver
-	if (config.solver.type === 'okena') {
-		try {
-			const { createOkenaSolver } = await import('./extensions/okena/solver.js')
-			solver = await createOkenaSolver(config)
-			log.success('vigil', 'Solver: Okena (tasks will be visible in Okena)')
-		} catch (err) {
-			log.warn(
-				'vigil',
-				`Okena solver unavailable, falling back to default: ${err instanceof Error ? err.message : err}`,
-			)
-			solver = new DefaultSolver(config)
-		}
-	} else {
-		solver = new DefaultSolver(config)
-	}
-	log.info('vigil', `Solver: ${config.solver.type}`)
+	// createSolver owns the dynamic-import + silent-fallback invariant (see
+	// solver/registry.ts) — the active solver may differ from config.solver.type.
+	const solver = await createSolver(config)
+	log.info('vigil', `Solver configured: ${config.solver.type}, active: ${solver.constructor.name}`)
 
 	const queue = new TaskQueue(config, db, provider, solver)
 
