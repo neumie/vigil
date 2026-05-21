@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { VigilConfig } from '../config.js'
+import { PlanWorkspace } from '../plan/workspace.js'
 import { formatTaskContext } from '../task-context.js'
 import { log } from '../util/logger.js'
 import { createWorktree, excludeVigilFiles } from '../worktree/manager.js'
@@ -8,13 +8,7 @@ import { invokeChatSession } from './chat-invoker.js'
 import type { InvokeResult } from './invoker.js'
 import { invokeClaude } from './invoker.js'
 import { buildChatPrompt, buildPlanningPrompt, buildPrompt } from './prompt-builder.js'
-import type {
-	PlanningSessionParams,
-	PlanningSessionResult,
-	SolveParams,
-	SolveResult,
-	Solver,
-} from './solver.js'
+import type { PlanningSessionParams, PlanningSessionResult, SolveParams, SolveResult, Solver } from './solver.js'
 
 export class DefaultSolver implements Solver {
 	private config: VigilConfig
@@ -67,22 +61,29 @@ export class DefaultSolver implements Solver {
 			params.signal,
 		)
 
-		const planDir = join(worktreePath, 'docs', 'plans', params.planDirName)
-		mkdirSync(planDir, { recursive: true })
-		writeFileSync(join(planDir, 'context.md'), formatTaskContext(params.taskContext), 'utf-8')
-		const promptRelPath = `docs/plans/${params.planDirName}/.planning-prompt.txt`
-		writeFileSync(join(worktreePath, promptRelPath), buildPlanningPrompt(params.planDirName), 'utf-8')
+		const workspace = new PlanWorkspace(worktreePath, params.planDirName)
+		workspace.writeContext(formatTaskContext(params.taskContext))
+		workspace.writePlanningPrompt(buildPlanningPrompt(params.planDirName))
 
 		return {
 			worktreePath,
 			branchName: params.branchName,
-			hint: `Open a terminal in ${worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat ${promptRelPath})"`,
+			hint: `Open a terminal in ${worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat ${workspace.rel.planningPrompt})"`,
 		}
 	}
 
 	async solve(params: SolveParams): Promise<SolveResult> {
-		const { projectConfig, branchName, planDirName, taskContext, taskId, solverConfig, signal, outputLogPath, existingWorktreePath } =
-			params
+		const {
+			projectConfig,
+			branchName,
+			planDirName,
+			taskContext,
+			taskId,
+			solverConfig,
+			signal,
+			outputLogPath,
+			existingWorktreePath,
+		} = params
 
 		if (signal?.aborted) {
 			throw Object.assign(new Error('Task cancelled'), { name: 'AbortError' })

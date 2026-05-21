@@ -1,7 +1,8 @@
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { VigilConfig } from '../../config.js'
+import { PlanWorkspace } from '../../plan/workspace.js'
 import { buildPlanningPrompt, buildPrompt } from '../../solver/prompt-builder.js'
 import type {
 	PlanningSessionParams,
@@ -155,7 +156,8 @@ export class OkenaSolver implements Solver {
 	}
 
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
-		const { projectConfig, branchName, planDirName, taskTitle, taskContext, solverConfig, existingWorktreePath } = params
+		const { projectConfig, branchName, planDirName, taskTitle, taskContext, solverConfig, existingWorktreePath } =
+			params
 
 		const ensured = await this.ensureWorktreeProject(
 			projectConfig.repoPath,
@@ -166,9 +168,10 @@ export class OkenaSolver implements Solver {
 
 		// Reuse an existing "plan: " terminal if present (so repeated Plan clicks
 		// don't pile up terminals); else use the auto-created one; else spawn fresh.
-		const terminalId = (await this.findPlanTerminal(ensured.wtProjectId))
-			?? ensured.autoTerminalId
-			?? (await this.createTerminal(ensured.wtProjectId))
+		const terminalId =
+			(await this.findPlanTerminal(ensured.wtProjectId)) ??
+			ensured.autoTerminalId ??
+			(await this.createTerminal(ensured.wtProjectId))
 		if (!terminalId) {
 			throw new Error('Failed to obtain a planning terminal')
 		}
@@ -186,16 +189,14 @@ export class OkenaSolver implements Solver {
 
 		// Write task context to docs/plans/<planDirName>/context.md; the planning
 		// prompt instructs the agent to read it first.
-		const planDir = join(ensured.worktreePath, 'docs', 'plans', planDirName)
-		mkdirSync(planDir, { recursive: true })
-		writeFileSync(join(planDir, 'context.md'), formatTaskContext(taskContext), 'utf-8')
+		const workspace = new PlanWorkspace(ensured.worktreePath, planDirName)
+		workspace.writeContext(formatTaskContext(taskContext))
 
 		// Stage the prompt as a file ($(cat ...) keeps the run_command on one line —
 		// okena types it into the terminal, and embedded newlines would break it).
-		const promptRelPath = `docs/plans/${planDirName}/.planning-prompt.txt`
-		writeFileSync(join(ensured.worktreePath, promptRelPath), buildPlanningPrompt(planDirName), 'utf-8')
+		workspace.writePlanningPrompt(buildPlanningPrompt(planDirName))
 
-		const command = `${this.claudeArgs(solverConfig).join(' ')} "$(cat ${promptRelPath})"`
+		const command = `${this.claudeArgs(solverConfig).join(' ')} "$(cat ${workspace.rel.planningPrompt})"`
 		log.info('okena', `Starting planning session in terminal ${terminalId}`)
 		try {
 			await this.client.action({ action: 'run_command', terminal_id: terminalId, command })
@@ -211,7 +212,16 @@ export class OkenaSolver implements Solver {
 	}
 
 	async solve(params: SolveParams): Promise<SolveResult> {
-		const { projectConfig, branchName, planDirName, taskContext, taskTitle, solverConfig, signal, existingWorktreePath } = params
+		const {
+			projectConfig,
+			branchName,
+			planDirName,
+			taskContext,
+			taskTitle,
+			solverConfig,
+			signal,
+			existingWorktreePath,
+		} = params
 
 		if (signal?.aborted) {
 			throw Object.assign(new Error('Task cancelled'), { name: 'AbortError' })
@@ -244,8 +254,8 @@ export class OkenaSolver implements Solver {
 
 		// Build the prompt now so the task-context builder sees any
 		// docs/plans/<planDirName>/ artifacts present in the worktree.
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
-		const resultFile = join(worktreePath, 'docs', 'plans', planDirName, 'solver-result.json')
 		writeFileSync(promptFile, buildPrompt(taskContext, { planDirName, worktreePath }), 'utf-8')
 
 		const command = `${this.claudeArgs(solverConfig).join(' ')} "$(cat .vigil-prompt.txt)"`
@@ -253,9 +263,12 @@ export class OkenaSolver implements Solver {
 		try {
 			await this.client.action({ action: 'run_command', terminal_id: terminalId, command })
 		} catch (err) {
-			throw Object.assign(new Error(`Failed to run command in Okena terminal: ${err instanceof Error ? err.message : err}`), {
-				phase: 'solve',
-			})
+			throw Object.assign(
+				new Error(`Failed to run command in Okena terminal: ${err instanceof Error ? err.message : err}`),
+				{
+					phase: 'solve',
+				},
+			)
 		}
 
 		// Poll for solver-result.json — Claude writes this when done solving
@@ -263,7 +276,7 @@ export class OkenaSolver implements Solver {
 		const startTime = Date.now()
 
 		log.info('okena', `Waiting for solver-result.json (timeout: ${solverConfig.timeoutMinutes}m)`)
-		while (!existsSync(resultFile)) {
+		while (!workspace.resultExists()) {
 			if (signal?.aborted) {
 				try {
 					await this.client.action({ action: 'send_special_key', terminal_id: terminalId, key: 'ctrl_c' })

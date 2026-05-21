@@ -1,18 +1,19 @@
-import { randomUUID } from 'node:crypto'
 import { execSync } from 'node:child_process'
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { closeSync, fstatSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Hono } from 'hono'
 import { signToken } from '../../chat/token.js'
 import { configSchema } from '../../config.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
+import { manualStatusSchema } from '../../db/task-schema.js'
+import { resolveTaskWorkspace } from '../../plan/identity.js'
+import { PlanWorkspace } from '../../plan/workspace.js'
 import type { Poller } from '../../poller/poller.js'
 import type { TaskProvider } from '../../providers/provider.js'
 import type { TaskQueue } from '../../queue/queue.js'
-import { manualStatusSchema } from '../../db/task-schema.js'
 import type { Solver } from '../../solver/solver.js'
-import { computePlanDirName, slugify } from '../../util/slug.js'
 
 export function apiRoutes(
 	config: VigilConfig,
@@ -77,10 +78,7 @@ export function apiRoutes(
 			return c.json({ error: `Task ${body.clientcareId} not found in ${provider.name}` }, 404)
 		}
 		if (!config.projects.some(p => p.slug === summary.projectSlug)) {
-			return c.json(
-				{ error: `Project '${summary.projectSlug}' is not configured in vigil.config.json` },
-				400,
-			)
+			return c.json({ error: `Project '${summary.projectSlug}' is not configured in vigil.config.json` }, 400)
 		}
 
 		const id = randomUUID()
@@ -200,9 +198,7 @@ export function apiRoutes(
 		const projectConfig = config.projects.find(p => p.slug === task.projectSlug)
 		if (!projectConfig) return c.json({ error: `Unknown project slug: ${task.projectSlug}` }, 400)
 
-		const planDirName = task.planDirName ?? computePlanDirName(task.title)
-		const branchName = task.branchName ?? `vigil/${slugify(task.title)}`
-		const existingWorktreePath = task.worktreePath && existsSync(task.worktreePath) ? task.worktreePath : undefined
+		const { planDirName, branchName, existingWorktreePath } = resolveTaskWorkspace(task)
 
 		// Fetch task context so the planning agent (and context.md) is informed.
 		const taskContext = await provider.getTaskContext(task.clientcareId)
@@ -234,9 +230,7 @@ export function apiRoutes(
 
 		// Write a per-task README the user lands on. Records task identity +
 		// suggested next step. Overwritten on subsequent calls to keep it fresh.
-		const taskDir = join(worktreePath, 'docs', 'plans', planDirName)
-		mkdirSync(taskDir, { recursive: true })
-		const readmePath = join(taskDir, 'README.md')
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
 		const readmeBody = [
 			`# ${task.title}`,
 			'',
@@ -255,7 +249,8 @@ export function apiRoutes(
 			'Anything committed under this directory is loaded into the autonomous solver prompt when the task runs.',
 			'',
 		].join('\n')
-		writeFileSync(readmePath, readmeBody, 'utf-8')
+		workspace.writeReadme(readmeBody)
+		const readmePath = workspace.readmePath
 
 		db.updateTask(task.id, { worktreePath, branchName, planDirName })
 		db.insertEvent(task.id, 'plan_prepared', { worktreePath, branchName, planDirName })
@@ -295,7 +290,8 @@ export function apiRoutes(
 	api.post('/tasks/:id/retry', c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
-		if (task.status === 'processing' || task.status === 'queued') return c.json({ error: 'Task is already active or queued' }, 400)
+		if (task.status === 'processing' || task.status === 'queued')
+			return c.json({ error: 'Task is already active or queued' }, 400)
 		db.updateTask(task.id, {
 			status: 'queued',
 			errorMessage: null,

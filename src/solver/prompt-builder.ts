@@ -1,3 +1,4 @@
+import { planPaths } from '../plan/workspace.js'
 import type { TaskContext } from '../providers/provider.js'
 import { type PlanContext, buildTaskContext } from '../task-context.js'
 
@@ -16,7 +17,7 @@ When the implementation is complete, use /almanac:ship to create the PR. Do NOT 
 
 ## Additional rules for automated solving
 
-After shipping, write a \`solver-result.json\` file at \`docs/plans/${planDirName}/solver-result.json\` (the directory already exists; do not create a sibling at the repo root):
+After shipping, write a \`solver-result.json\` file at \`${planPaths(planDirName).result}\` (the directory already exists; do not create a sibling at the repo root):
 
 \`\`\`json
 {
@@ -60,12 +61,13 @@ export function buildPlanningPrompt(planDirName: string): string {
 	// Only `planDirName` is interpolated — and it's slugified (alphanumeric +
 	// dashes), so safe to embed in a shell command without escaping. No user-
 	// controlled content (the task title etc. lives in context.md).
+	const paths = planPaths(planDirName)
 	return [
 		'You are helping the user plan a task before it gets solved autonomously.',
 		'',
 		'Your first job is to UNDERSTAND THE TASK DEEPLY. Do not rush to greet the user.',
 		'',
-		`Step 1 — read the task context at docs/plans/${planDirName}/context.md.`,
+		`Step 1 — read the task context at ${paths.context}.`,
 		'',
 		'Step 2 — if the context lists any attachments (screenshots, mockups, logs, specs), fetch and review them inline (read or view via the URL). DO NOT download or save them to disk — no attachments/ folder, no copies in the worktree. They are referenced by URL and that is enough.',
 		'',
@@ -81,7 +83,7 @@ export function buildPlanningPrompt(planDirName: string): string {
 		'- just talk it through',
 		'',
 		'Wait for direction. Do not write artifacts unsolicited. Do not ship code or commit changes — planning only.',
-		`Anything you write should land under docs/plans/${planDirName}/.`,
+		`Anything you write should land under ${paths.dir}/.`,
 		'',
 		'When the user is done, they trigger the autonomous run from the Vigil extension.',
 	].join('\n')

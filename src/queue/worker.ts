@@ -3,14 +3,14 @@ import { resolve } from 'node:path'
 import { dispatch } from '../actions/dispatcher.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
+import { resolveTaskWorkspace } from '../plan/identity.js'
+import { PlanWorkspace } from '../plan/workspace.js'
 import type { TaskProvider } from '../providers/provider.js'
 import { parseClaudeOutput } from '../solver/output-parser.js'
 import { buildPrompt } from '../solver/prompt-builder.js'
-import { parseResultFile } from '../solver/result-parser.js'
 import type { Solver } from '../solver/solver.js'
 import type { ErrorPhase } from '../types.js'
 import { log } from '../util/logger.js'
-import { computePlanDirName, slugify } from '../util/slug.js'
 
 const LOGS_DIR = resolve(process.cwd(), 'logs')
 
@@ -44,11 +44,10 @@ export async function processTask(
 			throw Object.assign(new Error('Task not found in source system'), { phase: 'poll' })
 		}
 
-		// Ensure the task has a plan-dir name — computed once from the task
-		// title the first time we need it (plan endpoint or autonomous run),
-		// then persisted on the task row so subsequent reads stay stable
-		// across renames / title edits upstream.
-		const planDirName = task.planDirName ?? computePlanDirName(task.title)
+		// Resolve the task's workspace identity (plan dir, branch, existing
+		// worktree). planDirName is computed from the title the first time and
+		// persisted so it stays stable across upstream renames / title edits.
+		const { planDirName, branchName, existingWorktreePath } = resolveTaskWorkspace(task)
 		if (!task.planDirName) {
 			db.updateTask(taskId, { planDirName })
 		}
@@ -58,8 +57,6 @@ export async function processTask(
 		// builds it AFTER worktree creation so the task-context builder can read
 		// worktree-resident docs/plans/<planDirName>/*.md). Reuse a worktree if
 		// one was created earlier by the plan endpoint.
-		const branchName = task.branchName ?? `vigil/${slugify(task.title)}`
-		const existingWorktreePath = task.worktreePath ?? undefined
 		const { worktreePath, invokeResult } = await solver.solve({
 			projectConfig,
 			branchName,
@@ -89,9 +86,10 @@ export async function processTask(
 		// Phase 4: Parse result. The agent writes solver-result.json — that file is
 		// the only source of the tier. No stdout fallback: a missing file is a hard
 		// failure (the okena solver produces no stdout anyway).
-		const solverResult = parseResultFile(worktreePath, planDirName)
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
+		const solverResult = workspace.readResult()
 		if (!solverResult) {
-			throw Object.assign(new Error(`No solver-result.json at docs/plans/${planDirName}/solver-result.json`), {
+			throw Object.assign(new Error(`No solver-result.json at ${workspace.rel.result}`), {
 				phase: 'solve',
 			})
 		}

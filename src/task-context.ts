@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { PlanWorkspace } from './plan/workspace.js'
 import type { TaskContext } from './providers/provider.js'
 
 export interface PlanContext {
@@ -15,7 +14,7 @@ export interface PlanContext {
 export function buildTaskContext(task: TaskContext, ctx: PlanContext): string {
 	let context = formatTaskContext(task)
 
-	const planArtifacts = readPlanArtifacts(ctx.worktreePath, ctx.planDirName)
+	const planArtifacts = new PlanWorkspace(ctx.worktreePath, ctx.planDirName).readArtifacts()
 	if (planArtifacts) {
 		context += `\n## Plan Artifacts\n\nThe requester (or a prior planning session) wrote the following files to docs/plans/${ctx.planDirName}/ before this task ran. Treat them as authoritative scoping — they reflect decisions already made.\n\n${planArtifacts}`
 	}
@@ -61,28 +60,5 @@ export function formatTaskContext(task: TaskContext): string {
 		}
 	}
 
-	return out
-}
-
-function readPlanArtifacts(worktreePath: string, planDirName: string): string | null {
-	const plansDir = join(worktreePath, 'docs', 'plans', planDirName)
-	if (!existsSync(plansDir)) return null
-
-	const entries = readdirSync(plansDir)
-		.filter(name => name.endsWith('.md'))
-		.map(name => {
-			const fullPath = join(plansDir, name)
-			return { name, fullPath, mtime: statSync(fullPath).mtimeMs }
-		})
-		.sort((a, b) => a.mtime - b.mtime)
-
-	if (entries.length === 0) return null
-
-	let out = ''
-	for (const entry of entries) {
-		const content = readFileSync(entry.fullPath, 'utf-8')
-		const mtimeIso = new Date(entry.mtime).toISOString()
-		out += `<plan_artifact path="docs/plans/${planDirName}/${entry.name}" mtime="${mtimeIso}">\n${content}\n</plan_artifact>\n\n`
-	}
 	return out
 }
