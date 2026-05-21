@@ -4,11 +4,11 @@ import { dispatch } from '../actions/dispatcher.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { TaskProvider } from '../providers/provider.js'
-import type { ErrorPhase } from '../types.js'
 import { parseClaudeOutput } from '../solver/output-parser.js'
 import { buildPrompt } from '../solver/prompt-builder.js'
-import { parseResultFile, parseTierFromOutput } from '../solver/result-parser.js'
+import { parseResultFile } from '../solver/result-parser.js'
 import type { Solver } from '../solver/solver.js'
+import type { ErrorPhase } from '../types.js'
 import { log } from '../util/logger.js'
 import { computePlanDirName, slugify } from '../util/slug.js'
 
@@ -86,17 +86,14 @@ export async function processTask(
 			db.insertEvent(taskId, `claude_${event.type}`, { detail: event.detail, file: event.file })
 		}
 
-		// Phase 4: Parse result
-		let solverResult = parseResultFile(worktreePath, planDirName)
+		// Phase 4: Parse result. The agent writes solver-result.json — that file is
+		// the only source of the tier. No stdout fallback: a missing file is a hard
+		// failure (the okena solver produces no stdout anyway).
+		const solverResult = parseResultFile(worktreePath, planDirName)
 		if (!solverResult) {
-			log.warn('worker', 'No solver-result.json found, trying to parse from output')
-			solverResult = parseTierFromOutput(invokeResult.stdout)
-		}
-		if (!solverResult) {
-			throw Object.assign(
-				new Error('Could not determine solver result — no solver-result.json and no tier in output'),
-				{ phase: 'solve' },
-			)
+			throw Object.assign(new Error(`No solver-result.json at docs/plans/${planDirName}/solver-result.json`), {
+				phase: 'solve',
+			})
 		}
 
 		db.updateTask(taskId, {

@@ -1,8 +1,9 @@
 // TaskRecord + its enums are derived from the Zod schema (single source of
-// truth for the tasks table). Imported for local use (SolverResult references
-// Tier) and re-exported so existing imports keep working.
-import type { ErrorPhase, TaskRecord, TaskStatus, Tier } from './db/task-schema.js'
-export type { ErrorPhase, TaskRecord, TaskStatus, Tier }
+// truth for the tasks table); re-exported so existing imports keep working.
+export type { ErrorPhase, TaskRecord, TaskStatus, Tier } from './db/task-schema.js'
+// SolverResult is derived from its own Zod schema (single source of truth for
+// the agent's solver-result.json); re-exported here so existing imports keep working.
+export type { SolverResult } from './solver/result-schema.js'
 
 export interface PollState {
 	projectSlug: string
@@ -16,20 +17,6 @@ export interface EventLogEntry {
 	eventType: string
 	payload: string | null
 	createdAt: string
-}
-
-export interface SolverResult {
-	tier: Tier
-	confidence: number
-	summary: string
-	filesChanged: string[]
-	analysis?: string
-	questionsForRequester?: string[]
-	remainingWork?: string[]
-	prReady: boolean
-	prTitle?: string
-	prBody?: string
-	prUrl?: string
 }
 
 export interface ClaudeEvent {

@@ -1,5 +1,5 @@
 import type { TaskContext } from '../providers/provider.js'
-import { buildTaskContext, type PlanContext } from '../task-context.js'
+import { type PlanContext, buildTaskContext } from '../task-context.js'
 
 function solverInstructions(planDirName: string): string {
 	return `You are solving a task from a project management system. The task may be written in any language — understand it regardless.
@@ -29,7 +29,8 @@ After shipping, write a \`solver-result.json\` file at \`docs/plans/${planDirNam
   "remainingWork": ["Item 1", "Item 2"],
   "prReady": true|false,
   "prTitle": "Suggested PR title",
-  "prBody": "Suggested PR body in markdown"
+  "prBody": "Suggested PR body in markdown",
+  "prUrl": "https://github.com/... (only if you shipped a PR via /almanac:ship)"
 }
 \`\`\`
 
@@ -70,7 +71,7 @@ export function buildPlanningPrompt(planDirName: string): string {
 		'',
 		'Step 3 — if the task touches UI behaviour, use agent-browser to navigate to the relevant page and observe the current behaviour with your own eyes. Reproducing the scenario at plan time is much cheaper than discovering misunderstandings during the autonomous solve.',
 		'',
-		'Step 4 — explore the codebase briefly to understand the surface area touched. Grep for terms from the task, read files likely to be involved. Don\'t go deep — deep dives belong to the planning skills below.',
+		"Step 4 — explore the codebase briefly to understand the surface area touched. Grep for terms from the task, read files likely to be involved. Don't go deep — deep dives belong to the planning skills below.",
 		'',
 		'Step 5 — ONLY now greet the user. Give a 2-3 sentence summary of what you understand (including anything surprising the attachments or codebase revealed) and ask what they want to do. Options:',
 		`- /grill-me ${planDirName} for interactive decision stress-testing (writes brief.md)`,
