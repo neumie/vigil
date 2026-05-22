@@ -163,33 +163,32 @@ export function TaskDetail({
 			)}
 
 			{/* Actions */}
-			<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 32 }}>
-				{task.status === 'queued' && <ActionBtn label="Start" color="var(--accent)" onClick={onStart} />}
-				{(isActive || task.status === 'queued') && <ActionBtn label="Cancel" color="var(--red)" onClick={onCancel} />}
-				{task.status === 'queued' && (
-					<ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />
-				)}
+			<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 32 }}>
+				{task.status === 'queued' && <ActionBtn label="Start" variant="primary" onClick={onStart} />}
+				{(isActive || task.status === 'queued') && <ActionBtn label="Cancel" variant="danger" onClick={onCancel} />}
+				{task.status === 'queued' && <ActionBtn label="Skip" variant="muted" onClick={() => onSetStatus('skipped')} />}
 				{task.status === 'review' && (
 					<>
-						<ActionBtn label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />
-						<ActionBtn label="Re-queue" color="var(--accent)" onClick={onRetry} />
+						<ActionBtn label="Complete" variant="primary" onClick={() => onSetStatus('completed')} />
+						<ActionBtn label="Re-queue" variant="muted" onClick={onRetry} />
 					</>
 				)}
 				{task.status !== 'processing' && task.status !== 'queued' && task.status !== 'review' && (
 					<>
-						<ActionBtn label="Re-queue" color="var(--accent)" onClick={onRetry} />
+						<ActionBtn label="Re-queue" variant="primary" onClick={onRetry} />
 						{task.status !== 'completed' && (
-							<ActionBtn label="Complete" color="var(--green)" onClick={() => onSetStatus('completed')} />
+							<ActionBtn label="Complete" variant="muted" onClick={() => onSetStatus('completed')} />
 						)}
 						{task.status !== 'review' && (
-							<ActionBtn label="Review" color="var(--amber)" onClick={() => onSetStatus('review')} />
+							<ActionBtn label="Review" variant="muted" onClick={() => onSetStatus('review')} />
 						)}
 						{task.status !== 'skipped' && (
-							<ActionBtn label="Skip" color="var(--text-3)" onClick={() => onSetStatus('skipped')} />
+							<ActionBtn label="Skip" variant="muted" onClick={() => onSetStatus('skipped')} />
 						)}
 					</>
 				)}
-				<ActionBtn label="Delete" color="var(--red)" onClick={onDelete} />
+				<span style={{ flex: 1 }} />
+				<ActionBtn label="Delete" variant="danger" onClick={onDelete} />
 			</div>
 
 			{/* Chat */}
@@ -296,13 +295,14 @@ function Badge({ color, label }: { color: string; label: string }) {
 	return (
 		<span
 			style={{
-				fontSize: 11,
+				fontSize: 10,
 				fontWeight: 600,
 				color,
-				padding: '1px 8px',
-				borderRadius: 4,
-				background: `color-mix(in srgb, ${color} 15%, transparent)`,
-				border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
+				padding: '2px 8px',
+				borderRadius: 999,
+				background: `color-mix(in srgb, ${color} 16%, transparent)`,
+				textTransform: 'uppercase',
+				letterSpacing: '0.04em',
 			}}
 		>
 			{label}
@@ -310,22 +310,27 @@ function Badge({ color, label }: { color: string; label: string }) {
 	)
 }
 
-function ActionBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+type BtnVariant = 'primary' | 'muted' | 'danger'
+
+function ActionBtn({ label, variant, onClick }: { label: string; variant: BtnVariant; onClick: () => void }) {
+	const tone: Record<BtnVariant, React.CSSProperties> = {
+		primary: { background: 'var(--accent-fill)', color: '#fff', border: '1px solid transparent' },
+		muted: { background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border-hover)' },
+		danger: { background: 'transparent', color: 'var(--red)', border: '1px solid var(--red-dim)' },
+	}
 	return (
 		<button
 			type="button"
 			onClick={onClick}
 			style={{
-				padding: '6px 16px',
-				background: `color-mix(in srgb, ${color} 10%, transparent)`,
-				border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+				padding: '7px 16px',
 				borderRadius: 'var(--radius-sm)',
-				color,
 				cursor: 'pointer',
 				fontSize: 13,
 				fontFamily: 'var(--font-sans)',
-				fontWeight: 500,
+				fontWeight: 600,
 				transition: 'all 150ms',
+				...tone[variant],
 			}}
 		>
 			{label}
@@ -474,22 +479,30 @@ function ChatSection({
 					))}
 				</div>
 			)}
-			<ActionBtn label={loading ? 'Creating...' : 'New chat'} color="var(--accent)" onClick={onNewChat} />
+			<ActionBtn label={loading ? 'Creating...' : 'New chat'} variant="primary" onClick={onNewChat} />
 		</Section>
 	)
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
-		<div style={{ marginBottom: 28 }}>
+		<div
+			style={{
+				background: 'var(--bg-1)',
+				border: '1px solid var(--border)',
+				borderRadius: 'var(--radius)',
+				padding: '16px 18px',
+				marginBottom: 16,
+			}}
+		>
 			<div
 				style={{
-					fontSize: 12,
+					fontSize: 11,
 					fontWeight: 600,
-					color: 'var(--text-3)',
-					marginBottom: 12,
-					paddingBottom: 8,
-					borderBottom: '1px solid var(--border)',
+					color: 'var(--text-4)',
+					marginBottom: 10,
+					textTransform: 'uppercase',
+					letterSpacing: '0.05em',
 				}}
 			>
 				{title}

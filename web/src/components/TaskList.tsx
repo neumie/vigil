@@ -223,7 +223,7 @@ function TaskRow({
 				borderBottom: '1px solid var(--border)',
 				cursor: 'pointer',
 				background: selected ? 'var(--bg-2)' : 'transparent',
-				borderLeft: `3px solid ${projectColor ?? 'transparent'}`,
+				borderLeft: `3px solid ${selected ? 'var(--accent)' : (projectColor ?? 'transparent')}`,
 				transition: 'background 150ms',
 			}}
 			onMouseEnter={e => {

@@ -23,16 +23,15 @@ export function StatusBadge({ value, type }: { value: string; type: 'tier' | 'st
 		<span
 			style={{
 				display: 'inline-block',
-				padding: '1px 6px',
-				borderRadius: 4,
+				padding: '2px 8px',
+				borderRadius: 999,
 				fontSize: 10,
 				fontWeight: 600,
 				color,
-				background: `color-mix(in srgb, ${color} 15%, transparent)`,
-				border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
+				background: `color-mix(in srgb, ${color} 16%, transparent)`,
 				textTransform: 'uppercase',
 				letterSpacing: '0.04em',
-				lineHeight: '18px',
+				lineHeight: 1.5,
 			}}
 		>
 			{value}
