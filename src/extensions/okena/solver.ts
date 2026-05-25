@@ -323,8 +323,15 @@ function sleep(ms: number): Promise<void> {
 
 export async function createOkenaSolver(config: VigilConfig): Promise<Solver> {
 	const client = new OkenaClient()
+	// Warn but DON'T fall back: the operator configured okena, so okena stays the
+	// active solver. If it's unreachable now, tasks/plan sessions fail with the
+	// real okena error (visible in logs + dashboard) and recover on their own once
+	// okena is back — the client reloads its token per call, so no restart needed.
 	if (!(await client.isAvailable())) {
-		throw new Error('Okena is not available')
+		log.warn(
+			'okena',
+			'Okena not reachable at startup — okena tasks/plan sessions will fail until it is. No fallback (solver.type=okena). Run `okena state` to check/refresh the CLI token.',
+		)
 	}
 	return new OkenaSolver(client, config)
 }
