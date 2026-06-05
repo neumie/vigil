@@ -1,16 +1,16 @@
 # Vigil
 
-AI-powered task automation daemon. Polls external task sources for new tasks, invokes Claude Code to analyze and solve them, classifies complexity into tiers, and takes appropriate actions — creating PRs, pushing branches, or requesting clarification.
+AI-powered task automation daemon. Polls external task sources for new tasks, invokes Claude Code or Codex to analyze and solve them, classifies complexity into tiers, and takes appropriate actions — creating PRs, pushing branches, or requesting clarification.
 
 ## How it works
 
 ```
-Task Source → Poller → Queue → Claude Code → Result Parser → PRs / Comments
+Task Source → Poller → Queue → Agent → Result Parser → PRs / Comments
 ```
 
 1. **Poll** — discovers new tasks from an external source (currently Contember CMS)
 2. **Queue** — manages concurrent processing with configurable limits
-3. **Solve** — creates an isolated git worktree, runs Claude Code with a structured prompt
+3. **Solve** — creates an isolated git worktree, runs the configured agent with a structured prompt
 4. **Classify** — parses Claude's assessment into tiers:
    - **Trivial** → merge-ready PR
    - **Simple** → draft PR for review
@@ -23,7 +23,7 @@ A React dashboard at `localhost:7474` provides real-time monitoring with live ou
 ## Prerequisites
 
 - Node.js 20+
-- `claude` CLI ([Claude Code](https://claude.ai/code)) installed and authenticated
+- `claude` CLI ([Claude Code](https://claude.ai/code)) or `codex` CLI installed and authenticated
 - `gh` CLI for PR creation
 - Git
 
@@ -46,9 +46,10 @@ cp vigil.config.example.json vigil.config.json
 | `polling.intervalSeconds` | How often to check for new tasks (default: 60) |
 | `polling.since` | ISO date to start polling from (avoids processing old tasks) |
 | `solver.type` | `"default"` (headless) or `"okena"` (visible in Okena terminal) |
+| `solver.agent` | `"claude"` (Claude Code) or `"codex"` (OpenAI Codex CLI). Can be overridden per task from the extension. |
 | `solver.concurrency` | Max concurrent tasks (default: 2) |
 | `solver.timeoutMinutes` | Per-task timeout (default: 30) |
-| `solver.model` | Claude model override (optional) |
+| `solver.model` | Agent model override (optional) |
 | `github.createPrs` | Enable/disable PR creation (default: true) |
 | `github.postComments` | Enable/disable posting back to source (default: true) |
 | `github.prPrefix` | PR title prefix (default: `[Vigil]`) |
@@ -73,13 +74,13 @@ Dashboard: **http://localhost:7474**
 
 ## Okena integration
 
-When `solver.type` is set to `"okena"`, Vigil creates worktrees and runs Claude inside visible [Okena](https://github.com/nickarora/okena) terminal panes — you can watch and interact with Claude as it works. Falls back to headless mode if Okena isn't running.
+When `solver.type` is set to `"okena"`, Vigil creates worktrees and runs the configured agent inside visible [Okena](https://github.com/nickarora/okena) terminal panes — you can watch and interact as it works. If Okena is unavailable, tasks fail loudly until Okena is reachable again.
 
 Requires Okena's remote server enabled (`remote_server_enabled: true` in Okena settings).
 
 ## Solver prompt
 
-The prompt builder (`src/solver/prompt-builder.ts`) delegates to [Almanac](https://github.com/neumie/almanac) skills — specifically `/task-start` (which chains complexity assessment, branch naming, and tier-appropriate execution) and `/commit` for conventional commits. This means the Claude Code instances solving tasks follow the same structured workflow and conventions you'd use interactively.
+The prompt builder (`src/solver/prompt-builder.ts`) delegates to [Almanac](https://github.com/neumie/almanac) skills — specifically `/task-start` (which chains complexity assessment, branch naming, and tier-appropriate execution) and `/commit` for conventional commits. This means agents solving tasks follow the same structured workflow and conventions you'd use interactively.
 
 ## Architecture
 

@@ -1,34 +1,34 @@
 import type { VigilConfig } from '../config.js'
 import { log } from '../util/logger.js'
+import { buildHeadlessAgentInvocation } from './agent-command.js'
+import { solverAgentLabel } from './agent.js'
+import type { SolverAgent } from './agent.js'
 import { type SpawnClaudeResult, spawnClaude } from './spawn-claude.js'
 
-export type InvokeResult = SpawnClaudeResult
+export type InvokeResult = SpawnClaudeResult & { agent: SolverAgent }
 
-export async function invokeClaude(
+export async function invokeAgent(
 	worktreePath: string,
 	prompt: string,
 	solver: VigilConfig['solver'],
 	signal?: AbortSignal,
 	outputLogPath?: string,
 ): Promise<InvokeResult> {
-	const args: string[] = ['-p', '--output-format', 'json', '--dangerously-skip-permissions']
+	const invocation = buildHeadlessAgentInvocation(solver)
+	const displayName = solverAgentLabel(invocation.agent)
 
-	if (solver.model) {
-		args.push('--model', solver.model)
-	}
-	if (solver.maxBudgetUsd) {
-		args.push('--max-turns', '100')
-	}
+	log.info('invoker', `Spawning ${displayName} in ${worktreePath}`, { model: solver.model ?? 'default' })
 
-	log.info('invoker', `Spawning claude in ${worktreePath}`, { model: solver.model ?? 'default' })
-
-	return spawnClaude({
-		args,
+	const result = await spawnClaude({
+		command: invocation.command,
+		args: invocation.args,
 		cwd: worktreePath,
 		prompt,
 		timeoutMs: solver.timeoutMinutes * 60 * 1000,
 		signal,
 		logPath: outputLogPath,
-		label: 'invoker',
+		label: invocation.label,
+		displayName,
 	})
+	return { ...result, agent: invocation.agent }
 }

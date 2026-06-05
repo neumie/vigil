@@ -3,6 +3,7 @@ import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { VigilConfig } from '../../config.js'
 import { PlanWorkspace } from '../../plan/workspace.js'
+import { agentLabelFromConfig, buildInteractiveAgentCommand } from '../../solver/agent-command.js'
 import { buildPlanningPrompt, buildPrompt } from '../../solver/prompt-builder.js'
 import type {
 	PlanningSessionParams,
@@ -193,7 +194,8 @@ export class OkenaSolver implements Solver {
 		// okena types it into the terminal, and embedded newlines would break it).
 		workspace.writePlanningPrompt(buildPlanningPrompt(planDirName))
 
-		const command = `${this.claudeArgs(solverConfig).join(' ')} "$(cat ${workspace.rel.planningPrompt})"`
+		const command = buildInteractiveAgentCommand(solverConfig, workspace.rel.planningPrompt)
+		const agentLabel = agentLabelFromConfig(solverConfig)
 		log.info('okena', `Starting planning session in terminal ${terminalId}`)
 		try {
 			await this.client.action({ action: 'run_command', terminal_id: terminalId, command })
@@ -204,7 +206,7 @@ export class OkenaSolver implements Solver {
 		return {
 			worktreePath: ensured.worktreePath,
 			branchName,
-			hint: `Switch to Okena → open the project for branch ${branchName}. The planning session is running in the "plan: ${taskTitle}" terminal.`,
+			hint: `Switch to Okena → open the project for branch ${branchName}. ${agentLabel} planning is running in the "plan: ${taskTitle}" terminal.`,
 		}
 	}
 
@@ -255,15 +257,16 @@ export class OkenaSolver implements Solver {
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
 		writeFileSync(promptFile, buildPrompt(taskContext, { planDirName, worktreePath }), 'utf-8')
 
-		const command = `${this.claudeArgs(solverConfig).join(' ')} "$(cat .vigil-prompt.txt)"`
-		log.info('okena', `Running claude in terminal ${terminalId}`)
+		const command = buildInteractiveAgentCommand(solverConfig, '.vigil-prompt.txt')
+		const agentLabel = agentLabelFromConfig(solverConfig)
+		log.info('okena', `Running ${agentLabel} in terminal ${terminalId}`)
 		try {
 			await this.client.action({ action: 'run_command', terminal_id: terminalId, command })
 		} catch (err) {
 			throw phaseError('solve', `Failed to run command in Okena terminal: ${err instanceof Error ? err.message : err}`)
 		}
 
-		// Poll for solver-result.json — Claude writes this when done solving
+		// Poll for solver-result.json — the agent writes this when done solving.
 		const timeoutMs = solverConfig.timeoutMinutes * 60 * 1000
 		const startTime = Date.now()
 
@@ -278,13 +281,13 @@ export class OkenaSolver implements Solver {
 				throw taskCancelled()
 			}
 			if (Date.now() - startTime > timeoutMs) {
-				throw phaseError('solve', 'Claude timed out in Okena terminal')
+				throw phaseError('solve', `${agentLabel} timed out in Okena terminal`)
 			}
 			await sleep(2000)
 		}
 
 		await sleep(500)
-		log.success('okena', 'Claude finished — solver-result.json detected')
+		log.success('okena', `${agentLabel} finished — solver-result.json detected`)
 
 		try {
 			if (existsSync(promptFile)) unlinkSync(promptFile)
@@ -292,21 +295,13 @@ export class OkenaSolver implements Solver {
 			// Non-critical
 		}
 
-		// Okena runs claude in its own terminal — no stdout is captured here, so
+		// Okena runs the agent in its own terminal — no stdout is captured here, so
 		// there is no event timeline or raw output to report.
 		return {
 			worktreePath,
 			branchName,
 			outcome: { events: [], exitCode: 0 },
 		}
-	}
-
-	private claudeArgs(solverConfig: VigilConfig['solver']): string[] {
-		const args = ['claude', '--dangerously-skip-permissions']
-		if (solverConfig.model) {
-			args.push('--model', solverConfig.model)
-		}
-		return args
 	}
 
 	private async findPlanTerminal(wtProjectId: string): Promise<string | null> {

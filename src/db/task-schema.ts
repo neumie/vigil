@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { solverAgentSchema } from '../solver/agent.js'
 
 /**
  * Single source of truth for the `tasks` table shape.
@@ -39,6 +40,7 @@ export const taskRecordSchema = z.object({
 	solverConfidence: z.number().nullable(),
 	filesChanged: z.string().nullable(),
 	solverRawResult: z.string().nullable(),
+	solverAgent: solverAgentSchema.nullable(),
 	worktreePath: z.string().nullable(),
 	branchName: z.string().nullable(),
 	planDirName: z.string().nullable(),

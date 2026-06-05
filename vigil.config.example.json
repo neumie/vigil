@@ -16,6 +16,7 @@
 		"intervalSeconds": 60
 	},
 	"solver": {
+		"agent": "claude",
 		"concurrency": 2,
 		"timeoutMinutes": 30
 	},

@@ -28,7 +28,8 @@ export async function processTask(
 	if (!projectConfig) throw new Error(`No project config for slug: ${task.projectSlug}`)
 
 	db.updateTask(taskId, { status: 'processing', startedAt: new Date().toISOString() })
-	db.insertEvent(taskId, 'solver_started')
+	const solverConfig = { ...config.solver, agent: task.solverAgent ?? config.solver.agent }
+	db.insertEvent(taskId, 'solver_started', { agent: solverConfig.agent })
 
 	// Prepare output log path
 	mkdirSync(LOGS_DIR, { recursive: true })
@@ -51,7 +52,7 @@ export async function processTask(
 			db.updateTask(taskId, { planDirName })
 		}
 
-		// Phase 2+3: Create worktree + invoke Claude (delegated to solver).
+		// Phase 2+3: Create worktree + invoke configured agent (delegated to solver).
 		// The solver assembles its own prompt from the raw task context (it
 		// builds it AFTER worktree creation so the task-context builder can read
 		// worktree-resident docs/plans/<planDirName>/*.md). Reuse a worktree if
@@ -63,7 +64,7 @@ export async function processTask(
 			taskContext,
 			taskId,
 			taskTitle: task.title,
-			solverConfig: config.solver,
+			solverConfig,
 			signal,
 			outputLogPath,
 			existingWorktreePath,

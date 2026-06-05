@@ -85,4 +85,10 @@ CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
 ALTER TABLE tasks ADD COLUMN plan_dir_name TEXT;
 `,
 	},
+	{
+		version: 4,
+		sql: `
+ALTER TABLE tasks ADD COLUMN solver_agent TEXT;
+`,
+	},
 ]
