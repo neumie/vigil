@@ -5,9 +5,10 @@ import { formatTaskContext } from '../task-context.js'
 import { isCancellation, phaseError, taskCancelled } from '../util/errors.js'
 import { log } from '../util/logger.js'
 import { createWorktree, excludeVigilFiles } from '../worktree/manager.js'
+import { agentLabelFromConfig, buildInteractiveAgentCommand } from './agent-command.js'
 import { invokeChatSession } from './chat-invoker.js'
 import type { InvokeResult } from './invoker.js'
-import { invokeClaude } from './invoker.js'
+import { invokeAgent } from './invoker.js'
 import { parseClaudeOutput } from './output-parser.js'
 import { buildChatPrompt, buildPlanningPrompt, buildPrompt } from './prompt-builder.js'
 import type { PlanningSessionParams, PlanningSessionResult, SolveParams, SolveResult, Solver } from './solver.js'
@@ -53,7 +54,7 @@ export class DefaultSolver implements Solver {
 	async startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult> {
 		// DefaultSolver has no terminal of its own to spawn into. Ensure the
 		// worktree, write the task context + planning prompt into the plan dir,
-		// return a hint for the user to run claude themselves.
+		// return a hint for the user to run the configured agent themselves.
 		const worktreePath = this.ensureWorktree(
 			params.projectConfig,
 			params.branchName,
@@ -68,7 +69,7 @@ export class DefaultSolver implements Solver {
 		return {
 			worktreePath,
 			branchName: params.branchName,
-			hint: `Open a terminal in ${worktreePath} and run:\n  claude --dangerously-skip-permissions "$(cat ${workspace.rel.planningPrompt})"`,
+			hint: `Open a terminal in ${worktreePath} and run:\n  ${buildInteractiveAgentCommand(params.solverConfig, workspace.rel.planningPrompt)}`,
 		}
 	}
 
@@ -126,21 +127,24 @@ export class DefaultSolver implements Solver {
 			? `${basePrompt}\n\n## Clarification from Requester\n\nThe following is a conversation with the task requester that clarified the requirements:\n\n${chatTranscript}`
 			: basePrompt
 
-		// Invoke Claude Code (full access)
-		log.info('solver', `Invoking Claude Code in ${worktreePath}`)
+		// Invoke configured agent (full access).
+		log.info('solver', `Invoking ${agentLabelFromConfig(solverConfig)} in ${worktreePath}`)
 		let invokeResult: InvokeResult
 		try {
-			invokeResult = await invokeClaude(worktreePath, solverPrompt, solverConfig, signal, outputLogPath)
+			invokeResult = await invokeAgent(worktreePath, solverPrompt, solverConfig, signal, outputLogPath)
 		} catch (err) {
 			if (isCancellation(err)) throw err
-			throw phaseError('solve', `Claude invocation failed: ${err instanceof Error ? err.message : err}`)
+			throw phaseError(
+				'solve',
+				`${agentLabelFromConfig(solverConfig)} invocation failed: ${err instanceof Error ? err.message : err}`,
+			)
 		}
 
 		return {
 			worktreePath,
 			branchName,
 			outcome: {
-				events: parseClaudeOutput(invokeResult.stdout),
+				events: invokeResult.agent === 'claude' ? parseClaudeOutput(invokeResult.stdout) : [],
 				exitCode: invokeResult.exitCode,
 				rawOutput: invokeResult.stdout,
 			},

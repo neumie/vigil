@@ -272,8 +272,25 @@ export function SettingsPage() {
 			</Card>
 
 			{/* Solver */}
-			<Card title="Solver" description="Claude Code invocation settings">
-				<Field label="Type" value={String(solver?.type ?? 'default')} onChange={v => update(['solver', 'type'], v)} />
+			<Card title="Solver" description="Agent invocation settings">
+				<SelectField
+					label="Type"
+					value={String(solver?.type ?? 'default')}
+					onChange={v => update(['solver', 'type'], v)}
+					options={[
+						{ value: 'default', label: 'Default' },
+						{ value: 'okena', label: 'Okena' },
+					]}
+				/>
+				<SelectField
+					label="Agent"
+					value={String(solver?.agent ?? 'claude')}
+					onChange={v => update(['solver', 'agent'], v)}
+					options={[
+						{ value: 'claude', label: 'Claude Code' },
+						{ value: 'codex', label: 'Codex' },
+					]}
+				/>
 				<Field
 					label="Concurrency"
 					value={String(solver?.concurrency ?? 2)}
@@ -284,7 +301,7 @@ export function SettingsPage() {
 					label="Model"
 					value={String(solver?.model ?? '')}
 					onChange={v => update(['solver', 'model'], v || undefined)}
-					placeholder="e.g. claude-sonnet-4-5-20250514"
+					placeholder="Agent model override (optional)"
 				/>
 				<Field
 					label="Timeout (min)"
@@ -485,6 +502,52 @@ function Field({
 					e.currentTarget.style.borderColor = empty ? 'var(--red)' : 'var(--border)'
 				}}
 			/>
+		</label>
+	)
+}
+
+function SelectField({
+	label,
+	value,
+	onChange,
+	options,
+}: {
+	label: string
+	value: string
+	onChange: (v: string) => void
+	options: Array<{ value: string; label: string }>
+}) {
+	return (
+		<label style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+			<span style={{ fontSize: 12, color: 'var(--text-3)', width: 120, flexShrink: 0 }}>{label}</span>
+			<select
+				value={value}
+				onChange={e => onChange(e.target.value)}
+				style={{
+					flex: 1,
+					padding: '6px 10px',
+					background: 'var(--bg-0)',
+					border: '1px solid var(--border)',
+					borderRadius: 'var(--radius-sm)',
+					color: 'var(--text-1)',
+					fontSize: 12,
+					fontFamily: 'var(--font-sans)',
+					outline: 'none',
+					transition: 'border-color 150ms',
+				}}
+				onFocus={e => {
+					e.currentTarget.style.borderColor = 'var(--accent)'
+				}}
+				onBlur={e => {
+					e.currentTarget.style.borderColor = 'var(--border)'
+				}}
+			>
+				{options.map(option => (
+					<option key={option.value} value={option.value}>
+						{option.label}
+					</option>
+				))}
+			</select>
 		</label>
 	)
 }

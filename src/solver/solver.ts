@@ -51,7 +51,7 @@ export interface PlanningSessionResult {
 	/**
 	 * Solver-specific human-readable hint to show the user. For okena: "Switch
 	 * to Okena, planning session is running in terminal X". For default: "Open
-	 * Claude Code in <path> — prompt staged at .planning-prompt.txt".
+	 * a terminal in <path> and run the staged prompt command".
 	 */
 	hint: string
 }

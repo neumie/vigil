@@ -4,6 +4,7 @@ import { taskCancelled } from '../util/errors.js'
 import { log } from '../util/logger.js'
 
 export interface SpawnClaudeOptions {
+	command?: string
 	args: string[]
 	cwd: string
 	prompt: string
@@ -11,6 +12,7 @@ export interface SpawnClaudeOptions {
 	signal?: AbortSignal
 	logPath?: string
 	label?: string
+	displayName?: string
 }
 
 export interface SpawnClaudeResult {
@@ -20,7 +22,17 @@ export interface SpawnClaudeResult {
 }
 
 export function spawnClaude(options: SpawnClaudeOptions): Promise<SpawnClaudeResult> {
-	const { args, cwd, prompt, timeoutMs, signal, logPath, label = 'claude' } = options
+	const {
+		command = 'claude',
+		args,
+		cwd,
+		prompt,
+		timeoutMs,
+		signal,
+		logPath,
+		label = command,
+		displayName = command,
+	} = options
 
 	return new Promise<SpawnClaudeResult>((resolve, reject) => {
 		if (signal?.aborted) {
@@ -28,7 +40,7 @@ export function spawnClaude(options: SpawnClaudeOptions): Promise<SpawnClaudeRes
 			return
 		}
 
-		const child = spawn('claude', args, {
+		const child = spawn(command, args, {
 			cwd,
 			env: { ...process.env },
 			stdio: ['pipe', 'pipe', 'pipe'],
@@ -66,7 +78,7 @@ export function spawnClaude(options: SpawnClaudeOptions): Promise<SpawnClaudeRes
 			const stdout = Buffer.concat(stdoutChunks).toString('utf-8')
 			const stderr = Buffer.concat(stderrChunks).toString('utf-8')
 
-			log.info(label, `Claude exited with code ${code}`, {
+			log.info(label, `${displayName} exited with code ${code}`, {
 				stdoutLen: stdout.length,
 				stderrLen: stderr.length,
 			})
@@ -81,7 +93,7 @@ export function spawnClaude(options: SpawnClaudeOptions): Promise<SpawnClaudeRes
 		child.on('error', err => {
 			signal?.removeEventListener('abort', onAbort)
 			logStream?.end()
-			reject(new Error(`Failed to spawn claude: ${err.message}`))
+			reject(new Error(`Failed to spawn ${displayName}: ${err.message}`))
 		})
 	})
 }

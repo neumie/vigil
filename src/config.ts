@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { solverAgentSchema } from './solver/agent.js'
 
 const contemberProviderSchema = z.object({
 	type: z.literal('contember'),
@@ -34,6 +35,7 @@ export const configSchema = z.object({
 	solver: z
 		.object({
 			type: z.enum(['default', 'okena']).default('default'),
+			agent: solverAgentSchema.default('claude'),
 			concurrency: z.number().min(1).max(10).default(2),
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),

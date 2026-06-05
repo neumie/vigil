@@ -36,10 +36,18 @@ export class DB {
 	}
 
 	// Tasks
-	insertTask(task: { id: string; clientcareId: string; projectSlug: string; title: string }): void {
+	insertTask(task: {
+		id: string
+		clientcareId: string
+		projectSlug: string
+		title: string
+		solverAgent?: string
+	}): void {
 		this.db
-			.prepare('INSERT OR IGNORE INTO tasks (id, clientcare_id, project_slug, title) VALUES (?, ?, ?, ?)')
-			.run(task.id, task.clientcareId, task.projectSlug, task.title)
+			.prepare(
+				'INSERT OR IGNORE INTO tasks (id, clientcare_id, project_slug, title, solver_agent) VALUES (?, ?, ?, ?, ?)',
+			)
+			.run(task.id, task.clientcareId, task.projectSlug, task.title, task.solverAgent ?? null)
 	}
 
 	deleteTask(id: string): void {

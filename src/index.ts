@@ -22,10 +22,11 @@ async function main() {
 	const provider = createProvider(config.provider)
 	log.info('vigil', `Provider: ${provider.name}`)
 
-	// createSolver owns the dynamic-import + silent-fallback invariant (see
-	// solver/registry.ts) — the active solver may differ from config.solver.type.
 	const solver = await createSolver(config)
-	log.info('vigil', `Solver configured: ${config.solver.type}, active: ${solver.constructor.name}`)
+	log.info(
+		'vigil',
+		`Solver configured: ${config.solver.type}, agent: ${config.solver.agent}, active: ${solver.constructor.name}`,
+	)
 
 	const queue = new TaskQueue(config, db, provider, solver)
 

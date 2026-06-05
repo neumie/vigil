@@ -14,6 +14,8 @@ import { PlanWorkspace } from '../../plan/workspace.js'
 import type { Poller } from '../../poller/poller.js'
 import type { TaskProvider } from '../../providers/provider.js'
 import type { TaskQueue } from '../../queue/queue.js'
+import { solverAgentSchema } from '../../solver/agent.js'
+import type { SolverAgent } from '../../solver/agent.js'
 import type { Solver } from '../../solver/solver.js'
 
 export function apiRoutes(
@@ -28,6 +30,15 @@ export function apiRoutes(
 	channel: ChatChannel,
 ) {
 	const api = new Hono()
+
+	async function readSolverAgent(
+		bodyPromise: Promise<{ solverAgent?: unknown }>,
+	): Promise<SolverAgent | null | undefined> {
+		const body = (await bodyPromise.catch(() => ({}))) as { solverAgent?: unknown }
+		if (body.solverAgent === undefined || body.solverAgent === null) return undefined
+		const parsed = solverAgentSchema.safeParse(body.solverAgent)
+		return parsed.success ? parsed.data : null
+	}
 
 	// Daemon status
 	api.get('/status', c => {
@@ -67,12 +78,20 @@ export function apiRoutes(
 
 	// Create task by clientcare ID — server resolves projectSlug and title from the provider
 	api.post('/tasks', async c => {
-		const body = await c.req.json<{ clientcareId: string }>()
+		const body = await c.req.json<{ clientcareId: string; solverAgent?: unknown }>()
+		const solverAgent = await readSolverAgent(Promise.resolve(body))
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
 		if (!body.clientcareId) {
 			return c.json({ error: 'Missing required field: clientcareId' }, 400)
 		}
 		const existing = db.getTaskByClientcareId(body.clientcareId)
 		if (existing) {
+			if (solverAgent) {
+				db.updateTask(existing.id, { solverAgent })
+				return c.json({ data: db.getTask(existing.id) ?? existing })
+			}
 			return c.json({ data: existing })
 		}
 
@@ -90,6 +109,7 @@ export function apiRoutes(
 			clientcareId: body.clientcareId,
 			projectSlug: summary.projectSlug,
 			title: summary.title,
+			solverAgent: solverAgent ?? undefined,
 		})
 		db.insertEvent(id, 'task_discovered', { source: 'extension' })
 		queue.enqueue(id)
@@ -130,6 +150,8 @@ export function apiRoutes(
 					})),
 					polling: raw.polling ?? config.polling,
 					solver: {
+						type: raw.solver?.type ?? config.solver.type,
+						agent: raw.solver?.agent ?? config.solver.agent,
 						concurrency: raw.solver?.concurrency ?? config.solver.concurrency,
 						model: raw.solver?.model ?? config.solver.model,
 						timeoutMinutes: raw.solver?.timeoutMinutes ?? config.solver.timeoutMinutes,
@@ -149,6 +171,8 @@ export function apiRoutes(
 					})),
 					polling: config.polling,
 					solver: {
+						type: config.solver.type,
+						agent: config.solver.agent,
 						concurrency: config.solver.concurrency,
 						model: config.solver.model,
 						timeoutMinutes: config.solver.timeoutMinutes,
@@ -191,13 +215,19 @@ export function apiRoutes(
 
 	// Prepare a worktree for interactive planning BEFORE the autonomous solve.
 	// Creates the worktree, writes a per-task README at docs/plans/<planDirName>/,
-	// and KICKS OFF the planning agent (claude in okena's terminal for the okena
+	// and KICKS OFF the planning agent (inside Okena's terminal for the Okena
 	// solver, or stages a prompt file the user runs themselves for the default
 	// solver). The autonomous run later reuses the same worktree and the
 	// transformer prepends docs/plans/<planDirName>/*.md to the solver prompt.
 	api.post('/tasks/:id/plan', async c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
+		const effectiveSolverAgent = solverAgent ?? task.solverAgent ?? config.solver.agent
+		if (solverAgent) db.updateTask(task.id, { solverAgent })
 
 		const projectConfig = config.projects.find(p => p.slug === task.projectSlug)
 		if (!projectConfig) return c.json({ error: `Unknown project slug: ${task.projectSlug}` }, 400)
@@ -222,7 +252,7 @@ export function apiRoutes(
 				planDirName,
 				taskTitle: task.title,
 				taskContext,
-				solverConfig: config.solver,
+				solverConfig: { ...config.solver, agent: effectiveSolverAgent },
 				existingWorktreePath,
 			})
 			worktreePath = session.worktreePath
@@ -266,15 +296,20 @@ export function apiRoutes(
 				planDirName,
 				readmePath,
 				solverType: config.solver.type,
+				solverAgent: effectiveSolverAgent,
 				hint,
 			},
 		})
 	})
 
 	// Process a single task immediately (bypasses pause)
-	api.post('/tasks/:id/start', c => {
+	api.post('/tasks/:id/start', async c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
 		if (task.status === 'processing') return c.json({ error: 'Task is already processing' }, 400)
 		if (task.status !== 'queued') {
 			db.updateTask(task.id, {
@@ -285,15 +320,20 @@ export function apiRoutes(
 				completedAt: null,
 			})
 		}
+		if (solverAgent) db.updateTask(task.id, { solverAgent })
 		const started = queue.processOne(task.id)
 		if (!started) return c.json({ error: 'Could not start task' }, 500)
 		return c.json({ data: { message: 'Task started' } })
 	})
 
 	// Re-queue a task (reset and put back in queue)
-	api.post('/tasks/:id/retry', c => {
+	api.post('/tasks/:id/retry', async c => {
 		const task = db.getTask(c.req.param('id'))
 		if (!task) return c.json({ error: 'Not found' }, 404)
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
 		if (task.status === 'processing' || task.status === 'queued')
 			return c.json({ error: 'Task is already active or queued' }, 400)
 		db.updateTask(task.id, {
@@ -302,6 +342,7 @@ export function apiRoutes(
 			errorPhase: null,
 			startedAt: null,
 			completedAt: null,
+			solverAgent: solverAgent ?? task.solverAgent,
 		})
 		queue.enqueue(task.id)
 		return c.json({ data: { message: 'Task re-enqueued' } })

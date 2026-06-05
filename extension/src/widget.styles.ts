@@ -148,6 +148,49 @@ export const WIDGET_STYLES = `
 	.vg-text--primary { color: var(--vg-text); }
 	.vg-summary { font-size: 13px; line-height: 1.55; color: var(--vg-text-dim); }
 
+	.vg-agent {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		min-height: 32px;
+	}
+	.vg-agent__label {
+		color: var(--vg-text-faint);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.vg-agent__seg {
+		display: grid;
+		grid-template-columns: repeat(2, 72px);
+		height: 30px;
+		padding: 2px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--vg-border);
+		border-radius: var(--vg-radius-ctl);
+	}
+	.vg-agent__option {
+		height: 24px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--vg-text-dim);
+		font-family: var(--vg-font);
+		font-size: 12px;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.vg-agent__option.is-active {
+		background: var(--vg-accent-fill);
+		color: #fff;
+	}
+	.vg-agent__option:disabled {
+		cursor: default;
+		opacity: 0.5;
+	}
+
 	.vg-pr {
 		display: inline-flex;
 		align-items: center;

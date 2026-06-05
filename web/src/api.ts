@@ -34,6 +34,7 @@ export interface TaskRecord {
 	tier: string | null
 	solverSummary: string | null
 	solverConfidence: number | null
+	solverAgent: 'claude' | 'codex' | null
 	filesChanged: string | null
 	worktreePath: string | null
 	branchName: string | null
@@ -92,6 +93,7 @@ export interface AppConfig {
 	taskBaseUrl?: string
 	projectColors?: Record<string, string>
 	projects?: Array<{ slug: string; repoPath?: string; baseBranch?: string; color?: string }>
+	solver?: { type?: 'default' | 'okena'; agent?: 'claude' | 'codex' }
 }
 
 export const api = {

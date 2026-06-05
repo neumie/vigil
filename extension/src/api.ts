@@ -1,3 +1,5 @@
+export type SolverAgent = 'claude' | 'codex'
+
 export interface TaskRecord {
 	id: string
 	clientcareId: string
@@ -7,6 +9,7 @@ export interface TaskRecord {
 	tier: string | null
 	solverSummary: string | null
 	solverConfidence: number | null
+	solverAgent: SolverAgent | null
 	prUrl: string | null
 	prDraft: number | null
 	branchName: string | null
@@ -59,20 +62,25 @@ export interface PlanInfo {
 	planDirName: string
 	readmePath: string
 	solverType: 'default' | 'okena'
+	solverAgent: SolverAgent
 	hint: string
 }
 
 export const api = {
 	findTask: (clientcareId: string) => fetchAPI<TaskRecord | null>(`/tasks/by-clientcare-id/${clientcareId}`),
 
-	createTask: (clientcareId: string) => postAPI<TaskRecord>('/tasks', { clientcareId }),
+	createTask: (clientcareId: string, solverAgent?: SolverAgent) =>
+		postAPI<TaskRecord>('/tasks', { clientcareId, solverAgent }),
 
-	start: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/start`),
-	retry: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/retry`),
+	start: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/start`, { solverAgent }),
+	retry: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/retry`, { solverAgent }),
 	cancel: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/cancel`),
-	plan: (id: string) => postAPI<PlanInfo>(`/tasks/${id}/plan`),
+	plan: (id: string, solverAgent?: SolverAgent) => postAPI<PlanInfo>(`/tasks/${id}/plan`, { solverAgent }),
 	setStatus: (id: string, status: string) => postAPI<{ message: string }>(`/tasks/${id}/status`, { status }),
 	deleteTask: (id: string) => deleteAPI<{ message: string }>(`/tasks/${id}`),
 	resumeQueue: () => postAPI<{ paused: boolean }>('/queue/resume'),
-	config: () => fetchAPI<{ projects: Array<{ slug: string }> }>('/config'),
+	config: () =>
+		fetchAPI<{ projects: Array<{ slug: string }>; solver?: { agent?: SolverAgent; type?: 'default' | 'okena' } }>(
+			'/config',
+		),
 }

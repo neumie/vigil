@@ -1,5 +1,5 @@
-import { type Accessor, type JSX, Match, Show, Switch, createEffect, createSignal, onCleanup } from 'solid-js'
-import { type PlanInfo, type TaskRecord, api, getServerUrl } from './api'
+import { type Accessor, For, type JSX, Match, Show, Switch, createEffect, createSignal, onCleanup } from 'solid-js'
+import { type PlanInfo, type SolverAgent, type TaskRecord, api, getServerUrl } from './api'
 
 type Tone = 'gray' | 'blue' | 'green' | 'amber' | 'red'
 
@@ -22,6 +22,8 @@ const TIER_TONE: Record<string, Tone> = {
 const toneOf = (map: Record<string, Tone>, key: string | null | undefined): Tone => (key && map[key]) || 'gray'
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const agentLabel = (agent: SolverAgent) => (agent === 'codex' ? 'Codex' : 'Claude')
+const isSolverAgent = (value: unknown): value is SolverAgent => value === 'claude' || value === 'codex'
 
 /** What the widget should show, derived once and shared by the pill and the card. */
 type View =
@@ -43,13 +45,21 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [serverUrl, setServerUrl] = createSignal<string>('http://localhost:7474')
 	const [planInfo, setPlanInfo] = createSignal<PlanInfo | null>(null)
 	const [planPending, setPlanPending] = createSignal(false)
+	const [solverAgent, setSolverAgent] = createSignal<SolverAgent>('claude')
+	const [agentTouched, setAgentTouched] = createSignal(false)
 
 	getServerUrl().then(setServerUrl)
 
 	// Load projects on mount
 	api
 		.config()
-		.then(c => setProjects(c.projects.map(p => p.slug)))
+		.then(c => {
+			setProjects(c.projects.map(p => p.slug))
+			const configAgent = c.solver?.agent ?? 'claude'
+			chrome.storage.sync.get({ solverAgent: configAgent }, items => {
+				if (isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
+			})
+		})
 		.catch(err => {
 			console.warn('[vigil]', err)
 			setConnError('Cannot connect to Vigil')
@@ -67,11 +77,13 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 			setTask(null)
 			setConnError(null)
 			setActionError(null)
+			setAgentTouched(false)
 			return
 		}
 
 		const taskId = id
 		let active = true
+		setAgentTouched(false)
 
 		async function lookup() {
 			if (!active) return
@@ -79,6 +91,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 				const result = await api.findTask(taskId)
 				if (active) {
 					setTask(result)
+					if (result?.solverAgent && !agentTouched()) setSolverAgent(result.solverAgent)
 					setConnError(null)
 				}
 			} catch (err) {
@@ -111,7 +124,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	async function solve() {
 		const id = props.taskId()
 		if (!id || projects().length === 0) return
-		await doAction(() => api.createTask(id))
+		await doAction(() => api.createTask(id, solverAgent()))
 	}
 
 	async function handleDelete() {
@@ -128,13 +141,19 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		setActionError(null)
 		setPlanPending(true)
 		try {
-			const info = await api.plan(t.id)
+			const info = await api.plan(t.id, solverAgent())
 			setPlanInfo(info)
 		} catch (err) {
 			setActionError(err instanceof Error ? err.message : 'Plan failed')
 		} finally {
 			setPlanPending(false)
 		}
+	}
+
+	function chooseSolverAgent(agent: SolverAgent) {
+		setAgentTouched(true)
+		setSolverAgent(agent)
+		chrome.storage.sync.set({ solverAgent: agent })
 	}
 
 	const view = (): View => {
@@ -152,17 +171,19 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 				dashboardUrl={dashboardUrl}
 				planInfo={planInfo}
 				planPending={planPending}
+				solverAgent={solverAgent}
 				actionError={actionError}
+				onSolverAgentChange={chooseSolverAgent}
 				onDismissError={() => setActionError(null)}
 				onCollapse={() => setExpanded(false)}
 				onSolve={solve}
 				onStart={() => {
 					const t = task()
-					if (t) doAction(() => api.start(t.id))
+					if (t) doAction(() => api.start(t.id, solverAgent()))
 				}}
 				onRetry={() => {
 					const t = task()
-					if (t) doAction(() => api.retry(t.id))
+					if (t) doAction(() => api.retry(t.id, solverAgent()))
 				}}
 				onCancel={() => {
 					const t = task()
@@ -194,6 +215,34 @@ function Btn(props: {
 		<button type="button" class={`vg-btn vg-btn--${props.variant}`} on:click={props.onClick} disabled={props.disabled}>
 			{props.children}
 		</button>
+	)
+}
+
+function AgentSelect(props: {
+	value: Accessor<SolverAgent>
+	onChange: (agent: SolverAgent) => void
+	disabled?: boolean
+}) {
+	const options: SolverAgent[] = ['claude', 'codex']
+	return (
+		<div class="vg-agent">
+			<span class="vg-agent__label">Agent</span>
+			<div class="vg-agent__seg" aria-label="Solver agent">
+				<For each={options}>
+					{agent => (
+						<button
+							type="button"
+							class={`vg-agent__option${props.value() === agent ? ' is-active' : ''}`}
+							aria-pressed={props.value() === agent}
+							disabled={props.disabled}
+							on:click={() => props.onChange(agent)}
+						>
+							{agentLabel(agent)}
+						</button>
+					)}
+				</For>
+			</div>
+		</div>
 	)
 }
 
@@ -246,7 +295,9 @@ function Card(props: {
 	dashboardUrl: Accessor<string | null>
 	planInfo: Accessor<PlanInfo | null>
 	planPending: Accessor<boolean>
+	solverAgent: Accessor<SolverAgent>
 	actionError: Accessor<string | null>
+	onSolverAgentChange: (agent: SolverAgent) => void
 	onDismissError: () => void
 	onCollapse: () => void
 	onSolve: () => void
@@ -296,6 +347,9 @@ function Card(props: {
 						<Show when={!(v() as { kind: 'untracked'; solvable: boolean }).solvable}>
 							<div class="vg-text">No projects are configured.</div>
 						</Show>
+						<Show when={(v() as { kind: 'untracked'; solvable: boolean }).solvable}>
+							<AgentSelect value={props.solverAgent} onChange={props.onSolverAgentChange} />
+						</Show>
 					</div>
 					<Show when={(v() as { kind: 'untracked'; solvable: boolean }).solvable}>
 						<div class="vg-card__actions">
@@ -337,6 +391,11 @@ function Card(props: {
 								</div>
 
 								<div class="vg-card__body">
+									<AgentSelect
+										value={props.solverAgent}
+										onChange={props.onSolverAgentChange}
+										disabled={isProcessing()}
+									/>
 									<Show when={props.actionError()}>
 										{msg => (
 											<div class="vg-error vg-error--dismissible">
@@ -364,7 +423,7 @@ function Card(props: {
 										{info => (
 											<div class="vg-plan">
 												<span>
-													Planning agent started for <code>{info().planDirName}</code>.
+													{agentLabel(info().solverAgent)} planning started for <code>{info().planDirName}</code>.
 												</span>
 												<span>
 													Tell it what you want, or run <code>/grill-me {info().planDirName}</code> /{' '}
