@@ -69,7 +69,7 @@ export class DefaultSolver implements Solver {
 		return {
 			worktreePath,
 			branchName: params.branchName,
-			hint: `Open a terminal in ${worktreePath} and run:\n  ${buildInteractiveAgentCommand(params.solverConfig, workspace.rel.planningPrompt)}`,
+			hint: `Run in any terminal:\n  ${buildInteractiveAgentCommand(params.solverConfig, workspace.rel.planningPrompt, worktreePath)}`,
 		}
 	}
 

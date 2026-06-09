@@ -194,7 +194,7 @@ export class OkenaSolver implements Solver {
 		// okena types it into the terminal, and embedded newlines would break it).
 		workspace.writePlanningPrompt(buildPlanningPrompt(planDirName))
 
-		const command = buildInteractiveAgentCommand(solverConfig, workspace.rel.planningPrompt)
+		const command = buildInteractiveAgentCommand(solverConfig, workspace.rel.planningPrompt, ensured.worktreePath)
 		const agentLabel = agentLabelFromConfig(solverConfig)
 		log.info('okena', `Starting planning session in terminal ${terminalId}`)
 		try {
@@ -257,7 +257,7 @@ export class OkenaSolver implements Solver {
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
 		writeFileSync(promptFile, buildPrompt(taskContext, { planDirName, worktreePath }), 'utf-8')
 
-		const command = buildInteractiveAgentCommand(solverConfig, '.vigil-prompt.txt')
+		const command = buildInteractiveAgentCommand(solverConfig, '.vigil-prompt.txt', worktreePath)
 		const agentLabel = agentLabelFromConfig(solverConfig)
 		log.info('okena', `Running ${agentLabel} in terminal ${terminalId}`)
 		try {
