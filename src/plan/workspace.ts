@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type SolverResult, solverResultSchema } from '../solver/result-schema.js'
 import { log } from '../util/logger.js'
@@ -75,6 +75,17 @@ export class PlanWorkspace {
 
 	resultExists(): boolean {
 		return existsSync(this.resultPath)
+	}
+
+	/**
+	 * Delete any stale `solver-result.json` left in a reused worktree by a prior
+	 * run. Call BEFORE solving: okena's poll loop waits on `resultExists()`, and a
+	 * leftover result makes it exit instantly — reporting the old result as success
+	 * and (worse) racing the freshly-launched agent's `cat` of the prompt file to
+	 * deletion. `force: true` no-ops when absent.
+	 */
+	clearResult(): void {
+		rmSync(this.resultPath, { force: true })
 	}
 
 	/** Read + validate `solver-result.json`. Null if absent or invalid. */

@@ -254,6 +254,10 @@ export class OkenaSolver implements Solver {
 		// Build the prompt now so the task-context builder sees any
 		// docs/plans/<planDirName>/ artifacts present in the worktree.
 		const workspace = new PlanWorkspace(worktreePath, planDirName)
+		// A reused worktree may still hold a prior run's solver-result.json. Clear it
+		// before launching, or the poll loop below exits instantly on the stale file
+		// and unlinks .vigil-prompt.txt out from under the just-launched agent.
+		workspace.clearResult()
 		const promptFile = join(worktreePath, '.vigil-prompt.txt')
 		writeFileSync(promptFile, buildPrompt(taskContext, { planDirName, worktreePath }), 'utf-8')
 

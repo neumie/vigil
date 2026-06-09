@@ -127,6 +127,10 @@ export class DefaultSolver implements Solver {
 			? `${basePrompt}\n\n## Clarification from Requester\n\nThe following is a conversation with the task requester that clarified the requirements:\n\n${chatTranscript}`
 			: basePrompt
 
+		// Drop any prior run's solver-result.json from a reused worktree so a crashed
+		// agent isn't reported as success on the stale result (phase 4 reads it back).
+		new PlanWorkspace(worktreePath, planDirName).clearResult()
+
 		// Invoke configured agent (full access).
 		log.info('solver', `Invoking ${agentLabelFromConfig(solverConfig)} in ${worktreePath}`)
 		let invokeResult: InvokeResult
