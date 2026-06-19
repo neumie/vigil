@@ -47,13 +47,7 @@ export function TaskDetail({ task, taskBaseUrl, onStart, onRetry, onCancel, onSe
 
 			{/* Badges + links row */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
-				<StatusBadge value={task.status} type="status" />
-				{task.tier && <StatusBadge value={task.tier} type="tier" />}
-				{task.solverConfidence != null && (
-					<span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-						{(task.solverConfidence * 100).toFixed(0)}% confidence
-					</span>
-				)}
+				<StatusBadge value={task.status} />
 
 				<span style={{ flex: 1 }} />
 

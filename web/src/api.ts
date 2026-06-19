@@ -31,9 +31,7 @@ export interface TaskRecord {
 	projectSlug: string
 	title: string
 	status: string
-	tier: string | null
 	solverSummary: string | null
-	solverConfidence: number | null
 	solverAgent: 'claude' | 'codex' | null
 	filesChanged: string | null
 	worktreePath: string | null

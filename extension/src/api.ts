@@ -6,9 +6,7 @@ export interface TaskRecord {
 	projectSlug: string
 	title: string
 	status: string
-	tier: string | null
 	solverSummary: string | null
-	solverConfidence: number | null
 	solverAgent: SolverAgent | null
 	prUrl: string | null
 	prDraft: number | null
