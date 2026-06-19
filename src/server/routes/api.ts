@@ -64,24 +64,24 @@ export function apiRoutes(
 		return c.json({ data: tasks })
 	})
 
-	// Look up task by clientcare ID
-	api.get('/tasks/by-clientcare-id/:id', c => {
-		const task = db.getTaskByClientcareId(c.req.param('id'))
+	// Look up task by external ID
+	api.get('/tasks/by-external-id/:id', c => {
+		const task = db.getTaskByExternalId(c.req.param('id'))
 		if (!task) return c.json({ data: null })
 		return c.json({ data: task })
 	})
 
-	// Create task by clientcare ID — server resolves projectSlug and title from the provider
+	// Create task by external ID — server resolves projectSlug and title from the provider
 	api.post('/tasks', async c => {
-		const body = await c.req.json<{ clientcareId: string; solverAgent?: unknown }>()
+		const body = await c.req.json<{ externalId: string; solverAgent?: unknown }>()
 		const solverAgent = await readSolverAgent(Promise.resolve(body))
 		if (solverAgent === null) {
 			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
 		}
-		if (!body.clientcareId) {
-			return c.json({ error: 'Missing required field: clientcareId' }, 400)
+		if (!body.externalId) {
+			return c.json({ error: 'Missing required field: externalId' }, 400)
 		}
-		const existing = db.getTaskByClientcareId(body.clientcareId)
+		const existing = db.getTaskByExternalId(body.externalId)
 		if (existing) {
 			if (solverAgent) {
 				db.updateTask(existing.id, { solverAgent })
@@ -90,9 +90,9 @@ export function apiRoutes(
 			return c.json({ data: existing })
 		}
 
-		const summary = await provider.resolveTaskSummary(body.clientcareId)
+		const summary = await provider.resolveTaskSummary(body.externalId)
 		if (!summary) {
-			return c.json({ error: `Task ${body.clientcareId} not found in ${provider.name}` }, 404)
+			return c.json({ error: `Task ${body.externalId} not found in ${provider.name}` }, 404)
 		}
 		if (!config.projects.some(p => p.slug === summary.projectSlug)) {
 			return c.json({ error: `Project '${summary.projectSlug}' is not configured in vigil.config.json` }, 400)
@@ -101,7 +101,7 @@ export function apiRoutes(
 		const id = randomUUID()
 		db.insertTask({
 			id,
-			clientcareId: body.clientcareId,
+			externalId: body.externalId,
 			projectSlug: summary.projectSlug,
 			title: summary.title,
 			solverAgent: solverAgent ?? undefined,
@@ -213,7 +213,7 @@ export function apiRoutes(
 		const { planDirName, branchName, existingWorktreePath } = resolveTaskWorkspace(task)
 
 		// Fetch task context so the planning agent (and context.md) is informed.
-		const taskContext = await provider.getTaskContext(task.clientcareId)
+		const taskContext = await provider.getTaskContext(task.externalId)
 		if (!taskContext) {
 			return c.json({ error: 'Task not found in source system' }, 502)
 		}
@@ -248,7 +248,7 @@ export function apiRoutes(
 			'',
 			`**Status:** ${task.status}`,
 			`**Branch:** ${branchName}`,
-			`**Task ID:** ${task.clientcareId}`,
+			`**Task ID:** ${task.externalId}`,
 			'',
 			'## Plan this task',
 			'',
