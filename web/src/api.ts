@@ -69,24 +69,6 @@ export interface DaemonStatus {
 	queue: QueueStatus
 	projects: string[]
 	pollInterval: number
-	chatEnabled: boolean
-}
-
-export interface ChatSessionInfo {
-	id: string
-	taskId: string
-	token: string
-	status: 'active' | 'completed'
-	createdAt: string
-	completedAt: string | null
-	chatUrl: string | null
-	messages: Array<{
-		id: string
-		sessionId: string
-		role: 'assistant' | 'user'
-		content: string
-		createdAt: string
-	}>
 }
 
 export interface AppConfig {
@@ -100,10 +82,7 @@ export const api = {
 	config: () => fetchJSON<AppConfig>('/config'),
 	status: () => fetchJSON<DaemonStatus>('/status'),
 	tasks: (params?: string) => fetchJSON<TaskRecord[]>(`/tasks${params ? `?${params}` : ''}`),
-	task: (id: string) => fetchJSON<TaskRecord>(`/tasks/${id}`),
 	taskEvents: (id: string) => fetchJSON<EventEntry[]>(`/tasks/${id}/events`),
-	queue: () => fetchJSON<QueueStatus>('/queue'),
-	stats: () => fetchJSON<Record<string, number>>('/stats'),
 	start: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/start`),
 	retry: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/retry`),
 	cancel: (id: string) => postJSON<{ message: string }>(`/tasks/${id}/cancel`),
@@ -128,13 +107,4 @@ export const api = {
 	resumeQueue: () => postJSON<{ paused: boolean }>('/queue/resume'),
 	configFull: () => fetchJSON<Record<string, unknown>>('/config/full'),
 	updateConfig: (config: Record<string, unknown>) => putJSON<{ message: string }>('/config', config),
-	chatSessions: (taskId: string) => fetchJSON<ChatSessionInfo[]>(`/tasks/${taskId}/chat`),
-	createChat: (taskId: string, message?: string) =>
-		fetch(`${BASE}/tasks/${taskId}/chat`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ message }),
-		})
-			.then(r => r.json())
-			.then(r => r.data as { session: ChatSessionInfo; chatUrl: string }),
 }

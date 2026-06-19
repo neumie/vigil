@@ -33,20 +33,3 @@ export interface QueueStatus {
 	maxConcurrency: number
 	activeTasks: Array<{ taskId: string; title: string; startedAt: string }>
 }
-
-export interface ChatSession {
-	id: string
-	taskId: string
-	token: string
-	status: 'active' | 'completed'
-	createdAt: string
-	completedAt: string | null
-}
-
-export interface ChatMessage {
-	id: string
-	sessionId: string
-	role: 'assistant' | 'user'
-	content: string
-	createdAt: string
-}
