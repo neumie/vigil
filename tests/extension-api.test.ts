@@ -117,6 +117,43 @@ test('extension API posts dashboard Item actions to Item routes', async () => {
 	}
 })
 
+test('extension API ignores invalidated Chrome storage context', async () => {
+	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
+	const globalWithChrome = globalThis as typeof globalThis & { chrome?: ChromeStorageStub }
+	const originalChrome = globalWithChrome.chrome
+	globalWithChrome.chrome = {
+		storage: {
+			sync: {
+				get: () => {
+					throw new Error('Extension context invalidated.')
+				},
+			},
+		},
+	}
+	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+		calls.push({ path: input.toString(), init })
+		return new Response(JSON.stringify({ data: null }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+
+	try {
+		const task = await api.findTask('task-1')
+
+		assert.equal(task, null)
+		assert.equal(calls.length, 1)
+		assert.equal(calls[0].path, 'http://localhost:7474/api/tasks/by-external-id/task-1')
+	} finally {
+		globalThis.fetch = originalFetch
+		if (originalChrome) {
+			globalWithChrome.chrome = originalChrome
+		} else {
+			globalWithChrome.chrome = undefined
+		}
+	}
+})
+
 test('extension API prepares planning for dashboard Items through Item routes', async () => {
 	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
 	const globalWithChrome = globalThis as typeof globalThis & { chrome?: ChromeStorageStub }

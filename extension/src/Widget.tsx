@@ -12,6 +12,7 @@ import {
 	api,
 	getServerUrl,
 } from './api'
+import { DEFAULT_SERVER_URL, getSync, setSync } from './storage'
 
 type Tone = DashboardTone
 
@@ -80,7 +81,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [connError, setConnError] = createSignal<string | null>(null)
 	const [actionError, setActionError] = createSignal<string | null>(null)
 	const [projects, setProjects] = createSignal<string[]>([])
-	const [serverUrl, setServerUrl] = createSignal<string>('http://localhost:7474')
+	const [serverUrl, setServerUrl] = createSignal<string>(DEFAULT_SERVER_URL)
 	const [planInfo, setPlanInfo] = createSignal<PlanInfo | null>(null)
 	const [planPending, setPlanPending] = createSignal(false)
 	const [solverAgent, setSolverAgent] = createSignal<SolverAgent>('claude')
@@ -94,9 +95,11 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		.then(c => {
 			setProjects(c.projects.map(p => p.slug))
 			const configAgent = c.solver?.agent ?? 'claude'
-			chrome.storage.sync.get({ solverAgent: configAgent }, items => {
-				if (isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
-			})
+			getSync({ solverAgent: configAgent })
+				.then(items => {
+					if (isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
+				})
+				.catch(err => console.warn('[vigil]', err))
 		})
 		.catch(err => {
 			console.warn('[vigil]', err)
@@ -199,7 +202,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	function chooseSolverAgent(agent: SolverAgent) {
 		setAgentTouched(true)
 		setSolverAgent(agent)
-		chrome.storage.sync.set({ solverAgent: agent })
+		void setSync({ solverAgent: agent })
 	}
 
 	const view = (): View => {

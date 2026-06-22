@@ -1,3 +1,5 @@
+import { DEFAULT_SERVER_URL, getSync } from './storage'
+
 export type SolverAgent = 'claude' | 'codex'
 
 export interface TaskRecord {
@@ -127,12 +129,12 @@ export interface DashboardItem {
 	updatedAt: string
 }
 
+let cachedServerUrl = DEFAULT_SERVER_URL
+
 export async function getServerUrl(): Promise<string> {
-	return new Promise(resolve => {
-		chrome.storage.sync.get({ serverUrl: 'http://localhost:7474' }, items => {
-			resolve(items.serverUrl)
-		})
-	})
+	const items = await getSync({ serverUrl: cachedServerUrl })
+	cachedServerUrl = String(items.serverUrl || DEFAULT_SERVER_URL)
+	return cachedServerUrl
 }
 
 async function fetchAPI<T>(path: string): Promise<T> {

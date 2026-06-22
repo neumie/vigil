@@ -1,10 +1,16 @@
+import { DEFAULT_SERVER_URL, getSync, setSync } from './storage'
+
 const urlInput = document.getElementById('url') as HTMLInputElement
 const statusEl = document.getElementById('status') as HTMLElement
 
 // Load saved URL
-chrome.storage.sync.get({ serverUrl: 'http://localhost:7474' }, items => {
-	urlInput.value = items.serverUrl
-})
+getSync({ serverUrl: DEFAULT_SERVER_URL })
+	.then(items => {
+		urlInput.value = items.serverUrl
+	})
+	.catch(() => {
+		urlInput.value = DEFAULT_SERVER_URL
+	})
 
 // Save on change (debounced)
 let saveTimeout: ReturnType<typeof setTimeout>
@@ -12,7 +18,7 @@ urlInput.addEventListener('input', () => {
 	clearTimeout(saveTimeout)
 	saveTimeout = setTimeout(() => {
 		const url = urlInput.value.trim().replace(/\/$/, '')
-		chrome.storage.sync.set({ serverUrl: url }, () => {
+		void setSync({ serverUrl: url }).then(() => {
 			// Test connection
 			fetch(`${url}/api/status`)
 				.then(r => {
