@@ -1,19 +1,21 @@
-import { randomUUID } from 'node:crypto'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
+import { ItemCommands } from '../items/commands.js'
 import type { TaskProvider } from '../providers/provider.js'
 import { log } from '../util/logger.js'
 
 export class Poller {
 	private timer: ReturnType<typeof setTimeout> | null = null
 	private running = false
+	private readonly itemCommands: ItemCommands
 
 	constructor(
 		private config: VigilConfig,
 		private db: DB,
 		private provider: TaskProvider,
-		private onNewTask: (taskId: string) => void,
-	) {}
+	) {
+		this.itemCommands = new ItemCommands(db.items, config)
+	}
 
 	start() {
 		if (this.running) return
@@ -64,20 +66,19 @@ export class Poller {
 		let latestCreatedAt = since
 
 		for (const task of tasks) {
-			if (this.db.taskExistsByExternalId(task.externalId)) continue
+			if (this.db.items.findBySourceExternalId(task.externalId) || this.db.taskExistsByExternalId(task.externalId))
+				continue
 
-			const id = randomUUID()
-			this.db.insertTask({
-				id,
-				externalId: task.externalId,
+			this.itemCommands.createSolveItem({
 				projectSlug,
 				title: task.title,
+				prompt: task.title,
+				source: {
+					provider: this.provider.name,
+					externalId: task.externalId,
+					url: this.config.provider.taskBaseUrl ? `${this.config.provider.taskBaseUrl}${task.externalId}` : undefined,
+				},
 			})
-			this.db.insertEvent(id, 'task_discovered', {
-				externalId: task.externalId,
-				title: task.title,
-			})
-			this.onNewTask(id)
 			newCount++
 
 			if (task.createdAt > latestCreatedAt) {
@@ -88,7 +89,7 @@ export class Poller {
 		this.db.updatePollState(projectSlug, new Date().toISOString(), latestCreatedAt)
 
 		if (newCount > 0) {
-			log.success('poller', `Discovered ${newCount} new task(s) in ${projectSlug}`)
+			log.success('poller', `Discovered ${newCount} new source Item(s) in ${projectSlug}`)
 		}
 	}
 }

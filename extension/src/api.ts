@@ -1,3 +1,5 @@
+import { DEFAULT_SERVER_URL, getSync } from './storage'
+
 export type SolverAgent = 'claude' | 'codex'
 
 export interface TaskRecord {
@@ -18,12 +20,121 @@ export interface TaskRecord {
 	completedAt: string | null
 }
 
+export type DashboardTone = 'gray' | 'blue' | 'green' | 'amber' | 'red'
+export type DashboardActionTone = 'primary' | 'muted' | 'danger'
+export type DashboardActionId = 'approve' | 'reject' | 'start' | 'cancel' | 'retry'
+
+export interface DashboardAction {
+	id: DashboardActionId
+	label: string
+	tone: DashboardActionTone
+}
+
+export interface DashboardLink {
+	label: string
+	url: string | null
+}
+
+export interface DashboardGroup {
+	id: string
+	label: string
+	position: number
+	size: number
+	siblingIds: string[]
+}
+
+export interface DashboardForkContext {
+	itemId: string
+	branchName: string
+	baseRef: string
+}
+
+export interface DashboardPlan {
+	worktreePath: string
+	branchName: string
+	planDirName: string
+	readmePath: string
+}
+
+export type RunObservationSource = 'none' | 'solve' | 'loop'
+export type RunObservationState = 'idle' | 'running' | 'review' | 'completed' | 'failed' | 'cancelled' | 'unknown'
+
+export interface RunObservationEvent {
+	type: string
+	label: string
+	tone: DashboardTone
+	createdAt: string | null
+}
+
+export interface RunObservation {
+	source: RunObservationSource
+	state: RunObservationState
+	stateLabel: string
+	summary: string | null
+	events: RunObservationEvent[]
+	log: {
+		path: string | null
+		available: boolean
+		content: string
+		truncated: boolean
+	}
+	pr: {
+		url: string | null
+		state: string | null
+		merged: boolean | null
+	}
+	almanac: {
+		runId: string | null
+		statusPath: string | null
+		status: string | null
+		round: string | null
+		summary: string | null
+		failureReason: string | null
+	}
+}
+
+export interface DashboardItem {
+	id: string
+	kind: 'solve' | 'ralph' | 'harden'
+	status: string
+	projectSlug: string
+	title: string
+	source: { provider: string; externalId: string; url?: string } | null
+	baseRef: string
+	spawner: string | null
+	groupId: string | null
+	group: DashboardGroup | null
+	branchName: string | null
+	forkContext: DashboardForkContext | null
+	plan: DashboardPlan | null
+	resultSummary: string | null
+	solveInputSnapshot: string | null
+	errorMessage: string | null
+	errorPhase: string | null
+	card: {
+		state: string
+		statusLabel: string
+		statusTone: DashboardTone
+		pulse: boolean
+	}
+	allowedActions: DashboardAction[]
+	runObservation: RunObservation
+	links: {
+		source: DashboardLink | null
+		branch: DashboardLink | null
+		pr: DashboardLink | null
+	}
+	createdAt: string
+	queuedAt: string | null
+	updatedAt: string
+}
+
+let cachedServerUrl = DEFAULT_SERVER_URL
+
 export async function getServerUrl(): Promise<string> {
-	return new Promise(resolve => {
-		chrome.storage.sync.get({ serverUrl: 'http://localhost:7474' }, items => {
-			resolve(items.serverUrl)
-		})
-	})
+	const items = await getSync({ serverUrl: cachedServerUrl })
+	cachedServerUrl = String(items.serverUrl || DEFAULT_SERVER_URL)
+	return cachedServerUrl
 }
 
 async function fetchAPI<T>(path: string): Promise<T> {
@@ -59,13 +170,17 @@ export interface PlanInfo {
 	branchName: string
 	planDirName: string
 	readmePath: string
-	solverType: 'default' | 'okena'
+	spawner: string
 	solverAgent: SolverAgent
 	hint: string
 }
 
 export const api = {
+	findItemBySource: (externalId: string) => fetchAPI<DashboardItem | null>(`/items/by-source/${externalId}`),
+
 	findTask: (externalId: string) => fetchAPI<TaskRecord | null>(`/tasks/by-external-id/${externalId}`),
+
+	createItemFromSource: (externalId: string) => postAPI<DashboardItem>('/items/source', { externalId }),
 
 	createTask: (externalId: string, solverAgent?: SolverAgent) =>
 		postAPI<TaskRecord>('/tasks', { externalId, solverAgent }),
@@ -73,6 +188,17 @@ export const api = {
 	start: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/start`, { solverAgent }),
 	retry: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/retry`, { solverAgent }),
 	cancel: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/cancel`),
+	itemAction: (id: string, action: DashboardActionId) => {
+		switch (action) {
+			case 'approve':
+			case 'reject':
+			case 'start':
+			case 'cancel':
+			case 'retry':
+				return postAPI<DashboardItem>(`/items/${id}/${action}`)
+		}
+	},
+	planItem: (id: string, solverAgent?: SolverAgent) => postAPI<PlanInfo>(`/items/${id}/plan`, { solverAgent }),
 	plan: (id: string, solverAgent?: SolverAgent) => postAPI<PlanInfo>(`/tasks/${id}/plan`, { solverAgent }),
 	setStatus: (id: string, status: string) => postAPI<{ message: string }>(`/tasks/${id}/status`, { status }),
 	deleteTask: (id: string) => deleteAPI<{ message: string }>(`/tasks/${id}`),

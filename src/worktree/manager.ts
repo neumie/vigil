@@ -1,9 +1,31 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { log } from '../util/logger.js'
 
 const VIGIL_EXCLUDE_PATTERNS = ['.vigil-*', '.mcp.json']
+
+function gitRefExists(repoPath: string, ref: string): boolean {
+	try {
+		execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd: repoPath, stdio: 'pipe' })
+		return true
+	} catch {
+		return false
+	}
+}
+
+export function resolveWorktreeStartPoint(repoPath: string, baseRef: string): string {
+	try {
+		execFileSync('git', ['fetch', 'origin', baseRef], { cwd: repoPath, stdio: 'pipe' })
+	} catch {
+		log.warn('worktree', `Could not fetch origin/${baseRef}, using local`)
+	}
+
+	const remoteRef = baseRef.startsWith('origin/') ? baseRef : `origin/${baseRef}`
+	if (gitRefExists(repoPath, remoteRef)) return remoteRef
+	if (gitRefExists(repoPath, baseRef)) return baseRef
+	return baseRef
+}
 
 export function createWorktree(
 	repoPath: string,
@@ -11,12 +33,7 @@ export function createWorktree(
 	branchName: string,
 	worktreeBaseDir?: string,
 ): string {
-	// Ensure base branch is up to date
-	try {
-		execSync(`git fetch origin ${baseBranch}`, { cwd: repoPath, stdio: 'pipe' })
-	} catch {
-		log.warn('worktree', `Could not fetch origin/${baseBranch}, using local`)
-	}
+	const startPoint = resolveWorktreeStartPoint(repoPath, baseBranch)
 
 	const worktreeDir = worktreeBaseDir ?? join(dirname(repoPath), `${basename(repoPath)}-worktrees`)
 	if (!existsSync(worktreeDir)) {
@@ -28,13 +45,13 @@ export function createWorktree(
 	if (existsSync(worktreePath)) {
 		log.warn('worktree', `Worktree path already exists: ${worktreePath}, removing first`)
 		try {
-			execSync(`git worktree remove "${worktreePath}" --force`, { cwd: repoPath, stdio: 'pipe' })
+			execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath, stdio: 'pipe' })
 		} catch {
 			// May not be a worktree, just a directory
 		}
 	}
 
-	execSync(`git worktree add -B "${branchName}" "${worktreePath}" "origin/${baseBranch}"`, {
+	execFileSync('git', ['worktree', 'add', '-B', branchName, worktreePath, startPoint], {
 		cwd: repoPath,
 		stdio: 'pipe',
 	})
@@ -49,7 +66,11 @@ export function createWorktree(
  */
 export function excludeVigilFiles(worktreePath: string): void {
 	try {
-		const gitDir = execSync('git rev-parse --git-dir', { cwd: worktreePath, encoding: 'utf-8' }).trim()
+		const gitDir = execSync('git rev-parse --git-dir', {
+			cwd: worktreePath,
+			encoding: 'utf-8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		}).trim()
 		const excludePath = join(worktreePath, gitDir, 'info', 'exclude')
 		mkdirSync(join(worktreePath, gitDir, 'info'), { recursive: true })
 		appendFileSync(excludePath, `\n# Vigil temp files\n${VIGIL_EXCLUDE_PATTERNS.join('\n')}\n`)

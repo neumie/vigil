@@ -32,4 +32,8 @@ export interface QueueStatus {
 	active: number
 	maxConcurrency: number
 	activeTasks: Array<{ taskId: string; title: string; startedAt: string }>
+	lanes?: {
+		solve: { pending: number; active: number; maxConcurrency: number }
+		loop: { pending: number; active: number; maxConcurrency: number }
+	}
 }

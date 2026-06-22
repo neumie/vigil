@@ -6,8 +6,8 @@ import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import type { Poller } from '../poller/poller.js'
 import type { TaskProvider } from '../providers/provider.js'
-import type { TaskQueue } from '../queue/queue.js'
-import type { Solver } from '../solver/solver.js'
+import type { Drainer } from '../queue/drainer.js'
+import type { Spawner } from '../spawner/spawner.js'
 import { apiRoutes } from './routes/api.js'
 
 const MIME: Record<string, string> = {
@@ -24,17 +24,17 @@ export function createApp(
 	config: VigilConfig,
 	configPath: string,
 	db: DB,
-	queue: TaskQueue,
+	queue: Drainer,
 	poller: Poller,
 	provider: TaskProvider,
-	solver: Solver,
+	spawner: Spawner,
 ) {
 	const app = new Hono()
 	const webDir = resolve(import.meta.dirname, '../web')
 
 	app.use('*', cors())
 
-	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, solver))
+	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, spawner))
 
 	// Serve static frontend assets
 	app.get('*', c => {

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { solverAgentSchema } from './solver/agent.js'
+import { spawnerNameSchema } from './spawner/name.js'
 
 const contemberProviderSchema = z.object({
 	type: z.literal('contember'),
@@ -24,6 +25,12 @@ const projectSchema = z.object({
 	color: z.string().optional(),
 })
 
+const spawnerSchema = z
+	.object({
+		name: spawnerNameSchema.default('default'),
+	})
+	.default({ name: 'default' })
+
 export const configSchema = z.object({
 	provider: providerSchema,
 	projects: z.array(projectSchema).min(1),
@@ -43,6 +50,7 @@ export const configSchema = z.object({
 			timeoutMinutes: z.number().min(1).default(30),
 		})
 		.default({}),
+	spawner: spawnerSchema,
 	server: z
 		.object({
 			port: z.number().default(7474),

@@ -2,13 +2,23 @@ import type { DaemonStatus } from '../api'
 
 interface Props {
 	status: DaemonStatus | null
+	onNewItem: () => void
 	onPoll: () => void
-	onRefresh: () => void
 	onTogglePause: () => void
 }
 
-export function Header({ status, onPoll, onRefresh, onTogglePause }: Props) {
+export function queueLaneSummaries(status: DaemonStatus | null): string[] {
+	const lanes = status?.queue.lanes
+	if (!lanes) return []
+	return [
+		`Solve ${lanes.solve.active}/${lanes.solve.maxConcurrency}, ${lanes.solve.pending} queued`,
+		`Loop ${lanes.loop.active}/${lanes.loop.maxConcurrency}, ${lanes.loop.pending} queued`,
+	]
+}
+
+export function Header({ status, onNewItem, onPoll, onTogglePause }: Props) {
 	const paused = status?.queue.paused ?? true
+	const laneSummaries = queueLaneSummaries(status)
 
 	return (
 		<header
@@ -25,7 +35,42 @@ export function Header({ status, onPoll, onRefresh, onTogglePause }: Props) {
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
 				<h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.02em' }}>vigil</h1>
 			</div>
-			<div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+			<div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+				{laneSummaries.length > 0 && (
+					<div
+						style={{
+							display: 'flex',
+							alignItems: 'center',
+							gap: 8,
+							flexWrap: 'wrap',
+							justifyContent: 'flex-end',
+							color: 'var(--text-4)',
+							fontSize: 11,
+							fontVariantNumeric: 'tabular-nums',
+						}}
+					>
+						{laneSummaries.map(summary => (
+							<span key={summary}>{summary}</span>
+						))}
+					</div>
+				)}
+				<button
+					type="button"
+					style={{
+						color: 'var(--text-0)',
+						fontSize: 12,
+						cursor: 'pointer',
+						background: 'var(--accent-fill)',
+						border: 'none',
+						borderRadius: 'var(--radius-sm)',
+						padding: '6px 10px',
+						fontFamily: 'inherit',
+						fontWeight: 600,
+					}}
+					onClick={onNewItem}
+				>
+					New Item
+				</button>
 				<button
 					type="button"
 					style={{

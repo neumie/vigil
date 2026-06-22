@@ -147,6 +147,40 @@ export const WIDGET_STYLES = `
 	.vg-text { font-size: 13px; line-height: 1.5; color: var(--vg-text-dim); }
 	.vg-text--primary { color: var(--vg-text); }
 	.vg-summary { font-size: 13px; line-height: 1.55; color: var(--vg-text-dim); }
+	.vg-item-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--vg-text-faint);
+		font-size: 11px;
+		font-weight: 600;
+	}
+	.vg-link-line {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		font-size: 12px;
+		color: var(--vg-text-faint);
+	}
+	.vg-link-line a {
+		color: var(--vg-accent);
+		text-decoration: none;
+		font-weight: 600;
+		max-width: 210px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.vg-link-line__value {
+		color: var(--vg-text-dim);
+		font-family: var(--vg-mono);
+		font-size: 11px;
+		max-width: 210px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 
 	.vg-agent {
 		display: flex;
@@ -282,7 +316,7 @@ export const WIDGET_STYLES = `
 	.vg-btn:disabled { opacity: 0.45; cursor: default; }
 	.vg-spacer { flex: 1; }
 
-	/* tone helpers (status / tier) */
+	/* Dashboard tone helpers. */
 	.c-gray { color: var(--vg-gray); }
 	.c-blue { color: var(--vg-blue); }
 	.c-green { color: var(--vg-green); }

@@ -2,9 +2,10 @@ import { loadConfig } from './config.js'
 import { DB } from './db/client.js'
 import { Poller } from './poller/poller.js'
 import { createProvider } from './providers/registry.js'
-import { TaskQueue } from './queue/queue.js'
+import { Drainer } from './queue/drainer.js'
 import { createApp } from './server/app.js'
 import { createSolver } from './solver/registry.js'
+import { createSpawner } from './spawner/registry.js'
 import { log } from './util/logger.js'
 
 async function main() {
@@ -26,8 +27,10 @@ async function main() {
 		'vigil',
 		`Solver configured: ${config.solver.type}, agent: ${config.solver.agent}, active: ${solver.constructor.name}`,
 	)
+	const spawner = await createSpawner(config)
+	log.info('vigil', `Spawner configured: ${config.spawner.name}, active: ${spawner.constructor.name}`)
 
-	const queue = new TaskQueue(config, db, provider, solver)
+	const queue = new Drainer(config, db, provider, solver)
 
 	// Recover tasks that were processing when we last shut down
 	const stale = db.getProcessingTaskIds()
@@ -42,16 +45,18 @@ async function main() {
 	for (const id of queued) {
 		queue.enqueue(id, true)
 	}
+	const queuedSolveItems = db.items.countQueuedByKind('solve')
 	if (queued.length > 0) {
 		log.info('vigil', `Re-enqueued ${queued.length} pending task(s) from DB`)
 	}
+	if (queuedSolveItems > 0) {
+		log.info('vigil', `Found ${queuedSolveItems} queued solve Item(s)`)
+	}
 
-	const poller = new Poller(config, db, provider, id => {
-		queue.enqueue(id)
-	})
+	const poller = new Poller(config, db, provider)
 
 	// Start API server
-	const app = createApp(config, configPath, db, queue, poller, provider, solver)
+	const app = createApp(config, configPath, db, queue, poller, provider, spawner)
 	const { serve } = await import('@hono/node-server')
 	serve({ fetch: app.fetch, port: config.server.port, hostname: config.server.host }, () => {
 		log.success('vigil', `Dashboard: http://${config.server.host}:${config.server.port}`)

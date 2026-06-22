@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ConfigDocument, type ConfigEditField, type ConfigEditListControl, api } from '../api'
 
 type Config = Record<string, unknown>
 
 export function SettingsPage() {
+	const [document, setDocument] = useState<ConfigDocument | null>(null)
 	const [config, setConfig] = useState<Config | null>(null)
 	const [saving, setSaving] = useState(false)
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -12,7 +13,10 @@ export function SettingsPage() {
 	useEffect(() => {
 		api
 			.configFull()
-			.then(setConfig)
+			.then(doc => {
+				setDocument(doc)
+				setConfig(doc.config)
+			})
 			.catch(err => {
 				setMessage({ type: 'error', text: `Failed to load config: ${err.message}` })
 			})
@@ -38,56 +42,43 @@ export function SettingsPage() {
 		setConfig(prev => {
 			if (!prev) return prev
 			const next = structuredClone(prev)
-			let obj: Record<string, unknown> = next
-			for (let i = 0; i < path.length - 1; i++) {
-				if (obj[path[i]] === undefined || obj[path[i]] === null) {
-					obj[path[i]] = {}
-				}
-				obj = obj[path[i]] as Record<string, unknown>
+			setAtPath(next, path, value)
+			return next
+		})
+	}, [])
+
+	const addListItem = useCallback((control: ConfigEditListControl) => {
+		setDirty(true)
+		setConfig(prev => {
+			if (!prev) return prev
+			const next = structuredClone(prev)
+			const list = getAtPath(next, control.path)
+			if (Array.isArray(list)) {
+				list.push(structuredClone(control.defaultItem))
+			} else {
+				setAtPath(next, control.path, [structuredClone(control.defaultItem)])
 			}
-			obj[path[path.length - 1]] = value
 			return next
 		})
 	}, [])
 
-	const addProject = useCallback(() => {
+	const removeListItem = useCallback((control: ConfigEditListControl, index: number) => {
 		setDirty(true)
 		setConfig(prev => {
 			if (!prev) return prev
 			const next = structuredClone(prev)
-			const projects = (next.projects as Array<Record<string, unknown>>) ?? []
-			projects.push({ slug: '', repoPath: '', baseBranch: 'main' })
-			next.projects = projects
+			const list = getAtPath(next, control.path)
+			if (Array.isArray(list)) list.splice(index, 1)
 			return next
 		})
 	}, [])
 
-	const removeProject = useCallback((index: number) => {
-		setDirty(true)
-		setConfig(prev => {
-			if (!prev) return prev
-			const next = structuredClone(prev)
-			const projects = (next.projects as Array<Record<string, unknown>>) ?? []
-			projects.splice(index, 1)
-			next.projects = projects
-			return next
-		})
-	}, [])
-
-	if (!config) {
+	if (!config || !document) {
 		return <div style={{ padding: 40, color: 'var(--text-3)' }}>{message ? message.text : 'Loading config...'}</div>
 	}
 
-	const provider = config.provider as Record<string, unknown> | undefined
-	const projects = config.projects as Array<Record<string, unknown>> | undefined
-	const polling = config.polling as Record<string, unknown> | undefined
-	const solver = config.solver as Record<string, unknown> | undefined
-	const server = config.server as Record<string, unknown> | undefined
-	const github = config.github as Record<string, unknown> | undefined
-
 	return (
 		<div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px' }}>
-			{/* Header */}
 			<div
 				style={{
 					display: 'flex',
@@ -153,212 +144,183 @@ export function SettingsPage() {
 				</div>
 			)}
 
-			{/* Provider */}
-			{provider && (
-				<Card title="Provider" description="External task source configuration">
-					<Field
-						label="Type"
-						value={String(provider.type ?? '')}
-						onChange={v => update(['provider', 'type'], v)}
-						required
-					/>
-					<Field
-						label="API Base URL"
-						value={String(provider.apiBaseUrl ?? '')}
-						onChange={v => update(['provider', 'apiBaseUrl'], v)}
-						required
-						placeholder="https://..."
-					/>
-					<Field
-						label="Project Slug"
-						value={String(provider.projectSlug ?? '')}
-						onChange={v => update(['provider', 'projectSlug'], v)}
-						required
-					/>
-					<Field
-						label="API Token"
-						value={String(provider.apiToken ?? '')}
-						onChange={v => update(['provider', 'apiToken'], v)}
-						type="password"
-						required
-					/>
-					<Field
-						label="Task Base URL"
-						value={String(provider.taskBaseUrl ?? '')}
-						onChange={v => update(['provider', 'taskBaseUrl'], v || undefined)}
-						placeholder="https://... (optional)"
-					/>
+			{document.edit.sections.map(section => (
+				<Card
+					key={section.id}
+					title={section.title}
+					description={section.description}
+					action={sectionAction(section.controls, addListItem)}
+				>
+					{section.controls.map(control => {
+						if (control.type === 'list') {
+							return (
+								<ConfigList
+									key={control.path.join('.')}
+									control={control}
+									config={config}
+									update={update}
+									removeItem={removeListItem}
+								/>
+							)
+						}
+						return (
+							<ConfigInput
+								key={control.path.join('.')}
+								field={control}
+								value={getAtPath(config, control.path)}
+								onChange={value => update(control.path, value)}
+							/>
+						)
+					})}
 				</Card>
-			)}
+			))}
 
-			{/* Projects */}
-			<Card
-				title="Projects"
-				description="Repositories that Vigil monitors and solves tasks for"
-				action={<SmallButton onClick={addProject}>+ Add project</SmallButton>}
-			>
-				{(projects ?? []).length === 0 && (
-					<p style={{ color: 'var(--text-4)', fontSize: 12, padding: '8px 0' }}>No projects configured.</p>
-				)}
-				{(projects ?? []).map((p, i) => (
-					<div
-						// biome-ignore lint/suspicious/noArrayIndexKey: rows are edited/removed by index against the saved config; no stable id exists
-						key={i}
-						style={{
-							padding: '14px 16px',
-							marginBottom: 8,
-							background: 'var(--bg-0)',
-							borderRadius: 'var(--radius-sm)',
-							border: '1px solid var(--border)',
-						}}
-					>
-						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-							<span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>
-								{String(p.slug || `Project ${i + 1}`)}
-							</span>
-							<SmallButton onClick={() => removeProject(i)} danger>
-								Remove
-							</SmallButton>
-						</div>
-						<Field
-							label="Slug"
-							value={String(p.slug ?? '')}
-							onChange={v => update(['projects', String(i), 'slug'], v)}
-							required
-						/>
-						<Field
-							label="Repo Path"
-							value={String(p.repoPath ?? '')}
-							onChange={v => update(['projects', String(i), 'repoPath'], v)}
-							required
-							placeholder="/path/to/repo"
-						/>
-						<Field
-							label="Base Branch"
-							value={String(p.baseBranch ?? 'main')}
-							onChange={v => update(['projects', String(i), 'baseBranch'], v)}
-						/>
-						<Field
-							label="Worktree Dir"
-							value={String(p.worktreeDir ?? '')}
-							onChange={v => update(['projects', String(i), 'worktreeDir'], v || undefined)}
-							placeholder="(optional)"
-						/>
-						<ColorField
-							label="Color"
-							value={String(p.color ?? '')}
-							onChange={v => update(['projects', String(i), 'color'], v || undefined)}
-						/>
-					</div>
-				))}
-			</Card>
-
-			{/* Polling */}
-			<Card title="Polling" description="How often Vigil checks for new tasks">
-				<Field
-					label="Interval (seconds)"
-					value={String(polling?.intervalSeconds ?? 60)}
-					onChange={v => update(['polling', 'intervalSeconds'], Number(v))}
-					type="number"
-					required
-				/>
-				<Field
-					label="Since"
-					value={String(polling?.since ?? '')}
-					onChange={v => update(['polling', 'since'], v || undefined)}
-					placeholder="ISO date (optional)"
-				/>
-			</Card>
-
-			{/* Solver */}
-			<Card title="Solver" description="Agent invocation settings">
-				<SelectField
-					label="Type"
-					value={String(solver?.type ?? 'default')}
-					onChange={v => update(['solver', 'type'], v)}
-					options={[
-						{ value: 'default', label: 'Default' },
-						{ value: 'okena', label: 'Okena' },
-					]}
-				/>
-				<SelectField
-					label="Agent"
-					value={String(solver?.agent ?? 'claude')}
-					onChange={v => update(['solver', 'agent'], v)}
-					options={[
-						{ value: 'claude', label: 'Claude Code' },
-						{ value: 'codex', label: 'Codex' },
-					]}
-				/>
-				<Field
-					label="Concurrency"
-					value={String(solver?.concurrency ?? 2)}
-					onChange={v => update(['solver', 'concurrency'], Number(v))}
-					type="number"
-				/>
-				<Field
-					label="Model"
-					value={String(solver?.model ?? '')}
-					onChange={v => update(['solver', 'model'], v || undefined)}
-					placeholder="Agent model override (optional)"
-				/>
-				<Field
-					label="Timeout (min)"
-					value={String(solver?.timeoutMinutes ?? 30)}
-					onChange={v => update(['solver', 'timeoutMinutes'], Number(v))}
-					type="number"
-				/>
-				<Field
-					label="Max Budget ($)"
-					value={String(solver?.maxBudgetUsd ?? '')}
-					onChange={v => update(['solver', 'maxBudgetUsd'], v ? Number(v) : undefined)}
-					type="number"
-					placeholder="(optional)"
-				/>
-				<Field
-					label="Transformer"
-					value={String(solver?.transformer ?? 'default')}
-					onChange={v => update(['solver', 'transformer'], v)}
-				/>
-			</Card>
-
-			{/* Server */}
-			<Card title="Server" description="Dashboard and API server">
-				<Field
-					label="Port"
-					value={String(server?.port ?? 7474)}
-					onChange={v => update(['server', 'port'], Number(v))}
-					type="number"
-				/>
-				<Field label="Host" value={String(server?.host ?? 'localhost')} onChange={v => update(['server', 'host'], v)} />
-			</Card>
-
-			{/* GitHub */}
-			<Card title="GitHub" description="PR and comment settings">
-				<Toggle
-					label="Create PRs"
-					value={Boolean(github?.createPrs ?? true)}
-					onChange={v => update(['github', 'createPrs'], v)}
-				/>
-				<Toggle
-					label="Post Comments"
-					value={Boolean(github?.postComments ?? true)}
-					onChange={v => update(['github', 'postComments'], v)}
-				/>
-				<Field
-					label="PR Prefix"
-					value={String(github?.prPrefix ?? '[Vigil]')}
-					onChange={v => update(['github', 'prPrefix'], v)}
-				/>
-			</Card>
-
-			{/* Bottom spacing */}
 			<div style={{ height: 40 }} />
 		</div>
 	)
 }
 
-// --- Components ---
+function sectionAction(
+	controls: ConfigDocument['edit']['sections'][number]['controls'],
+	addListItem: (control: ConfigEditListControl) => void,
+) {
+	const lists = controls.filter(control => control.type === 'list')
+	if (lists.length !== 1) return undefined
+	const list = lists[0]
+	return <SmallButton onClick={() => addListItem(list)}>{list.addLabel}</SmallButton>
+}
+
+function ConfigList({
+	control,
+	config,
+	update,
+	removeItem,
+}: {
+	control: ConfigEditListControl
+	config: Config
+	update: (path: string[], value: unknown) => void
+	removeItem: (control: ConfigEditListControl, index: number) => void
+}) {
+	const value = getAtPath(config, control.path)
+	const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
+
+	if (items.length === 0) {
+		return <p style={{ color: 'var(--text-4)', fontSize: 12, padding: '8px 0' }}>{control.emptyLabel}</p>
+	}
+
+	return (
+		<>
+			{items.map((item, index) => (
+				<div
+					// biome-ignore lint/suspicious/noArrayIndexKey: rows are edited/removed by index against the saved config; no stable id exists
+					key={index}
+					style={{
+						padding: '14px 16px',
+						marginBottom: 8,
+						background: 'var(--bg-0)',
+						borderRadius: 'var(--radius-sm)',
+						border: '1px solid var(--border)',
+					}}
+				>
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+						<span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>
+							{String(getAtPath(item, control.itemTitlePath) || `Item ${index + 1}`)}
+						</span>
+						<SmallButton onClick={() => removeItem(control, index)} danger>
+							Remove
+						</SmallButton>
+					</div>
+					{control.fields.map(field => (
+						<ConfigInput
+							key={field.path.join('.')}
+							field={field}
+							value={getAtPath(item, field.path)}
+							onChange={value => update([...control.path, String(index), ...field.path], value)}
+						/>
+					))}
+				</div>
+			))}
+		</>
+	)
+}
+
+function ConfigInput({
+	field,
+	value,
+	onChange,
+}: {
+	field: ConfigEditField
+	value: unknown
+	onChange: (value: unknown) => void
+}) {
+	if (field.input === 'select') {
+		return (
+			<SelectField label={field.label} value={String(value ?? '')} onChange={onChange} options={field.options ?? []} />
+		)
+	}
+
+	if (field.input === 'boolean') {
+		return <Toggle label={field.label} value={Boolean(value)} onChange={onChange} />
+	}
+
+	if (field.input === 'color') {
+		return (
+			<ColorField
+				label={field.label}
+				value={String(value ?? '')}
+				onChange={next => onChange(normalizeTextValue(next, field))}
+			/>
+		)
+	}
+
+	return (
+		<Field
+			label={field.label}
+			value={String(value ?? '')}
+			onChange={next => onChange(normalizeFieldValue(next, field))}
+			type={field.input === 'password' ? 'password' : field.input === 'number' ? 'number' : 'text'}
+			required={field.required}
+			placeholder={field.placeholder}
+		/>
+	)
+}
+
+function normalizeFieldValue(value: string, field: ConfigEditField): unknown {
+	if (field.input === 'number') return value.trim() === '' && !field.required ? undefined : Number(value)
+	return normalizeTextValue(value, field)
+}
+
+function normalizeTextValue(value: string, field: ConfigEditField): unknown {
+	return value === '' && !field.required ? undefined : value
+}
+
+function getAtPath(source: unknown, path: string[]): unknown {
+	let current = source
+	for (const segment of path) {
+		if (typeof current !== 'object' || current === null) return undefined
+		current = (current as Record<string, unknown>)[segment]
+	}
+	return current
+}
+
+function setAtPath(target: Record<string, unknown>, path: string[], value: unknown): void {
+	let current: Record<string, unknown> = target
+	for (let i = 0; i < path.length - 1; i++) {
+		const segment = path[i]
+		const nextSegment = path[i + 1]
+		const existing = current[segment]
+		if (typeof existing !== 'object' || existing === null) {
+			current[segment] = /^\d+$/.test(nextSegment) ? [] : {}
+		}
+		current = current[segment] as Record<string, unknown>
+	}
+	const last = path[path.length - 1]
+	if (value === undefined) {
+		delete current[last]
+	} else {
+		current[last] = value
+	}
+}
 
 function Card({
 	title,
@@ -368,8 +330,8 @@ function Card({
 }: {
 	title: string
 	description?: string
-	action?: React.ReactNode
-	children: React.ReactNode
+	action?: ReactNode
+	children: ReactNode
 }) {
 	return (
 		<div
@@ -604,7 +566,7 @@ function SmallButton({
 	danger,
 }: {
 	onClick: () => void
-	children: React.ReactNode
+	children: ReactNode
 	danger?: boolean
 }) {
 	const color = danger ? 'var(--red)' : 'var(--accent)'
