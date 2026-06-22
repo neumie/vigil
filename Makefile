@@ -1,8 +1,13 @@
-.PHONY: install uninstall restart status logs build
+.PHONY: install uninstall restart status logs build test check
 
 build: node_modules web/node_modules
 	npm run build
 	npm run build:web
+
+test: node_modules
+	npm run test
+
+check: build
 
 install: build
 	npm link

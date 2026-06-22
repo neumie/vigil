@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
-/** Read task ID from URL hash: #task/{id} */
-function getHashTaskId(): string | null {
+export type DashboardSelection = { kind: 'task' | 'item'; id: string } | null
+
+/** Read selected dashboard entity from URL hash: #task/{id} or #item/{id}. */
+function getHashSelectionKey(): string {
 	const hash = window.location.hash
-	const match = hash.match(/^#task\/(.+)$/)
-	return match ? match[1] : null
+	const match = hash.match(/^#(task|item)\/(.+)$/)
+	return match ? `${match[1]}/${match[2]}` : ''
 }
 
 function subscribeHash(cb: () => void) {
@@ -13,13 +15,24 @@ function subscribeHash(cb: () => void) {
 }
 
 export function useHashRoute() {
-	const taskId = useSyncExternalStore(subscribeHash, getHashTaskId)
+	const selectionKey = useSyncExternalStore(subscribeHash, getHashSelectionKey)
+	const selection = parseSelection(selectionKey)
 
 	const selectTask = useCallback((id: string | null) => {
 		window.location.hash = id ? `task/${id}` : ''
 	}, [])
 
-	return { selectedTaskId: taskId, selectTask }
+	const selectItem = useCallback((id: string | null) => {
+		window.location.hash = id ? `item/${id}` : ''
+	}, [])
+
+	return { selection, selectTask, selectItem }
+}
+
+function parseSelection(key: string): DashboardSelection {
+	const match = key.match(/^(task|item)\/(.+)$/)
+	if (!match) return null
+	return { kind: match[1] as 'task' | 'item', id: match[2] }
 }
 
 export function useInterval(callback: () => void, ms: number) {

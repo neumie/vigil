@@ -1,11 +1,13 @@
 import { resolve } from 'node:path'
 import Database from 'better-sqlite3'
+import { ItemStore } from '../items/store.js'
 import type { EventLogEntry, PollState, TaskRecord } from '../types.js'
 import { MIGRATIONS } from './schema.js'
 import { TASK_COLUMNS, rowToTaskRecord } from './task-schema.js'
 
 export class DB {
 	private db: Database.Database
+	readonly items: ItemStore
 
 	constructor(dbPath?: string) {
 		const path = dbPath ?? resolve(process.cwd(), 'vigil.db')
@@ -13,6 +15,7 @@ export class DB {
 		this.db.pragma('journal_mode = WAL')
 		this.db.pragma('foreign_keys = ON')
 		this.migrate()
+		this.items = new ItemStore(this.db)
 	}
 
 	private migrate() {

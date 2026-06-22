@@ -1,0 +1,582 @@
+import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import type { VigilConfig } from '../config.js'
+import type { ErrorPhase } from '../types.js'
+import { itemSourceSchema } from './schema.js'
+import type { ItemKind, ItemRecord, ItemSource } from './schema.js'
+import type { ItemStore } from './store.js'
+
+const createItemInitialStatusSchema = z.enum(['queued', 'planned'])
+type CreateItemInitialStatus = z.infer<typeof createItemInitialStatusSchema>
+
+const createSolveItemInputSchema = z
+	.object({
+		title: z.string().min(1),
+		projectSlug: z.string().min(1),
+		prompt: z.string().min(1),
+		baseRef: z.string().min(1).optional(),
+		baseItemId: z.string().min(1).optional(),
+		spawner: z.string().min(1).optional(),
+		initialStatus: createItemInitialStatusSchema.optional(),
+		source: itemSourceSchema.nullable().optional(),
+	})
+	.strict()
+
+export type CreateSolveItemInput = z.infer<typeof createSolveItemInputSchema>
+
+const createSolveItemsInputSchema = createSolveItemInputSchema
+	.extend({
+		parallelism: z.number().int().positive().optional(),
+	})
+	.strict()
+
+export type CreateSolveItemsInput = z.infer<typeof createSolveItemsInputSchema>
+
+const createRalphItemInputSchema = z
+	.object({
+		title: z.string().min(1),
+		projectSlug: z.string().min(1),
+		prdPath: z.string().min(1),
+		baseRef: z.string().min(1).optional(),
+		baseItemId: z.string().min(1).optional(),
+		spawner: z.string().min(1).optional(),
+		initialStatus: createItemInitialStatusSchema.optional(),
+		mode: z.enum(['once', 'afk']).optional(),
+		provider: z.enum(['claude', 'codex']).optional(),
+		model: z.string().min(1).optional(),
+		effort: z.string().min(1).optional(),
+		iterations: z.number().int().positive().optional(),
+		noOversee: z.boolean().optional(),
+	})
+	.strict()
+
+export type CreateRalphItemInput = z.infer<typeof createRalphItemInputSchema>
+
+const createRalphItemsInputSchema = createRalphItemInputSchema
+	.extend({
+		parallelism: z.number().int().positive().optional(),
+	})
+	.strict()
+
+export type CreateRalphItemsInput = z.infer<typeof createRalphItemsInputSchema>
+
+const createHardenItemInputSchema = z
+	.object({
+		title: z.string().min(1),
+		projectSlug: z.string().min(1),
+		target: z.string().min(1),
+		baseRef: z.string().min(1).optional(),
+		baseItemId: z.string().min(1).optional(),
+		spawner: z.string().min(1).optional(),
+		initialStatus: createItemInitialStatusSchema.optional(),
+		rounds: z.number().int().positive().optional(),
+	})
+	.strict()
+
+export type CreateHardenItemInput = z.infer<typeof createHardenItemInputSchema>
+
+const createHardenItemsInputSchema = createHardenItemInputSchema
+	.extend({
+		parallelism: z.number().int().positive().optional(),
+	})
+	.strict()
+
+export type CreateHardenItemsInput = z.infer<typeof createHardenItemsInputSchema>
+
+const RETRYABLE_STATUSES = new Set<ItemRecord['status']>(['failed', 'cancelled', 'skipped', 'completed', 'review'])
+const ITEM_KINDS: ItemKind[] = ['solve', 'ralph', 'harden']
+const RESERVED_EVENT_TYPES = new Set([
+	'item_approved',
+	'item_rejected',
+	'item_started',
+	'item_retried',
+	'item_recovered',
+	'item_cancelled',
+	'item_failed',
+	'solve_completed',
+	'almanac_run_started',
+	'loop_completed',
+	'plan_prepared',
+	'pr_created',
+	'comment_posted',
+	'dispatch_skipped',
+	'action_completed',
+])
+
+interface BaseRefSelection {
+	projectSlug: string
+	baseRef?: string
+	baseItemId?: string
+}
+
+function initialStatus(input: {
+	source?: ItemSource | null
+	initialStatus?: CreateItemInitialStatus
+}): ItemRecord['status'] {
+	if (input.source) return 'unverified'
+	return input.initialStatus ?? 'queued'
+}
+
+export class ItemCommands {
+	constructor(
+		private readonly store: ItemStore,
+		private readonly config: VigilConfig,
+	) {}
+
+	createSolveItem(input: CreateSolveItemInput): ItemRecord {
+		return this.createSolveItems({ ...input, parallelism: 1 })[0]
+	}
+
+	createSolveItems(input: CreateSolveItemsInput): ItemRecord[] {
+		const parsed = createSolveItemsInputSchema.safeParse(input)
+		if (!parsed.success) throw new Error(`Invalid solve Item input: ${parsed.error.message}`)
+
+		const project = this.config.projects.find(p => p.slug === parsed.data.projectSlug)
+		if (!project) throw new Error(`Unknown project slug: ${parsed.data.projectSlug}`)
+		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
+
+		const count = parsed.data.parallelism ?? 1
+		const groupId = count > 1 ? randomUUID() : null
+		return Array.from({ length: count }, () =>
+			this.store.create({
+				kind: 'solve',
+				status: initialStatus(parsed.data),
+				projectSlug: parsed.data.projectSlug,
+				title: parsed.data.title,
+				source: parsed.data.source ?? null,
+				baseRef,
+				spawner: parsed.data.spawner ?? null,
+				groupId,
+				payload: {
+					kind: 'solve',
+					prompt: parsed.data.prompt,
+				},
+			}),
+		)
+	}
+
+	createRalphItem(input: CreateRalphItemInput): ItemRecord {
+		return this.createRalphItems({ ...input, parallelism: 1 })[0]
+	}
+
+	createRalphItems(input: CreateRalphItemsInput): ItemRecord[] {
+		const parsed = createRalphItemsInputSchema.safeParse(input)
+		if (!parsed.success) throw new Error(`Invalid ralph Item input: ${parsed.error.message}`)
+
+		const project = this.config.projects.find(p => p.slug === parsed.data.projectSlug)
+		if (!project) throw new Error(`Unknown project slug: ${parsed.data.projectSlug}`)
+		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
+
+		const payload = {
+			kind: 'ralph' as const,
+			prdPath: parsed.data.prdPath,
+			...(parsed.data.mode ? { mode: parsed.data.mode } : {}),
+			...(parsed.data.provider ? { provider: parsed.data.provider } : {}),
+			...(parsed.data.model ? { model: parsed.data.model } : {}),
+			...(parsed.data.effort ? { effort: parsed.data.effort } : {}),
+			...(parsed.data.iterations ? { iterations: parsed.data.iterations } : {}),
+			...(parsed.data.noOversee !== undefined ? { noOversee: parsed.data.noOversee } : {}),
+		}
+
+		const count = parsed.data.parallelism ?? 1
+		const groupId = count > 1 ? randomUUID() : null
+		return Array.from({ length: count }, () =>
+			this.store.create({
+				kind: 'ralph',
+				status: initialStatus(parsed.data),
+				projectSlug: parsed.data.projectSlug,
+				title: parsed.data.title,
+				source: null,
+				baseRef,
+				spawner: parsed.data.spawner ?? null,
+				groupId,
+				payload,
+			}),
+		)
+	}
+
+	createHardenItem(input: CreateHardenItemInput): ItemRecord {
+		return this.createHardenItems({ ...input, parallelism: 1 })[0]
+	}
+
+	createHardenItems(input: CreateHardenItemsInput): ItemRecord[] {
+		const parsed = createHardenItemsInputSchema.safeParse(input)
+		if (!parsed.success) throw new Error(`Invalid harden Item input: ${parsed.error.message}`)
+
+		const project = this.config.projects.find(p => p.slug === parsed.data.projectSlug)
+		if (!project) throw new Error(`Unknown project slug: ${parsed.data.projectSlug}`)
+		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
+
+		const payload = {
+			kind: 'harden' as const,
+			target: parsed.data.target,
+			...(parsed.data.rounds ? { rounds: parsed.data.rounds } : {}),
+		}
+
+		const count = parsed.data.parallelism ?? 1
+		const groupId = count > 1 ? randomUUID() : null
+		return Array.from({ length: count }, () =>
+			this.store.create({
+				kind: 'harden',
+				status: initialStatus(parsed.data),
+				projectSlug: parsed.data.projectSlug,
+				title: parsed.data.title,
+				source: null,
+				baseRef,
+				spawner: parsed.data.spawner ?? null,
+				groupId,
+				payload,
+			}),
+		)
+	}
+
+	approveItem(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'unverified') throw new Error('Only unverified Items can be approved')
+
+		const now = new Date().toISOString()
+		const approved = this.store.update(id, {
+			status: 'queued',
+			queuedAt: now,
+			completedAt: null,
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'item_approved', { from: item.status, to: approved.status })
+		return approved
+	}
+
+	rejectItem(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'unverified') throw new Error('Only unverified Items can be rejected')
+
+		const now = new Date().toISOString()
+		const rejected = this.store.update(id, {
+			status: 'skipped',
+			completedAt: now,
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'item_rejected', { from: item.status, to: rejected.status })
+		return rejected
+	}
+
+	startItem(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'queued' && item.status !== 'planned')
+			throw new Error('Only queued or planned Items can be started')
+
+		const started = this.store.update(id, {
+			status: 'processing',
+			startedAt: new Date().toISOString(),
+			completedAt: null,
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'item_started', { from: item.status, to: started.status })
+		return started
+	}
+
+	retryItem(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (!RETRYABLE_STATUSES.has(item.status)) {
+			throw new Error('Only failed, cancelled, skipped, completed, or review Items can be retried')
+		}
+
+		const retried = this.store.update(id, {
+			status: 'queued',
+			queuedAt: new Date().toISOString(),
+			startedAt: null,
+			completedAt: null,
+			almanacRunId: null,
+			errorMessage: null,
+			errorPhase: null,
+			resultSummary: null,
+			solveInputSnapshot: null,
+			prUrl: null,
+		})
+		this.store.insertEvent(id, 'item_retried', { from: item.status, to: retried.status })
+		return retried
+	}
+
+	recoverStaleProcessingItems(): ItemRecord[] {
+		const stale = ITEM_KINDS.flatMap(kind => this.store.listProcessingByKind(kind))
+		return stale.map(item => {
+			const recovered = this.store.update(item.id, {
+				status: 'queued',
+				queuedAt: item.queuedAt ?? new Date().toISOString(),
+				startedAt: null,
+				completedAt: null,
+				almanacRunId: null,
+				errorMessage: null,
+				errorPhase: null,
+				resultSummary: null,
+				solveInputSnapshot: null,
+				prUrl: null,
+			})
+			this.store.insertEvent(item.id, 'item_recovered', {
+				from: item.status,
+				to: recovered.status,
+				reason: 'stale_processing',
+			})
+			return recovered
+		})
+	}
+
+	cancelQueuedItem(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'queued' && item.status !== 'planned') {
+			throw new Error('Only queued or planned Items can be cancelled before execution')
+		}
+
+		const cancelled = this.store.update(id, {
+			status: 'cancelled',
+			completedAt: new Date().toISOString(),
+			errorMessage: 'Cancelled by user',
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'item_cancelled', { from: item.status, to: cancelled.status })
+		return cancelled
+	}
+
+	cancelProcessingItem(id: string, message: string, phase: ErrorPhase): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'processing') {
+			throw new Error('Only processing Items can be cancelled during execution')
+		}
+
+		const cancelled = this.store.update(id, {
+			status: 'cancelled',
+			completedAt: new Date().toISOString(),
+			errorMessage: message,
+			errorPhase: phase,
+		})
+		this.store.insertEvent(id, 'item_cancelled', { from: item.status, to: cancelled.status, phase })
+		return cancelled
+	}
+
+	failItem(id: string, message: string, phase: ErrorPhase): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'processing') {
+			throw new Error('Only processing Items can fail during execution')
+		}
+
+		const failed = this.store.update(id, {
+			status: 'failed',
+			completedAt: new Date().toISOString(),
+			errorMessage: message,
+			errorPhase: phase,
+		})
+		this.store.insertEvent(id, 'item_failed', { from: item.status, to: failed.status, phase, error: message })
+		return failed
+	}
+
+	completeSolveItem(
+		id: string,
+		fields: {
+			worktreePath: string
+			branchName: string
+			planDirName: string
+			resultSummary: string
+		},
+	): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve') throw new Error('Only solve Items can complete through Solver')
+		if (item.status !== 'processing') throw new Error('Only processing solve Items can complete through Solver')
+
+		const completed = this.store.update(id, {
+			status: 'review',
+			worktreePath: fields.worktreePath,
+			branchName: fields.branchName,
+			planDirName: fields.planDirName,
+			resultSummary: fields.resultSummary,
+			completedAt: new Date().toISOString(),
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'solve_completed', { summary: fields.resultSummary })
+		return completed
+	}
+
+	recordAlmanacRunId(id: string, runId: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'ralph' && item.kind !== 'harden') throw new Error('Only loop Items can record AlmanacRunId')
+		if (item.status !== 'processing') throw new Error('Only processing loop Items can record AlmanacRunId')
+		if (item.almanacRunId === runId) return item
+
+		const updated = this.store.update(id, { almanacRunId: runId })
+		this.store.insertEvent(id, 'almanac_run_started', { runId })
+		return updated
+	}
+
+	completeLoopItem(id: string, fields: { resultSummary: string }): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'ralph' && item.kind !== 'harden') throw new Error('Only loop Items can complete through almanac')
+		if (item.status !== 'processing') throw new Error('Only processing loop Items can complete through almanac')
+
+		const completed = this.store.update(id, {
+			status: 'completed',
+			completedAt: new Date().toISOString(),
+			resultSummary: fields.resultSummary,
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'loop_completed', { summary: fields.resultSummary })
+		return completed
+	}
+
+	recordDispatchPr(id: string, fields: { prUrl: string; shippedByAgent?: boolean }): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve') throw new Error('Only solve Items can record PR dispatch')
+		if (item.status !== 'review') throw new Error('Only review solve Items can record PR dispatch')
+
+		const updated = this.store.update(id, { prUrl: fields.prUrl })
+		this.store.insertEvent(id, 'pr_created', {
+			url: fields.prUrl,
+			draft: false,
+			shippedByAgent: fields.shippedByAgent === true,
+		})
+		return updated
+	}
+
+	recordDispatchComment(id: string, commentId: string): void {
+		this.requireReviewSolveItem(id, 'record dispatch comments')
+		this.store.insertEvent(id, 'comment_posted', { commentId })
+	}
+
+	recordDispatchSkipped(id: string, reason: string): void {
+		this.requireReviewSolveItem(id, 'record dispatch skips')
+		this.store.insertEvent(id, 'dispatch_skipped', { reason })
+	}
+
+	recordActionCompleted(id: string): void {
+		this.requireReviewSolveItem(id, 'record action completion')
+		this.store.insertEvent(id, 'action_completed')
+	}
+
+	recordExecutionWorkspaceIdentity(
+		id: string,
+		fields: {
+			worktreePath?: string
+			branchName?: string
+			planDirName?: string
+		},
+	): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'processing') {
+			throw new Error('Only processing Items can record execution workspace identity')
+		}
+		return this.store.update(id, fields)
+	}
+
+	recordPlanPrepared(
+		id: string,
+		fields: {
+			worktreePath: string
+			branchName: string
+			planDirName: string
+			spawner: string
+		},
+	): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status === 'processing') throw new Error('Processing Items cannot be planned')
+
+		const planned = this.store.update(id, {
+			worktreePath: fields.worktreePath,
+			branchName: fields.branchName,
+			planDirName: fields.planDirName,
+		})
+		this.store.insertEvent(id, 'plan_prepared', {
+			worktreePath: fields.worktreePath,
+			branchName: fields.branchName,
+			planDirName: fields.planDirName,
+			spawner: fields.spawner,
+		})
+		return planned
+	}
+
+	recordSolveInputSnapshot(id: string, prompt: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve') throw new Error('Only solve Items can record solve input snapshots')
+		if (item.status !== 'processing') throw new Error('Only processing solve Items can record solve input snapshots')
+		return this.store.update(id, { solveInputSnapshot: prompt })
+	}
+
+	recordEvent(id: string, eventType: string, payload?: unknown): void {
+		const item = this.requireItem(id)
+		this.requireGenericEventLifecycle(item, eventType)
+		this.store.insertEvent(id, eventType, payload)
+	}
+
+	nextQueuedItems(kind: ItemKind, limit?: number): ItemRecord[] {
+		return this.store.listQueuedByKind(kind, limit)
+	}
+
+	countQueuedItems(kind: ItemKind): number {
+		return this.store.countQueuedByKind(kind)
+	}
+
+	getItem(id: string): ItemRecord | null {
+		return this.store.get(id)
+	}
+
+	getItemBySourceExternalId(externalId: string): ItemRecord | null {
+		return this.store.findBySourceExternalId(externalId)
+	}
+
+	listGroupItems(groupId: string): ItemRecord[] {
+		return this.store.listByGroupId(groupId)
+	}
+
+	listItems(opts?: {
+		status?: ItemRecord['status']
+		projectSlug?: string
+		limit?: number
+		offset?: number
+	}): ItemRecord[] {
+		return this.store.list(opts)
+	}
+
+	private resolveBaseRef(input: BaseRefSelection, defaultBaseRef: string): string {
+		if (input.baseRef && input.baseItemId) {
+			throw new Error('Specify either baseRef or baseItemId, not both')
+		}
+		if (!input.baseItemId) return input.baseRef ?? defaultBaseRef
+
+		const baseItem = this.store.get(input.baseItemId)
+		if (!baseItem) throw new Error(`Base Item not found: ${input.baseItemId}`)
+		if (baseItem.projectSlug !== input.projectSlug) {
+			throw new Error(
+				`Base Item ${input.baseItemId} belongs to project "${baseItem.projectSlug}", not "${input.projectSlug}"`,
+			)
+		}
+		if (!baseItem.branchName) throw new Error(`Base Item ${input.baseItemId} has no branch to fork from`)
+		return baseItem.branchName
+	}
+
+	private requireItem(id: string): ItemRecord {
+		const item = this.store.get(id)
+		if (!item) throw new Error(`Item not found: ${id}`)
+		return item
+	}
+
+	private requireReviewSolveItem(id: string, action: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.status !== 'review') {
+			throw new Error(`Only review solve Items can ${action}`)
+		}
+		return item
+	}
+
+	private requireGenericEventLifecycle(item: ItemRecord, eventType: string): void {
+		if (RESERVED_EVENT_TYPES.has(eventType)) {
+			throw new Error(`Use the dedicated ItemCommands method to record ${eventType}`)
+		}
+		if (eventType.startsWith('solve_') && (item.kind !== 'solve' || item.status !== 'processing')) {
+			throw new Error('Only processing solve Items can record solve events')
+		}
+		if (eventType === 'dispatch_failed' && (item.kind !== 'solve' || item.status !== 'review')) {
+			throw new Error('Only review solve Items can record dispatch failures')
+		}
+	}
+}

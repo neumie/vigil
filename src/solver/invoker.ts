@@ -1,7 +1,6 @@
 import type { VigilConfig } from '../config.js'
 import { log } from '../util/logger.js'
-import { buildHeadlessAgentInvocation } from './agent-command.js'
-import { solverAgentLabel } from './agent.js'
+import { createAgentAdapter } from './agent-adapter.js'
 import type { SolverAgent } from './agent.js'
 import { type SpawnClaudeResult, spawnClaude } from './spawn-claude.js'
 
@@ -14,8 +13,9 @@ export async function invokeAgent(
 	signal?: AbortSignal,
 	outputLogPath?: string,
 ): Promise<InvokeResult> {
-	const invocation = buildHeadlessAgentInvocation(solver)
-	const displayName = solverAgentLabel(invocation.agent)
+	const agentAdapter = createAgentAdapter(solver)
+	const invocation = agentAdapter.buildHeadlessInvocation()
+	const displayName = agentAdapter.label
 
 	log.info('invoker', `Spawning ${displayName} in ${worktreePath}`, { model: solver.model ?? 'default' })
 
@@ -30,5 +30,5 @@ export async function invokeAgent(
 		label: invocation.label,
 		displayName,
 	})
-	return { ...result, agent: invocation.agent }
+	return { ...result, agent: agentAdapter.agent }
 }

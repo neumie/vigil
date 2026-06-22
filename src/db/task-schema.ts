@@ -22,7 +22,7 @@ export const taskStatusSchema = z.enum([
 	'cancelled',
 	'skipped',
 ])
-export const errorPhaseSchema = z.enum(['poll', 'worktree', 'solve', 'action'])
+export const errorPhaseSchema = z.enum(['poll', 'worktree', 'solve', 'loop', 'action'])
 
 /** Statuses a user may set manually (subset of TaskStatus — excludes queued/processing). */
 export const manualStatusSchema = z.enum(['completed', 'review', 'failed', 'cancelled', 'skipped'])

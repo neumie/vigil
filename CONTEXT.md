@@ -14,10 +14,10 @@ disagrees, drive the rework toward the doc — not the other way round.
 a kind-specific payload. Replaces the pre-rework `Task`.
 
 **Kind** — `solve | ralph | harden`. Top-level discriminator on an Item.
-- `solve` — one Claude invocation in a worktree → `/almanac:ship` → PR. Payload: `prompt`.
+- `solve` — one configured-agent invocation in a worktree → `/almanac:ship` → PR. Payload: `prompt`.
 - `ralph` / `harden` — delegated to almanac's loop engine. Payload mirrors almanac
-  flags 1:1: ralph `{ prdPath, iterations?, oversee? }`; harden
-  `{ targetPath, rounds?, lenses? }`.
+  flags 1:1: ralph `{ prdPath, mode?, provider?, model?, effort?, iterations?, noOversee? }`;
+  harden `{ target, rounds? }`.
 
 **Source** — optional `{ provider, externalId }` on the envelope. Populated by the
 clientcare poller for poller-discovered items; null for hand-added ones. The
@@ -39,23 +39,26 @@ of one Item doesn't touch its siblings. The dashboard renders a group as one car
 with N children.
 
 **Spawner** — the seam over interactive-surface launchers used for the planning
-phase. Adapters auto-discovered at `src/spawners/<name>.ts` (mirrors almanac's
-loop-adapter pattern at `lib/loops/<name>.sh`); the spawner list IS the files
-present. Each adapter answers a fixed contract: open an interactive session in
+phase. The built-in adapter lives in `src/spawner/default-spawner.ts`; extension
+adapters are auto-discovered at `src/extensions/<name>/spawner.ts`. The spawner
+list IS the files present. Each adapter answers a fixed contract: open an interactive session in
 its environment (okena terminal, iTerm tab, tmux window, …), seeded with the
-planning prompt + worktree cwd. Independent of `Solver` — planning spawn and
-autonomous-run solver are two axes. Per-Item override on the add form; global
-default in `vigil.config.json` (`spawn.default`).
+planning prompt + worktree cwd. Planning is a separate axis from Item `kind` and
+from execution: it is not part of `Solver`, not a loop Item, and not a fourth
+Kind. Per-Item override on the add form; global default is `spawner.name` in
+`vigil.config.json`. Discovery remains file-based, not a config enum: config
+names the default adapter, but available adapters come from files present.
 
 **Triage** — the verification step between a poller-sourced Item and the queue.
 Statuses: poller writes `unverified`; the operator approves → `queued` or rejects
-→ `skipped`. Hand-added items skip triage and land directly in `queued`. Triage is
-where ambiguity gets resolved at queue time — it replaces the pre-rework solver
-clarification-chat round.
+→ `skipped`. Hand-added Queue items skip triage and land directly in `queued`.
+Hand-added Plan items land in `planned`, with no `queuedAt`, until the operator
+starts or cancels them. Triage is where ambiguity gets resolved at queue time —
+it replaces the pre-rework solver clarification-chat round.
 
-**Lane** — a per-kind concurrency slot. `solveConcurrency: N`, `loopConcurrency: M`.
-Solve and loop items never share a slot, so a long ralph can't starve a queue of
-short solves.
+**Lane** — a per-kind concurrency slot. Solve capacity follows `solver.concurrency`;
+loop capacity is currently 1. Solve and loop items never share a slot, so a long
+ralph can't starve a queue of short solves.
 
 **Drainer** — vigil's worker pool. Always-on daemon (launchd-managed); selects
 queued items respecting lane caps and `queuedAt ASC` per lane.
@@ -75,11 +78,30 @@ fallback (an unreachable okena surfaces errors per-Item, not by silently swappin
 in `DefaultSolver`).
 
 **AlmanacRunId** — the registry id at `.almanac/runs/<id>/` that vigil captures
-from `run_id=<id>` (almanac's first-stdout-line emit on launch). Stored on the
-Item row; the dashboard tails `.almanac/runs/<id>/status.tsv` directly for live
-state. See *Cross-tool contracts* below.
+from the first emitted almanac run-id line. Stored on the Item row; the dashboard
+tails `.almanac/runs/<id>/status.tsv` directly for live state. See *Cross-tool
+contracts* below.
 
 ## Deep modules (surviving the rework)
+
+**Item Store** — the persistence module for Items. The AFK-list rework may use a
+breaking storage reset: replace pre-rework `tasks` / chat / tier schema rather
+than preserving old rows in place. Store one Item envelope row with `kind` as the
+discriminator and a JSON `payload` validated by the matching kind schema. Keep
+queryable lifecycle fields (status, queuedAt, startedAt, completedAt, lane/run
+ids, source, baseRef, groupId) as columns; keep kind-specific inputs in payload
+until a field needs indexed querying.
+
+**Item Commands** — the application module for Item lifecycle behavior. Dashboard
+routes, extension routes, CLI commands, and poller ingestion call Item Commands
+instead of mutating the store, queue, worktree, or events directly. Owns add,
+plan, queue, start, retry, cancel, skip, approve/reject triage, fan-out, and event
+writes; adapters stay thin.
+
+**Config Document** — the module owning config load, validation, redaction,
+dashboard-safe shape, and edit metadata. `src/config.ts` remains the canonical
+schema; routes and Settings UI consume the Config Document interface instead of
+mirroring fields by hand.
 
 **SolverResult** — the structured outcome the agent writes to `solver-result.json`
 (summary, filesChanged, prUrl). Single source of truth is its Zod schema; the TS
@@ -87,12 +109,23 @@ type is `z.infer` of it and the prompt's JSON contract must match. Read from the
 result file only — there is no stdout fallback. Slimmer than pre-rework: `tier` /
 `confidence` are gone with tiering.
 
+**Solve input snapshot** — the exact prompt text handed to a solve-kind execution.
+The execution adapter returns or persists this snapshot once, before invocation;
+the dashboard displays that immutable copy. Never rebuild the prompt after the
+run for display, because plan artifacts may have changed.
+
+**Agent Adapter** — the seam over agent CLI variation inside a solver: command
+shape, labels, interactive command construction, and timeline parsing for
+`claude` vs `codex`. Solver code chooses an Agent Adapter and should not spread
+agent conditionals across command building, invocation, and output parsing.
+
 **PlanWorkspace** — the deep module owning the on-disk `docs/plans/<planDirName>/`
 layout: the paths and IO for `context.md`, `.planning-prompt.txt`,
 `solver-result.json`, and `README.md`, plus the *relative* result path the solver
 prompt references. One owner so the prompt template, the result parser, and the
 okena poll path can never disagree about where files live. Concerns on-disk layout
-only. **Used by `solve`-kind Items only** — loop Items have no plan workspace.
+only. Planning artifacts are Item-scoped and may exist for any Item kind; each
+execution adapter decides how much of that plan context it consumes.
 
 **Item workspace identity** (`resolveItemWorkspace`) — resolves an Item row to
 its `{ planDirName, branchName, existingWorktreePath }`, computing+persisting
@@ -107,6 +140,21 @@ persists what it's given rather than parsing solver-specific stdout — keeps
 default-solver output shape out of the shared `Solver` interface. Loop Items have
 no `Solve outcome` (they don't go through `Solver`); their analogue is the
 almanac run record at `.almanac/runs/<id>/`.
+
+**Dispatch** — the post-run delivery module. For solve Items, Dispatch owns the
+choice between recording a pre-shipped PR and pushing/opening/commenting itself,
+plus all related events. It uses internal adapters for git push, GitHub PRs, and
+provider comments so the drainer does not know those side-effect details.
+
+**Run Observation** — the read module for live/completed run state. It normalizes
+solve logs/events/PR status and loop `.almanac/runs/<id>/status.tsv` into one
+shape for the dashboard. UI should render Run Observation, not know whether a run
+was a solver invocation or an almanac loop.
+
+**Dashboard Contract** — the server-owned view model for Items and groups: card
+state, status tone, allowed actions, source links, branch/PR links, grouping, and
+run observation summaries. React web and Solid extension render this contract and
+avoid duplicating status/action rules.
 
 ## Gone with the rework
 
@@ -126,27 +174,27 @@ verbatim — the post-rework Item lifecycle has different state-machine joins.
 
 Vigil is **the** entrypoint for tasks across projects — the dashboard is where
 Items are created, not just observed. Three entrypoints write Items into the DB,
-all via one shared `addItem()` lib (no parallel write paths):
+all via Item Commands (no parallel write paths):
 
 1. **Dashboard add form** — per-project page, three tabs (solve/ralph/harden).
-   Fields: title, payload (prompt or prdPath or targetPath), `baseRef` (autocomplete
-   from `git for-each-ref` on the project repo), `spawn` (dropdown from discovered
-   spawners; defaults to `spawn.default`), `parallelism: N` (defaults 1; N > 1 →
-   fan-out group). [Plan] and [Queue] buttons: Plan creates the Item(s) + their
-   worktrees + opens N spawner sessions; Queue creates the Item(s) and the
-   drainer picks them up immediately.
+   Fields: title, payload (prompt or prdPath or target), `baseRef` (free-form
+   ref today), `spawner` (dropdown from discovered spawners; defaults to active
+   Spawner), `parallelism: N` (defaults 1; N > 1 →
+   fan-out group). [Plan] and [Queue] buttons: Plan creates `planned` Item(s),
+   their worktrees, and opens N spawner sessions without waking the Drainer;
+   Queue creates `queued` Item(s) and the Drainer picks them up immediately.
 2. **CLI `vigil add …`** — same payload as the form, scriptable.
 3. **Clientcare poller** — produces `unverified` Items for triage (see *Triage*).
 
-**Plan flow.** Click Plan on an `unverified` or `queued` solve Item (or in the
-add-form). Vigil resolves the Item's workspace (`resolveItemWorkspace`), creates
-the worktree off `baseRef`, writes `docs/plans/<dir>/context.md`, then invokes the
-selected `Spawner` to open an interactive session with the planning prompt + that
+**Plan flow.** Click Plan on an `unverified`, `planned`, or `queued` Item (or in
+the add-form).
+Vigil resolves the Item's workspace (`resolveItemWorkspace`), creates the worktree
+off `baseRef`, writes `docs/plans/<dir>/context.md`, then invokes the selected
+`Spawner` to open an interactive planning session with the planning prompt + that
 worktree as cwd. The operator writes `docs/plans/<dir>/{brief,prd,…}.md` from
-inside the spawned session (e.g. via almanac `/grill-me`, `/prd-create`). When
-the Item later runs, the autonomous solver reuses the same worktree and
-`buildTaskContext` reads every `*.md` in `docs/plans/<dir>/` so the agent has
-full plan context.
+inside the spawned session (e.g. via almanac `/grill-me`, `/prd-create`). When the
+Item later runs, its execution adapter reuses the same worktree and can read the
+plan artifacts as authoritative context.
 
 **Fan-out flow.** Add form with `parallelism: N` writes N Items sharing one
 `groupId`, all with identical payload + `baseRef`. The drainer schedules them
@@ -165,8 +213,9 @@ diverging afterward.
 
 ## Cross-tool contracts
 
-**Almanac handoff.** `almanac ralph` / `almanac harden` print `run_id=<id>` as the
-first stdout line on launch. Vigil reads line 1, stores it on the Item
+**Almanac handoff.** `almanac ralph` / `almanac harden` emit a run id such as
+`run_id=<id>`, `Run ID: <id>`, `Run registered: <id>`, or a bare
+`ralph-*`/`harden-*` id. Vigil captures the first match, stores it on the Item
 (`almanacRunId`), and tails `.almanac/runs/<id>/status.tsv` (almanac's canonical
 per-run record) for live state. To cancel a loop, vigil writes the loop adapter's
 between-round signal file (`.ralph-stop` / `.harden-stop`) in the worktree;

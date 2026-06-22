@@ -18,7 +18,7 @@ export interface SolveParams {
 	planDirName: string
 	/** Raw task context — the solver formats it into the prompt itself. */
 	taskContext: TaskContext
-	/** Needed by solvers that run a clarification chat (the chat session keys on it). */
+	/** Stable Item/Task id used for logs, worktree naming, and persisted run state. */
 	taskId: string
 	taskTitle: string
 	solverConfig: VigilConfig['solver']
@@ -30,38 +30,26 @@ export interface SolveParams {
 	 * any planning artifacts the user wrote under `docs/plans/<planDirName>/`.
 	 */
 	existingWorktreePath?: string
-}
-
-export interface PlanningSessionParams {
-	projectConfig: ProjectConfig
-	branchName: string
-	planDirName: string
-	taskTitle: string
-	/** Raw task context — the solver writes `context.md` + builds the prompt. */
-	taskContext: TaskContext
-	solverConfig: VigilConfig['solver']
-	/** If set, reuse this worktree instead of creating a new one. */
-	existingWorktreePath?: string
-	signal?: AbortSignal
-}
-
-export interface PlanningSessionResult {
-	worktreePath: string
-	branchName: string
 	/**
-	 * Solver-specific human-readable hint to show the user. For okena: "Switch
-	 * to Okena, planning session is running in terminal X". For default: "Open
-	 * a terminal in <path> and run the staged prompt command".
+	 * Called immediately after the solver creates or reuses the worktree. Workers
+	 * use this to keep cancellation/failure rows inspectable even if solve() never
+	 * returns a SolveResult.
 	 */
-	hint: string
+	onWorktreeReady?: (worktreePath: string) => void
+	/**
+	 * Called immediately after the solver renders the exact prompt and before it
+	 * invokes the agent. Workers use this to persist the immutable solve input.
+	 */
+	onPromptSnapshot?: (prompt: string) => void
 }
 
 /**
  * The solve's observable outcome, produced by each Solver adapter — keeps the
  * default solver's stdout shape out of the shared interface. `events` is the
- * dashboard timeline (DefaultSolver derives it from the CLI's JSON output;
- * OkenaSolver has none today and returns `[]`). `rawOutput` is a default-solver
- * artifact (captured stdout) and is absent for solvers that don't capture it.
+ * dashboard timeline (DefaultSolver asks the configured AgentAdapter to parse
+ * CLI output; OkenaSolver has none today and returns `[]`). `rawOutput` is a
+ * default-solver artifact (captured stdout) and is absent for solvers that don't
+ * capture it.
  */
 export interface SolveOutcome {
 	events: ClaudeEvent[]
@@ -76,14 +64,5 @@ export interface SolveResult {
 }
 
 export interface Solver {
-	/**
-	 * Start an INTERACTIVE planning session: ensure the worktree, write the
-	 * task context to `docs/plans/<planDirName>/context.md`, spawn the agent
-	 * with the planning prompt, and return immediately — does NOT block or poll.
-	 * The user interacts at their leisure; the autonomous solve is triggered
-	 * separately. The same worktree is reused by `solve()` via
-	 * `SolveParams.existingWorktreePath`.
-	 */
-	startPlanningSession(params: PlanningSessionParams): Promise<PlanningSessionResult>
 	solve(params: SolveParams): Promise<SolveResult>
 }

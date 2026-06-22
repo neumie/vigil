@@ -99,4 +99,74 @@ DROP INDEX idx_tasks_clientcare_id;
 CREATE INDEX idx_tasks_external_id ON tasks(external_id);
 `,
 	},
+	{
+		version: 6,
+		sql: `
+CREATE TABLE items (
+  id              TEXT PRIMARY KEY,
+  kind            TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  project_slug    TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  source          TEXT,
+  base_ref        TEXT NOT NULL,
+  group_id        TEXT,
+  payload         TEXT NOT NULL,
+  worktree_path   TEXT,
+  branch_name     TEXT,
+  plan_dir_name   TEXT,
+  almanac_run_id  TEXT,
+  created_at      TEXT NOT NULL,
+  queued_at       TEXT,
+  started_at      TEXT,
+  completed_at    TEXT,
+  updated_at      TEXT NOT NULL,
+  error_message   TEXT,
+  error_phase     TEXT,
+  result_summary  TEXT,
+  pr_url          TEXT
+);
+
+CREATE INDEX idx_items_status_queued_at ON items(status, queued_at);
+CREATE INDEX idx_items_kind ON items(kind);
+CREATE INDEX idx_items_project ON items(project_slug);
+CREATE INDEX idx_items_group ON items(group_id);
+`,
+	},
+	{
+		version: 7,
+		sql: `
+CREATE TABLE item_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id    TEXT NOT NULL REFERENCES items(id),
+  event_type TEXT NOT NULL,
+  payload    TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_item_events_item ON item_events(item_id);
+CREATE INDEX idx_item_events_type ON item_events(event_type);
+`,
+	},
+	{
+		version: 8,
+		sql: `
+ALTER TABLE items ADD COLUMN solve_input_snapshot TEXT;
+`,
+	},
+	{
+		version: 9,
+		sql: `
+ALTER TABLE items ADD COLUMN spawner TEXT;
+`,
+	},
+	{
+		version: 10,
+		sql: `
+DROP TABLE IF EXISTS chat_messages;
+DROP TABLE IF EXISTS chat_sessions;
+ALTER TABLE tasks DROP COLUMN tier;
+ALTER TABLE tasks DROP COLUMN solver_confidence;
+`,
+	},
 ]

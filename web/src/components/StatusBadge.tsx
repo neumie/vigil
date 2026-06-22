@@ -1,3 +1,5 @@
+import type { DashboardTone } from '../api'
+
 const statusColors: Record<string, string> = {
 	queued: 'var(--text-3)',
 	processing: 'var(--blue)',
@@ -8,8 +10,16 @@ const statusColors: Record<string, string> = {
 	skipped: 'var(--text-3)',
 }
 
-export function StatusBadge({ value }: { value: string }) {
-	const color = statusColors[value] ?? 'var(--text-3)'
+const toneColors: Record<DashboardTone, string> = {
+	gray: 'var(--text-3)',
+	blue: 'var(--blue)',
+	green: 'var(--green)',
+	amber: 'var(--amber)',
+	red: 'var(--red)',
+}
+
+export function StatusBadge({ value, tone }: { value: string; tone?: DashboardTone }) {
+	const color = tone ? toneColors[tone] : (statusColors[value.toLowerCase()] ?? 'var(--text-3)')
 
 	return (
 		<span
