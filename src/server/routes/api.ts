@@ -144,6 +144,11 @@ export function apiRoutes(
 		return parsed.success ? parsed.data : null
 	}
 
+	function recordSelectedSolveAgent(item: ItemRecord, solverAgent: SolverAgent | undefined): ItemRecord {
+		if (!solverAgent || item.kind !== 'solve') return item
+		return itemCommands.setSolveItemAgent(item.id, solverAgent)
+	}
+
 	async function planningSpawnerForItem(item: ItemRecord): Promise<Spawner> {
 		if (!item.spawner || item.spawner === spawner.name) return spawner
 		const parsed = spawnerNameSchema.safeParse(item.spawner)
@@ -201,7 +206,11 @@ export function apiRoutes(
 		if (!parsed.success) {
 			const hasSolverAgent = typeof body === 'object' && body !== null && 'solverAgent' in body
 			return c.json(
-				{ error: hasSolverAgent ? 'solverAgent is only accepted by planning routes' : 'Missing or invalid externalId' },
+				{
+					error: hasSolverAgent
+						? 'solverAgent is only accepted by planning and Item action routes'
+						: 'Missing or invalid externalId',
+				},
 				400,
 			)
 		}
@@ -344,9 +353,17 @@ export function apiRoutes(
 		}
 	})
 
-	api.post('/items/:id/approve', c => {
+	api.post('/items/:id/approve', async c => {
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
+		const current = itemCommands.getItem(c.req.param('id'))
+		if (!current) return c.json({ error: 'Item not found' }, 404)
+		if (current.status !== 'unverified') return c.json({ error: 'Only unverified Items can be approved' }, 400)
 		try {
-			const item = itemCommands.approveItem(c.req.param('id'))
+			recordSelectedSolveAgent(current, solverAgent)
+			const item = itemCommands.approveItem(current.id)
 			queue.wake()
 			return c.json({ data: dashboardItem(item) })
 		} catch (err) {
@@ -365,7 +382,11 @@ export function apiRoutes(
 		}
 	})
 
-	api.post('/items/:id/start', c => {
+	api.post('/items/:id/start', async c => {
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
 		if (item.kind !== 'solve' && item.kind !== 'ralph' && item.kind !== 'harden') {
@@ -373,14 +394,22 @@ export function apiRoutes(
 		}
 		if (item.status !== 'queued' && item.status !== 'planned')
 			return c.json({ error: 'Item is not ready to start' }, 400)
+		recordSelectedSolveAgent(item, solverAgent)
 		const started = queue.processOneItem(item.id)
 		if (!started) return c.json({ error: 'Could not start Item' }, 500)
 		return c.json({ data: dashboardItem(itemCommands.getItem(item.id) ?? item) })
 	})
 
-	api.post('/items/:id/retry', c => {
+	api.post('/items/:id/retry', async c => {
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
 		try {
-			const item = queue.retryItem(c.req.param('id'))
+			const current = itemCommands.getItem(c.req.param('id'))
+			if (!current) return c.json({ error: 'Item not found' }, 404)
+			recordSelectedSolveAgent(current, solverAgent)
+			const item = queue.retryItem(current.id)
 			return c.json({ data: dashboardItem(item) })
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err)

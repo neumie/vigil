@@ -93,7 +93,7 @@ Loop Items (ralph/harden) use `processLoopItem`, also launched by `Drainer`. It 
   - `extension/package.json` is `type: commonjs`; Node tests that import extension TS through `tsx` must default-import the module and destructure exports instead of using named ESM imports.
   - Extension reloads can leave old content-script/popup code alive long enough for `chrome.storage` to throw `Extension context invalidated.`. Use `extension/src/storage.ts` (`getSync` / `setSync`) for storage access; do not call `chrome.storage.*` directly from extension code.
   - Untracked external tasks created from the extension go through `POST /api/items/source` (`api.createItemFromSource`) and become Source-backed, unverified solve Items via `ItemCommands`. `POST /api/tasks` is legacy fallback/debug surface only; don't wire new extension solve flows to it.
-  - `/api/items/source` accepts only `externalId`. Do not pass `solverAgent` there: Items do not store a per-run solve agent preference. The Item planning route may accept `solverAgent` because it shapes only the planning prompt.
+  - `/api/items/source` accepts only `externalId`; source discovery still creates an unverified solve Item without selecting an agent. Item action routes that can launch solve work (`approve`, `start`, `retry`) may accept `solverAgent`; persist it through `ItemCommands.setSolveItemAgent` in the solve payload before waking the Drainer. `processSolveItem` must use that stored agent over `config.solver.agent`. Item planning route may also accept `solverAgent` because it shapes the planning prompt.
 - **`web/`** — React 19 only. Never downgrade; code uses 19-only features (Actions, `use`, ref-as-prop).
 
 ## Gotchas

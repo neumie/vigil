@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { solverAgentSchema } from '../solver/agent.js'
 
 export const itemKindSchema = z.enum(['solve', 'ralph', 'harden'])
 
@@ -26,6 +27,7 @@ export const solveItemPayloadSchema = z
 	.object({
 		kind: z.literal('solve'),
 		prompt: z.string().min(1),
+		solverAgent: solverAgentSchema.optional(),
 	})
 	.strict()
 

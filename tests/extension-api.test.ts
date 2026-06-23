@@ -117,6 +117,44 @@ test('extension API posts dashboard Item actions to Item routes', async () => {
 	}
 })
 
+test('extension API passes selected solver agent to Item actions that can start work', async () => {
+	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
+	const globalWithChrome = globalThis as typeof globalThis & { chrome?: ChromeStorageStub }
+	const originalChrome = globalWithChrome.chrome
+	globalWithChrome.chrome = {
+		storage: {
+			sync: {
+				get: (_defaults, callback) => callback({ serverUrl: 'http://localhost:7474' }),
+			},
+		},
+	}
+	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+		calls.push({ path: input.toString(), init })
+		return new Response(JSON.stringify({ data: { ok: true } }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+
+	try {
+		await api.itemAction('item-1', 'approve', 'codex')
+		await api.itemAction('item-1', 'start', 'codex')
+		await api.itemAction('item-1', 'retry', 'codex')
+
+		assert.deepEqual(
+			calls.map(call => JSON.parse(String(call.init?.body))),
+			[{ solverAgent: 'codex' }, { solverAgent: 'codex' }, { solverAgent: 'codex' }],
+		)
+	} finally {
+		globalThis.fetch = originalFetch
+		if (originalChrome) {
+			globalWithChrome.chrome = originalChrome
+		} else {
+			globalWithChrome.chrome = undefined
+		}
+	}
+})
+
 test('extension API ignores invalidated Chrome storage context', async () => {
 	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
 	const globalWithChrome = globalThis as typeof globalThis & { chrome?: ChromeStorageStub }

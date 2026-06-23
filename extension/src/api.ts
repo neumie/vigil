@@ -188,14 +188,16 @@ export const api = {
 	start: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/start`, { solverAgent }),
 	retry: (id: string, solverAgent?: SolverAgent) => postAPI<{ message: string }>(`/tasks/${id}/retry`, { solverAgent }),
 	cancel: (id: string) => postAPI<{ message: string }>(`/tasks/${id}/cancel`),
-	itemAction: (id: string, action: DashboardActionId) => {
+	itemAction: (id: string, action: DashboardActionId, solverAgent?: SolverAgent) => {
+		const body =
+			solverAgent && (action === 'approve' || action === 'start' || action === 'retry') ? { solverAgent } : undefined
 		switch (action) {
 			case 'approve':
 			case 'reject':
 			case 'start':
 			case 'cancel':
 			case 'retry':
-				return postAPI<DashboardItem>(`/items/${id}/${action}`)
+				return postAPI<DashboardItem>(`/items/${id}/${action}`, body)
 		}
 	},
 	planItem: (id: string, solverAgent?: SolverAgent) => postAPI<PlanInfo>(`/items/${id}/plan`, { solverAgent }),

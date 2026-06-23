@@ -97,7 +97,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 			const configAgent = c.solver?.agent ?? 'claude'
 			getSync({ solverAgent: configAgent })
 				.then(items => {
-					if (isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
+					if (!agentTouched() && isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
 				})
 				.catch(err => console.warn('[vigil]', err))
 		})
@@ -242,7 +242,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 				}}
 				onItemAction={action => {
 					const i = item()
-					if (i) doAction(() => api.itemAction(i.id, action))
+					if (i) doAction(() => api.itemAction(i.id, action, solverAgent()))
 				}}
 				onSkip={() => {
 					const t = task()

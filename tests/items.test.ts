@@ -1976,6 +1976,30 @@ test('solve Items display the immutable prompt snapshot captured before invocati
 	})
 })
 
+test('processSolveItem uses solve Item selected solver agent', async () => {
+	await withTempDb(async db => {
+		const worktreeRoot = mkdtempSync(join(tmpdir(), 'vigil-item-agent-'))
+		const item = db.items.create({
+			kind: 'solve',
+			status: 'queued',
+			projectSlug: 'vigil',
+			title: 'Run with Codex',
+			source: null,
+			baseRef: 'main',
+			payload: { kind: 'solve', prompt: 'Use selected agent.', solverAgent: 'codex' },
+		})
+		const solver = new FakeSolveSolver(worktreeRoot)
+
+		try {
+			await processSolveItem(item.id, config, db, provider, solver)
+
+			assert.equal(solver.calls[0].solverConfig.agent, 'codex')
+		} finally {
+			rmSync(worktreeRoot, { recursive: true, force: true })
+		}
+	})
+})
+
 test('solve Item cancellation preserves the newly-created worktree identity', async () => {
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'vigil-cancelled-solve-worktrees-'))
@@ -3167,7 +3191,7 @@ test('server rejects solverAgent on source Item creation', async () => {
 
 		assert.equal(res.status, 400)
 		const body = (await res.json()) as { error: string }
-		assert.match(body.error, /solverAgent is only accepted by planning routes/)
+		assert.match(body.error, /solverAgent is only accepted by planning and Item action routes/)
 		assert.equal(db.items.findBySourceExternalId('task-source-agent'), null)
 	})
 })
@@ -3330,5 +3354,77 @@ test('server start and cancel Item action routes return dashboard contract', asy
 			cancelled.data.allowedActions.map(a => a.id),
 			['retry'],
 		)
+	})
+})
+
+test('server Item work-start routes persist selected solve agent before queue handoff', async () => {
+	await withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const approveTarget = db.items.create({
+			kind: 'solve',
+			status: 'unverified',
+			projectSlug: 'vigil',
+			title: 'Approve with Codex',
+			source: {
+				provider: 'contember',
+				externalId: 'task-api-approve-agent',
+				url: 'https://example.test/tasks/task-api-approve-agent',
+			},
+			baseRef: 'main',
+			payload: { kind: 'solve', prompt: 'Approve with selected agent.' },
+		})
+		const startTarget = commands.createSolveItem({
+			title: 'Start with Codex',
+			projectSlug: 'vigil',
+			prompt: 'Start with selected agent.',
+		})
+		const retryTarget = commands.createSolveItem({
+			title: 'Retry with Codex',
+			projectSlug: 'vigil',
+			prompt: 'Retry with selected agent.',
+		})
+		commands.startItem(retryTarget.id)
+		commands.failItem(retryTarget.id, 'fail once', 'solve')
+
+		const routeQueue = {
+			...queue,
+			processOneItem: (id: string) => {
+				assert.equal(db.items.get(id)?.payload.solverAgent, 'codex')
+				commands.startItem(id)
+				return true
+			},
+			retryItem: (id: string) => {
+				assert.equal(db.items.get(id)?.payload.solverAgent, 'codex')
+				return commands.retryItem(id)
+			},
+			wake: () => {
+				assert.equal(db.items.get(approveTarget.id)?.payload.solverAgent, 'codex')
+			},
+		}
+		const api = apiRoutes(
+			config,
+			'vigil.config.json',
+			db,
+			routeQueue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+		)
+		const postCodex = {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ solverAgent: 'codex' }),
+		}
+
+		const approveRes = await api.request(`/items/${approveTarget.id}/approve`, postCodex)
+		const startRes = await api.request(`/items/${startTarget.id}/start`, postCodex)
+		const retryRes = await api.request(`/items/${retryTarget.id}/retry`, postCodex)
+
+		assert.equal(approveRes.status, 200)
+		assert.equal(startRes.status, 200)
+		assert.equal(retryRes.status, 200)
+		assert.equal(db.items.get(approveTarget.id)?.payload.solverAgent, 'codex')
+		assert.equal(db.items.get(startTarget.id)?.payload.solverAgent, 'codex')
+		assert.equal(db.items.get(retryTarget.id)?.payload.solverAgent, 'codex')
 	})
 })

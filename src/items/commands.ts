@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { VigilConfig } from '../config.js'
+import { solverAgentSchema } from '../solver/agent.js'
+import type { SolverAgent } from '../solver/agent.js'
 import type { ErrorPhase } from '../types.js'
 import { itemSourceSchema } from './schema.js'
 import type { ItemKind, ItemRecord, ItemSource } from './schema.js'
@@ -17,6 +19,7 @@ const createSolveItemInputSchema = z
 		baseRef: z.string().min(1).optional(),
 		baseItemId: z.string().min(1).optional(),
 		spawner: z.string().min(1).optional(),
+		solverAgent: solverAgentSchema.optional(),
 		initialStatus: createItemInitialStatusSchema.optional(),
 		source: itemSourceSchema.nullable().optional(),
 	})
@@ -150,9 +153,18 @@ export class ItemCommands {
 				payload: {
 					kind: 'solve',
 					prompt: parsed.data.prompt,
+					...(parsed.data.solverAgent ? { solverAgent: parsed.data.solverAgent } : {}),
 				},
 			}),
 		)
+	}
+
+	setSolveItemAgent(id: string, solverAgent: SolverAgent): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items can store a selected solver agent')
+		}
+		return this.store.updatePayload(id, { ...item.payload, solverAgent })
 	}
 
 	createRalphItem(input: CreateRalphItemInput): ItemRecord {

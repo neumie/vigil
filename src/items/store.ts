@@ -183,6 +183,20 @@ export class ItemStore {
 		return updated
 	}
 
+	updatePayload(id: string, payload: ItemPayload): ItemRecord {
+		const current = this.get(id)
+		if (!current) throw new Error(`Item not found: ${id}`)
+		const updatedAt = new Date().toISOString()
+		validateItem({ ...current, payload, updatedAt })
+		const result = this.db
+			.prepare('UPDATE items SET payload = ?, updated_at = ? WHERE id = ?')
+			.run(JSON.stringify(payload), updatedAt, id)
+		if (result.changes === 0) throw new Error(`Item not found: ${id}`)
+		const updated = this.get(id)
+		if (!updated) throw new Error(`Item not found: ${id}`)
+		return updated
+	}
+
 	insertEvent(itemId: string, eventType: string, payload?: unknown): void {
 		this.db
 			.prepare('INSERT INTO item_events (item_id, event_type, payload) VALUES (?, ?, ?)')
