@@ -14,6 +14,27 @@ function gitRefExists(repoPath: string, ref: string): boolean {
 	}
 }
 
+/** True if a local branch with this name already exists in the repo. */
+export function localBranchExists(repoPath: string, branchName: string): boolean {
+	return gitRefExists(repoPath, `refs/heads/${branchName}`)
+}
+
+/**
+ * True if the branch exists on origin — checks the fetched remote-tracking ref
+ * first (fast) then falls back to an authoritative `git ls-remote` (covers a
+ * remote branch never fetched locally). A network/no-origin failure is treated as
+ * "absent" so this can't block naming.
+ */
+export function remoteBranchExists(repoPath: string, branchName: string): boolean {
+	if (gitRefExists(repoPath, `refs/remotes/origin/${branchName}`)) return true
+	try {
+		execFileSync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branchName], { cwd: repoPath, stdio: 'pipe' })
+		return true
+	} catch {
+		return false
+	}
+}
+
 export function resolveWorktreeStartPoint(repoPath: string, baseRef: string): string {
 	try {
 		execFileSync('git', ['fetch', 'origin', baseRef], { cwd: repoPath, stdio: 'pipe' })

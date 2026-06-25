@@ -13,6 +13,7 @@ import { ItemCommands } from '../../items/commands.js'
 import { buildItemTaskContext } from '../../items/context.js'
 import { toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
+import { ensureItemWorkspaceName } from '../../items/naming.js'
 import { observeItemRun } from '../../items/observation.js'
 import { itemStatusSchema } from '../../items/schema.js'
 import type { ItemRecord } from '../../items/schema.js'
@@ -26,6 +27,7 @@ import type { SolverAgent } from '../../solver/agent.js'
 import { createSpawner, listSpawnerAdapters, spawnerNameSchema } from '../../spawner/registry.js'
 import type { SpawnerName } from '../../spawner/registry.js'
 import type { Spawner } from '../../spawner/spawner.js'
+import { isCancellation } from '../../util/errors.js'
 
 /** Read a task's log file from `offset`. cwd is the daemon's startup dir (it
  *  never chdirs), so `logs/` resolves correctly. Returns empty on any error. */
@@ -445,7 +447,6 @@ export function apiRoutes(
 		const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
 		if (!projectConfig) return c.json({ error: `Unknown project slug: ${item.projectSlug}` }, 400)
 
-		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(item)
 		let sourceContext: TaskContext | null = null
 		if (item.payload.kind === 'solve' && item.source) {
 			try {
@@ -457,6 +458,30 @@ export function apiRoutes(
 			if (!sourceContext) return c.json({ error: 'Item source not found in source system' }, 502)
 		}
 		const taskContext = buildItemTaskContext(item, sourceContext)
+
+		// Derive a conventional branch name before resolving identity, so planning
+		// writes its worktree under the AI-chosen name (no-op unless enabled). Wire
+		// the request's abort signal so the model call dies if the client gives up
+		// instead of blocking the handler for the full one-shot timeout.
+		let named: ItemRecord
+		try {
+			named = await ensureItemWorkspaceName({
+				commands: itemCommands,
+				item,
+				taskContext,
+				config,
+				repoPath: projectConfig.repoPath,
+				agent: effectiveSolverAgent,
+				signal: c.req.raw.signal,
+			})
+		} catch (err) {
+			// Pass the request signal so an error coinciding with a client abort is
+			// classified as cancellation (matching how ensureItemWorkspaceName re-throws),
+			// not mis-reported as a 500.
+			if (isCancellation(err, c.req.raw.signal)) return c.json({ error: 'Request aborted' }, 503)
+			throw err
+		}
+		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(named)
 
 		let itemSpawner: Spawner
 		try {
