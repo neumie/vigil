@@ -317,7 +317,8 @@ function PersistedPlanBlock({ plan }: { plan: DashboardPlan }) {
 function SourceTaskView({ task }: { task: SourceTask }) {
 	const metaEntries = task.metadata ? Object.entries(task.metadata) : []
 	const comments = task.comments ?? []
-	if (!task.description && metaEntries.length === 0 && comments.length === 0) return null
+	const attachments = task.attachments ?? []
+	if (!task.description && metaEntries.length === 0 && comments.length === 0 && attachments.length === 0) return null
 	return (
 		<Section title="Task">
 			{metaEntries.length > 0 && (
@@ -334,6 +335,13 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 					{task.description}
 				</p>
 			)}
+			{attachments.length > 0 && (
+				<div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: task.description ? 14 : 0 }}>
+					{attachments.map((a, i) => (
+						<Attachment key={`${a.url}-${i}`} att={a} />
+					))}
+				</div>
+			)}
 			{comments.length > 0 && (
 				<div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
 					{comments.map((c, i) => (
@@ -347,6 +355,74 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 				</div>
 			)}
 		</Section>
+	)
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?|#|$)/i
+const NON_IMAGE_EXT = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|csv|txt|mp[34]|mov|webm|wav|json|xml)(\?|#|$)/i
+
+function safeHttpUrl(url: string): string | null {
+	try {
+		const u = new URL(url)
+		return u.protocol === 'https:' || u.protocol === 'http:' ? url : null
+	} catch {
+		return null
+	}
+}
+
+// Should we attempt to render this as an image? Contember often gives no content
+// type and a generic "file" name, so when type/extension are unknown we try the
+// image optimistically and fall back to a file link if it fails to load.
+function maybeImage(att: { name: string; url: string; contentType?: string }): boolean {
+	if (att.contentType) return att.contentType.startsWith('image/')
+	if (IMAGE_EXT.test(att.name) || IMAGE_EXT.test(att.url)) return true
+	if (NON_IMAGE_EXT.test(att.name) || NON_IMAGE_EXT.test(att.url)) return false
+	return true
+}
+
+/** An image renders as an inline thumbnail (click to open full); a non-image —
+ *  or an image that fails to load — renders as a labeled link. URL is
+ *  http(s)-guarded against javascript:/data:. */
+function Attachment({ att }: { att: { name: string; url: string; contentType?: string } }) {
+	const [notImage, setNotImage] = useState(false)
+	const href = safeHttpUrl(att.url)
+	if (!href) return null
+	if (maybeImage(att) && !notImage) {
+		return (
+			<a href={href} target="_blank" rel="noreferrer" title={att.name}>
+				<img
+					src={href}
+					alt={att.name}
+					loading="lazy"
+					onError={() => setNotImage(true)}
+					style={{
+						maxHeight: 180,
+						maxWidth: 260,
+						objectFit: 'cover',
+						borderRadius: 'var(--radius-sm)',
+						border: '1px solid var(--border)',
+						display: 'block',
+					}}
+				/>
+			</a>
+		)
+	}
+	return (
+		<a
+			href={href}
+			target="_blank"
+			rel="noreferrer"
+			style={{
+				fontSize: 12,
+				color: 'var(--accent)',
+				textDecoration: 'none',
+				border: '1px solid var(--border)',
+				borderRadius: 'var(--radius-sm)',
+				padding: '6px 10px',
+			}}
+		>
+			📎 {att.name}
+		</a>
 	)
 }
 

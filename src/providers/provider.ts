@@ -18,7 +18,7 @@ export interface TaskContext {
 	description?: string
 	metadata?: Record<string, string>
 	comments?: Array<{ author: string; createdAt: string; body: string }>
-	attachments?: Array<{ name: string; url: string }>
+	attachments?: Array<{ name: string; url: string; contentType?: string }>
 	projectContext?: string
 }
 

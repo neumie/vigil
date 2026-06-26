@@ -158,13 +158,14 @@ export class ContemberProvider implements TaskProvider {
 				}))
 				.filter(c => c.body) ?? []
 
-		const attachments: Array<{ name: string; url: string }> = []
+		const attachments: Array<{ name: string; url: string; contentType?: string }> = []
 		if (t.description?.references) {
 			for (const ref of t.description.references) {
 				if (ref?.file?.url) {
 					attachments.push({
 						name: ref.file.fileName ?? 'file',
 						url: ref.file.url,
+						contentType: ref.file.fileType ?? undefined,
 					})
 				}
 			}
