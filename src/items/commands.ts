@@ -108,6 +108,7 @@ const RESERVED_EVENT_TYPES = new Set([
 	'action_completed',
 	'deploy_merged',
 	'deploy_succeeded',
+	'item_merged',
 ])
 
 function successfulEnvironments(state: DeployState | null): Set<string> {
@@ -652,6 +653,22 @@ export class ItemCommands {
 			}
 		}
 		return updated
+	}
+
+	/**
+	 * A merged PR means the work landed — move a `review` solve Item out of the
+	 * attention pile into `completed`. Called by the DeployWatcher when it sees a
+	 * merged PR. Idempotent: a no-op once the Item has already left `review`, so
+	 * it never re-fires on subsequent polls or stomps a manual transition.
+	 */
+	markItemMerged(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve') throw new Error('Only solve Items can be completed via merge')
+		if (item.status !== 'review') return item
+
+		const completed = this.store.update(id, { status: 'completed', completedAt: new Date().toISOString() })
+		this.store.insertEvent(id, 'item_merged', { from: item.status, to: completed.status })
+		return completed
 	}
 
 	recordEvent(id: string, eventType: string, payload?: unknown): void {

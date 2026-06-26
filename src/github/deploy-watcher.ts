@@ -142,7 +142,10 @@ export class DeployWatcher {
 			if (!item.prUrl) continue
 			try {
 				const state = await fetchDeployState(item.prUrl, new Date().toISOString())
-				if (state) this.commands.recordDeployState(item.id, state)
+				if (!state) continue
+				const updated = this.commands.recordDeployState(item.id, state)
+				// A merged PR means the work landed — drop it out of the review pile.
+				if (state.merged && updated.status === 'review') this.commands.markItemMerged(item.id)
 			} catch (err) {
 				log.error('deploy', `Error checking deploy state for Item ${item.id}`, err)
 			}

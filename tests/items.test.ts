@@ -3232,6 +3232,30 @@ test('recordDeployState persists the ladder and emits transition events exactly 
 	})
 })
 
+test('markItemMerged moves a review solve Item to completed and is idempotent', () => {
+	withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'shipped', projectSlug: 'vigil', prompt: 'p' })
+		commands.startItem(item.id)
+		commands.completeSolveItem(item.id, {
+			worktreePath: '/tmp/wt',
+			branchName: 'b',
+			planDirName: 'p',
+			resultSummary: 's',
+		})
+		assert.equal(db.items.get(item.id)?.status, 'review')
+
+		const merged = commands.markItemMerged(item.id)
+		assert.equal(merged.status, 'completed')
+		assert.equal(db.items.countEvents(item.id, 'item_merged'), 1)
+
+		// idempotent: not in review anymore → no-op, no duplicate event
+		const again = commands.markItemMerged(item.id)
+		assert.equal(again.status, 'completed')
+		assert.equal(db.items.countEvents(item.id, 'item_merged'), 1)
+	})
+})
+
 test('server single Item reads include sibling group dashboard metadata', async () => {
 	await withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)

@@ -138,9 +138,8 @@ export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) 
 					</span>
 				)}
 				<span style={{ flex: 1 }} />
-				<HeaderLink link={item.links.source} fallbackLabel="Source" />
-				<HeaderLink link={item.links.branch} fallbackLabel="Branch" />
-				<HeaderLink link={item.links.pr} fallbackLabel="PR" />
+				<HeaderLink link={item.links.source} label="Task" />
+				<HeaderLink link={item.links.pr} label="GitHub" />
 			</div>
 
 			<div
@@ -159,6 +158,14 @@ export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) 
 				<span>
 					BaseRef: <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{item.baseRef}</strong>
 				</span>
+				{item.branchName && (
+					<span>
+						Branch:{' '}
+						<code style={{ color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+							{item.branchName}
+						</code>
+					</span>
+				)}
 			</div>
 
 			{item.errorMessage && (
@@ -520,13 +527,20 @@ function formatTime(value: string): string {
 	})
 }
 
-function HeaderLink({ link, fallbackLabel }: { link: DashboardLink | null; fallbackLabel: string }) {
-	if (!link) return null
+// A header link reads as the system name ("Task", "GitHub") — not the raw
+// external id or branch name. The underlying value is kept as a hover tooltip.
+function HeaderLink({ link, label }: { link: DashboardLink | null; label: string }) {
+	if (!link?.url) return null
 	return (
-		<InlineLink
-			link={link}
-			fallback={<span style={{ fontSize: 12, color: 'var(--text-4)', fontWeight: 500 }}>{fallbackLabel}</span>}
-		/>
+		<a
+			href={link.url}
+			target="_blank"
+			rel="noreferrer"
+			title={link.label}
+			style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}
+		>
+			{label} ↗
+		</a>
 	)
 }
 
