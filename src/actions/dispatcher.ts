@@ -66,12 +66,14 @@ export async function dispatchSolveItem(args: DispatchSolveItemArgs): Promise<vo
 	const sideEffects = dispatchSideEffects(args.sideEffects)
 	await sideEffects.pushBranch(worktreePath, branchName)
 
+	const baseBody = args.result.prBody ?? args.result.summary
+	const sourceLink = item.source?.url ? `\n\n---\n**Source:** ${item.source.url}` : ''
 	const prUrl = await sideEffects.createPr({
 		worktreePath,
 		branchName,
 		baseBranch: item.baseRef,
 		title: `${args.config.github.prPrefix} ${args.result.prTitle ?? item.title}`,
-		body: args.result.prBody ?? args.result.summary,
+		body: `${baseBody}${sourceLink}`,
 		draft: false,
 	})
 	args.commands.recordDispatchPr(args.itemId, { prUrl })

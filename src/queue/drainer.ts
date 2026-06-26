@@ -12,15 +12,28 @@ import { processLoopItem, processSolveItem } from './worker.js'
 
 type ActiveRun = { title: string; startedAt: string; controller: AbortController }
 
+const PAUSED_STATE_KEY = 'drainer_paused'
+/** Max total starts before an auto-retried Item gives up (1 initial + 2 retries). */
+const MAX_ATTEMPTS = 3
+const RETRY_BACKOFF_MS = 30_000
+
 function isStartableItem(item: ItemRecord): boolean {
 	return item.status === 'queued' || item.status === 'planned'
+}
+
+/** Transient failures worth auto-retrying (network/okena/worktree), vs real solve bugs. */
+function isTransientFailure(item: ItemRecord): boolean {
+	if (item.errorPhase === 'poll' || item.errorPhase === 'worktree') return true
+	const msg = (item.errorMessage ?? '').toLowerCase()
+	return /okena|not reachable|econnrefused|etimedout|fetch failed|terminal|network|socket hang/.test(msg)
 }
 
 export class Drainer {
 	private activeSolveItems = new Map<string, ActiveRun>()
 	private activeLoopItems = new Map<string, ActiveRun>()
+	private retryTimers = new Set<ReturnType<typeof setTimeout>>()
 	private running = false
-	private paused = true
+	private paused: boolean
 	private recoveredStaleItems = false
 	private readonly itemCommands: ItemCommands
 
@@ -32,6 +45,8 @@ export class Drainer {
 		private loopRunner: LoopRunner = new AlmanacLoopRunner(),
 	) {
 		this.itemCommands = new ItemCommands(db.items, config)
+		// Default running; a deliberate pause is persisted and survives restarts.
+		this.paused = db.getAppState(PAUSED_STATE_KEY) === 'true'
 	}
 
 	start() {
@@ -47,16 +62,20 @@ export class Drainer {
 
 	stop() {
 		this.running = false
+		for (const timer of this.retryTimers) clearTimeout(timer)
+		this.retryTimers.clear()
 		log.info('drainer', 'Drainer stopped')
 	}
 
 	pause() {
 		this.paused = true
+		this.db.setAppState(PAUSED_STATE_KEY, 'true')
 		log.info('drainer', 'Drainer paused - queued work will not start')
 	}
 
 	resume() {
 		this.paused = false
+		this.db.setAppState(PAUSED_STATE_KEY, 'false')
 		log.info('drainer', 'Drainer resumed')
 		this.processNext()
 	}
@@ -169,10 +188,44 @@ export class Drainer {
 
 		processSolveItem(itemId, this.config, this.db, this.provider, this.solver, controller.signal).finally(() => {
 			this.activeSolveItems.delete(itemId)
+			this.maybeScheduleRetry(itemId)
 			this.wake()
 		})
 
 		return true
+	}
+
+	/**
+	 * After a run finishes, auto-requeue an Item that failed transiently
+	 * (network/okena/worktree) with a backoff, up to {@link MAX_ATTEMPTS} total
+	 * starts. Real solve failures and cancellations are left alone.
+	 */
+	private maybeScheduleRetry(itemId: string): void {
+		if (!this.running) return
+		const item = this.db.items.get(itemId)
+		if (!item || item.status !== 'failed' || !isTransientFailure(item)) return
+
+		const attempts = this.db.items.countEvents(itemId, 'item_started')
+		if (attempts >= MAX_ATTEMPTS) {
+			log.warn('drainer', `Item ${itemId} failed transiently but hit ${MAX_ATTEMPTS} attempts — not retrying`)
+			return
+		}
+
+		const backoff = RETRY_BACKOFF_MS * attempts
+		log.warn(
+			'drainer',
+			`Item ${itemId} failed transiently (${item.errorPhase}); auto-retry ${attempts + 1}/${MAX_ATTEMPTS} in ${Math.round(backoff / 1000)}s`,
+		)
+		const timer = setTimeout(() => {
+			this.retryTimers.delete(timer)
+			try {
+				this.itemCommands.retryItem(itemId)
+				this.wake()
+			} catch (err) {
+				log.warn('drainer', `Auto-retry of ${itemId} failed: ${err instanceof Error ? err.message : err}`)
+			}
+		}, backoff)
+		this.retryTimers.add(timer)
 	}
 
 	private startLoopItem(itemId: string): boolean {
@@ -186,6 +239,7 @@ export class Drainer {
 
 		processLoopItem(itemId, this.config, this.db, this.loopRunner, controller.signal).finally(() => {
 			this.activeLoopItems.delete(itemId)
+			this.maybeScheduleRetry(itemId)
 			this.wake()
 		})
 

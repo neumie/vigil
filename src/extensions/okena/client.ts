@@ -149,9 +149,13 @@ export class OkenaClient {
 	 * `freshTerminal` for a REUSED terminal that may have a running agent — ctrl_c
 	 * would abort it.
 	 */
-	async runCommand(terminalId: string, command: string, opts?: { freshTerminal?: boolean }): Promise<void> {
+	async runCommand(
+		terminalId: string,
+		command: string,
+		opts?: { freshTerminal?: boolean; settleMs?: number },
+	): Promise<void> {
 		if (opts?.freshTerminal) {
-			await delay(1500)
+			await delay(opts.settleMs ?? 1500)
 			try {
 				await this.action({ action: 'send_special_key', terminal_id: terminalId, key: 'ctrl_c' })
 				await delay(200)

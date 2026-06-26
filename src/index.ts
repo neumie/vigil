@@ -1,3 +1,4 @@
+import { unknownConfigPaths } from './config-document.js'
 import { loadConfig } from './config.js'
 import { DB } from './db/client.js'
 import { Poller } from './poller/poller.js'
@@ -12,11 +13,14 @@ async function main() {
 	process.title = 'vigil'
 	log.info('vigil', 'Starting Vigil...')
 
-	const { config, configPath } = loadConfig()
+	const { config, configPath, raw } = loadConfig()
 	log.info(
 		'vigil',
 		`Loaded config: ${config.projects.length} project(s), poll every ${config.polling.intervalSeconds}s`,
 	)
+	for (const path of unknownConfigPaths(raw)) {
+		log.warn('vigil', `Ignoring unknown config field: ${path} (not in schema — check for typos/removed options)`)
+	}
 
 	const db = new DB()
 	const provider = createProvider(config.provider)

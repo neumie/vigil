@@ -390,7 +390,12 @@ function toneColor(tone: DashboardTone): string {
 }
 
 function formatTime(value: string): string {
-	return new Date(value).toLocaleTimeString([], {
+	// Legacy event rows were stored as "YYYY-MM-DD HH:MM:SS" (UTC, no zone marker),
+	// which Date parses as LOCAL → wrong by the offset. Normalize a zone-less value
+	// to explicit UTC so it converts to local correctly.
+	const hasZone = /[zZ]|[+-]\d\d:?\d\d$/.test(value)
+	const normalized = hasZone ? value : `${value.replace(' ', 'T')}Z`
+	return new Date(normalized).toLocaleTimeString([], {
 		hour: '2-digit',
 		minute: '2-digit',
 		second: '2-digit',

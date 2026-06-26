@@ -198,9 +198,20 @@ export class ItemStore {
 	}
 
 	insertEvent(itemId: string, eventType: string, payload?: unknown): void {
+		// Store an explicit ISO-8601 UTC timestamp (with `Z`). The column DEFAULT is
+		// SQLite `datetime('now')`, which writes "YYYY-MM-DD HH:MM:SS" with NO
+		// timezone marker — the dashboard then `new Date()`-parses it as LOCAL and
+		// shows times off by the UTC offset.
 		this.db
-			.prepare('INSERT INTO item_events (item_id, event_type, payload) VALUES (?, ?, ?)')
-			.run(itemId, eventType, payload ? JSON.stringify(payload) : null)
+			.prepare('INSERT INTO item_events (item_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)')
+			.run(itemId, eventType, payload ? JSON.stringify(payload) : null, new Date().toISOString())
+	}
+
+	countEvents(itemId: string, eventType: string): number {
+		const row = this.db
+			.prepare('SELECT COUNT(*) AS count FROM item_events WHERE item_id = ? AND event_type = ?')
+			.get(itemId, eventType) as { count: number }
+		return row.count
 	}
 
 	getEvents(itemId: string, limit = 100): ItemEvent[] {

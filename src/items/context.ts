@@ -9,6 +9,8 @@ function itemMetadata(item: ItemRecord): Record<string, string> {
 	}
 	if (item.source) {
 		metadata.Source = item.source.externalId
+		// Clickable source URL so the agent can link it when it ships the PR itself.
+		if (item.source.url) metadata['Source URL'] = item.source.url
 	}
 	return metadata
 }

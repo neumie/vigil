@@ -8,7 +8,12 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import Database from 'better-sqlite3'
 import { dispatchSolveItem } from '../src/actions/dispatcher.js'
-import { CONFIG_SECRET_REDACTION, buildConfigDocument, configSchemaAcceptsPath } from '../src/config-document.js'
+import {
+	CONFIG_SECRET_REDACTION,
+	buildConfigDocument,
+	configSchemaAcceptsPath,
+	unknownConfigPaths,
+} from '../src/config-document.js'
 import { configSchema } from '../src/config.js'
 import type { VigilConfig } from '../src/config.js'
 import { DB } from '../src/db/client.js'
@@ -60,7 +65,14 @@ const config: VigilConfig = {
 	},
 	projects: [{ slug: 'vigil', repoPath: '/repo', baseBranch: 'main' }],
 	polling: { intervalSeconds: 60 },
-	solver: { type: 'default', agent: 'claude', concurrency: 2, timeoutMinutes: 30, nameModel: { enabled: false } },
+	solver: {
+		type: 'default',
+		agent: 'claude',
+		concurrency: 2,
+		timeoutMinutes: 30,
+		setupDelaySeconds: 2,
+		nameModel: { enabled: false },
+	},
 	spawner: { name: 'default' },
 	server: { port: 7474, host: 'localhost' },
 	github: { createPrs: false, postComments: true, prPrefix: '[Vigil]' },
@@ -130,6 +142,33 @@ test('DB migration drops legacy Task + chat storage, keeps Items and poll_state'
 		sqlite.close()
 		rmSync(dir, { recursive: true, force: true })
 	}
+})
+
+test('Drainer defaults to running and persists a deliberate pause across restarts', () =>
+	withTempDb(db => {
+		const fresh = new Drainer(config, db, provider, {} as never)
+		assert.equal(fresh.isPaused(), false) // default: running
+
+		fresh.pause()
+		assert.equal(fresh.isPaused(), true)
+
+		// A new Drainer on the same DB (simulating a daemon restart) stays paused.
+		const restarted = new Drainer(config, db, provider, {} as never)
+		assert.equal(restarted.isPaused(), true)
+
+		restarted.resume()
+		const afterResume = new Drainer(config, db, provider, {} as never)
+		assert.equal(afterResume.isPaused(), false)
+	}))
+
+test('unknownConfigPaths flags config keys the schema does not recognize', () => {
+	const base = {
+		provider: { type: 'contember', apiBaseUrl: 'https://x.test', projectSlug: 'v', apiToken: 't' },
+		projects: [{ slug: 'v', repoPath: '/r' }],
+	}
+	assert.deepEqual(unknownConfigPaths(base), [])
+	assert.deepEqual(unknownConfigPaths({ ...base, solver: { setupDelaySeconds: 2 } }), [])
+	assert.deepEqual(unknownConfigPaths({ ...base, solver: { mcpDelay: 9 }, bogus: 1 }), ['solver.mcpDelay', 'bogus'])
 })
 
 class FakeSolveSolver implements Solver {
@@ -1777,6 +1816,7 @@ test('Drainer routes solve Item pause, retry, cancel, start, and resume through 
 		const drainer = new Drainer(config, db, provider, solver)
 
 		try {
+			drainer.pause()
 			drainer.start()
 			await sleep(20)
 			assert.equal(db.items.get(pausedItem.id)?.status, 'queued')
@@ -1909,6 +1949,8 @@ test('Drainer recovers stale processing Items before scheduling lanes', async ()
 		const drainer = new Drainer(config, db, provider, solver, loopRunner)
 
 		try {
+			// Pause so we observe recovery (→ queued) before the lanes re-run them.
+			drainer.pause()
 			drainer.start()
 
 			assert.equal(db.items.get(solveItem.id)?.status, 'queued')
@@ -2368,7 +2410,12 @@ test('dispatchSolveItem opens fallback PRs and posts provider comments only for 
 		assert.deepEqual(
 			prs.map(pr => ({ branchName: pr.branchName, baseBranch: pr.baseBranch, title: pr.title, body: pr.body })),
 			[
-				{ branchName: 'vigil/item/source', baseBranch: 'release/afk', title: '[Vigil] Source PR', body: 'Source body' },
+				{
+					branchName: 'vigil/item/source',
+					baseBranch: 'release/afk',
+					title: '[Vigil] Source PR',
+					body: 'Source body\n\n---\n**Source:** https://example.test/tasks/task-dispatch',
+				},
 				{ branchName: 'vigil/item/local', baseBranch: 'release/local', title: '[Vigil] Local PR', body: 'Local body' },
 			],
 		)
@@ -2653,6 +2700,7 @@ test('server plans source-backed solve Items with provider task context', async 
 				Kind: 'solve',
 				BaseRef: 'main',
 				Source: 'task-plan-source',
+				'Source URL': 'https://example.test/tasks/task-plan-source',
 			})
 			const body = (await res.json()) as { data: { worktreePath: string; planDirName: string } }
 			assert.match(

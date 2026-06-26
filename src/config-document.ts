@@ -214,6 +214,12 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 				{ type: 'field', path: ['solver', 'timeoutMinutes'], label: 'Timeout (min)', input: 'number' },
 				{
 					type: 'field',
+					path: ['solver', 'setupDelaySeconds'],
+					label: 'Terminal Settle (s)',
+					input: 'number',
+				},
+				{
+					type: 'field',
 					path: ['solver', 'maxBudgetUsd'],
 					label: 'Max Budget ($)',
 					input: 'number',
@@ -316,6 +322,11 @@ export function parseConfigWithFallback(raw: unknown, fallback: VigilConfig): Vi
 
 export function configSchemaAcceptsPath(path: string): boolean {
 	return schemaAcceptsPath(configSchema, path.split('.'))
+}
+
+/** Config-file keys the schema doesn't recognize (and silently strips on load). */
+export function unknownConfigPaths(raw: unknown): string[] {
+	return findUnknownConfigPaths(configSchema, raw)
 }
 
 function redactEditableConfig(config: VigilConfig): VigilConfig {

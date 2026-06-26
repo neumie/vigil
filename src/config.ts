@@ -48,6 +48,10 @@ export const configSchema = z.object({
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
 			timeoutMinutes: z.number().min(1).default(30),
+			// Seconds to let a freshly-created Okena terminal settle (and have its
+			// prompt line cleared) before the solver/spawner types the command —
+			// guards against the command merging into leftover prompt text.
+			setupDelaySeconds: z.number().min(0).default(2),
 			// Opt-in: derive a conventional branch name (feat/…, fix/…) from task
 			// context via a cheap one-shot model call. `model` overrides the per-agent
 			// default (claude → claude-haiku-4-5, codex → gpt-5-mini). Any failure
@@ -79,9 +83,9 @@ export const configSchema = z.object({
 export type VigilConfig = z.infer<typeof configSchema>
 export type ProjectConfig = z.infer<typeof projectSchema>
 
-export function loadConfig(configPath?: string): { config: VigilConfig; configPath: string } {
+export function loadConfig(configPath?: string): { config: VigilConfig; configPath: string; raw: unknown } {
 	const path = configPath ?? process.env.VIGIL_CONFIG ?? resolve(process.cwd(), 'vigil.config.json')
 	const raw = readFileSync(path, 'utf-8')
 	const json = JSON.parse(raw)
-	return { config: configSchema.parse(json), configPath: path }
+	return { config: configSchema.parse(json), configPath: path, raw: json }
 }

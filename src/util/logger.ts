@@ -9,7 +9,11 @@ const colors = {
 }
 
 function timestamp(): string {
-	return new Date().toISOString().slice(11, 19)
+	// Local wall-clock time (HH:MM:SS) — toISOString() would print UTC and read
+	// hours off in any non-UTC timezone.
+	const d = new Date()
+	const pad = (n: number) => String(n).padStart(2, '0')
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 export const log = {

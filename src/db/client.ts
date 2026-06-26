@@ -55,6 +55,16 @@ export class DB {
 			.run(projectSlug, lastPollAt, lastTaskSeen)
 	}
 
+	// Daemon key/value state that survives restarts (e.g. Drainer paused flag).
+	getAppState(key: string): string | null {
+		const row = this.db.prepare('SELECT value FROM app_state WHERE key = ?').get(key) as { value: string } | undefined
+		return row?.value ?? null
+	}
+
+	setAppState(key: string, value: string): void {
+		this.db.prepare('INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)').run(key, value)
+	}
+
 	close(): void {
 		this.db.close()
 	}

@@ -184,4 +184,15 @@ DROP INDEX IF EXISTS idx_tasks_external_id;
 DROP TABLE IF EXISTS tasks;
 `,
 	},
+	{
+		// Small key/value store for daemon state that must survive restarts
+		// (e.g. the Drainer's paused flag).
+		version: 12,
+		sql: `
+CREATE TABLE app_state (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`,
+	},
 ]
