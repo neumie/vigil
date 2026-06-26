@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DaemonStatus, DashboardActionId, DashboardItem } from '../api'
 import { useRelativeTime } from '../hooks'
+import { Select } from './Select'
 import { StatusBadge } from './StatusBadge'
 
 type Tab = 'needs' | 'running' | 'queued' | 'unverified' | 'archived'
@@ -117,29 +118,13 @@ export function TaskList({
 		>
 			{projects.length > 1 && (
 				<div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-					<select
+					<Select
 						value={selectedProject ?? ''}
-						onChange={e => onProjectChange(e.target.value || null)}
-						style={{
-							width: '100%',
-							padding: '5px 8px',
-							background: 'var(--bg-0)',
-							border: '1px solid var(--border)',
-							borderRadius: 'var(--radius-sm)',
-							color: 'var(--text-1)',
-							fontSize: 12,
-							fontFamily: 'var(--font-sans)',
-							outline: 'none',
-							cursor: 'pointer',
-						}}
-					>
-						<option value="">All projects</option>
-						{projects.map(p => (
-							<option key={p} value={p}>
-								{p}
-							</option>
-						))}
-					</select>
+						options={[{ value: '', label: 'All projects' }, ...projects.map(p => ({ value: p, label: p }))]}
+						fullWidth
+						ariaLabel="Filter by project"
+						onChange={v => onProjectChange(v || null)}
+					/>
 				</div>
 			)}
 

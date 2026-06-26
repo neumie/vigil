@@ -14,6 +14,7 @@ import type {
 } from '../api'
 import { ITEM_STATUSES } from '../api'
 import { useRelativeTime } from '../hooks'
+import { Select } from './Select'
 import { StatusBadge } from './StatusBadge'
 
 interface ItemDetailProps {
@@ -275,63 +276,30 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 								>
 									Status
 								</div>
-								<div style={{ position: 'relative' }}>
-									<select
-										value={item.status}
-										disabled={item.status === 'processing' || pendingStatus}
-										title={
-											item.status === 'processing'
-												? 'Cancel the running Item before changing its status'
-												: 'Manual status override'
+								<Select
+									value={item.status}
+									options={ITEM_STATUSES.map(s => ({ value: s, label: s, disabled: s === 'processing' }))}
+									disabled={item.status === 'processing' || pendingStatus}
+									fullWidth
+									ariaLabel="Set item status"
+									title={
+										item.status === 'processing'
+											? 'Cancel the running Item before changing its status'
+											: 'Manual status override'
+									}
+									onChange={async next => {
+										if (next === item.status) return
+										setPendingStatus(true)
+										setActionError(null)
+										try {
+											await onSetStatus(item.id, next as ItemStatus)
+										} catch (err) {
+											setActionError(err instanceof Error ? err.message : String(err))
+										} finally {
+											setPendingStatus(false)
 										}
-										onChange={async e => {
-											const next = e.target.value as ItemStatus
-											if (next === item.status) return
-											setPendingStatus(true)
-											setActionError(null)
-											try {
-												await onSetStatus(item.id, next)
-											} catch (err) {
-												setActionError(err instanceof Error ? err.message : String(err))
-											} finally {
-												setPendingStatus(false)
-											}
-										}}
-										style={{
-											appearance: 'none',
-											WebkitAppearance: 'none',
-											width: '100%',
-											padding: '8px 28px 8px 10px',
-											background: 'var(--bg-2)',
-											border: '1px solid var(--border)',
-											borderRadius: 'var(--radius-sm)',
-											color: 'var(--text-1)',
-											fontSize: 12,
-											fontFamily: 'var(--font-sans)',
-											cursor: item.status === 'processing' ? 'not-allowed' : 'pointer',
-											outline: 'none',
-										}}
-									>
-										{ITEM_STATUSES.map(s => (
-											<option key={s} value={s} disabled={s === 'processing'}>
-												{s}
-											</option>
-										))}
-									</select>
-									<span
-										style={{
-											position: 'absolute',
-											right: 10,
-											top: '50%',
-											transform: 'translateY(-50%)',
-											pointerEvents: 'none',
-											color: 'var(--text-4)',
-											fontSize: 10,
-										}}
-									>
-										▾
-									</span>
-								</div>
+									}}
+								/>
 							</div>
 						)}
 						{actionError && (
