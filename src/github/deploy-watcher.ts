@@ -14,6 +14,22 @@ export function parsePrUrl(url: string): { owner: string; repo: string } | null 
 	return m ? { owner: m[1], repo: m[2] } : null
 }
 
+/**
+ * Only http(s) deployment URLs are safe to render as a clickable link — a
+ * deployment status's environment_url/target_url is set by whoever created the
+ * deployment (an attacker-controlled workflow could inject a `javascript:` URI),
+ * so anything else is dropped at the source before it's persisted.
+ */
+export function httpUrlOrNull(url: string | null | undefined): string | null {
+	if (!url) return null
+	try {
+		const parsed = new URL(url)
+		return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : null
+	} catch {
+		return null
+	}
+}
+
 /** Run `gh` and JSON-parse stdout. Best-effort: any failure (gh missing, auth,
  *  network, non-JSON) returns null so the watcher degrades to a no-op. */
 async function ghJson<T = unknown>(args: string[]): Promise<T | null> {
@@ -69,7 +85,7 @@ export async function fetchDeployState(prUrl: string, checkedAt: string): Promis
 				deployments.push({
 					environment: String(d.environment ?? 'unknown'),
 					state: latest?.state ? String(latest.state) : 'pending',
-					url: latest?.environment_url || latest?.target_url || null,
+					url: httpUrlOrNull(latest?.environment_url) ?? httpUrlOrNull(latest?.target_url),
 					updatedAt: latest?.updated_at ?? d.updated_at ?? null,
 				})
 			}

@@ -17,7 +17,7 @@ import {
 import { configSchema } from '../src/config.js'
 import type { VigilConfig } from '../src/config.js'
 import { DB } from '../src/db/client.js'
-import { parsePrUrl } from '../src/github/deploy-watcher.js'
+import { httpUrlOrNull, parsePrUrl } from '../src/github/deploy-watcher.js'
 import { ItemCommands } from '../src/items/commands.js'
 import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
 import { resolveItemWorkspace } from '../src/items/identity.js'
@@ -3138,6 +3138,16 @@ test('reopenItem is the manual false-failure override (failed solve → review)'
 test('parsePrUrl extracts owner/repo from a GitHub PR URL', () => {
 	assert.deepEqual(parsePrUrl('https://github.com/neumie/vigil/pull/123'), { owner: 'neumie', repo: 'vigil' })
 	assert.equal(parsePrUrl('https://example.com/not/a/pr'), null)
+})
+
+test('httpUrlOrNull rejects non-http(s) deploy URLs (XSS guard)', () => {
+	assert.equal(httpUrlOrNull('https://staging.example.com'), 'https://staging.example.com')
+	assert.equal(httpUrlOrNull('http://localhost:3000'), 'http://localhost:3000')
+	// biome-ignore lint/suspicious/noExplicitAny: testing a hostile URL value
+	assert.equal(httpUrlOrNull('javascript:alert(1)' as any), null)
+	assert.equal(httpUrlOrNull('data:text/html,<script>x</script>'), null)
+	assert.equal(httpUrlOrNull(null), null)
+	assert.equal(httpUrlOrNull('not a url'), null)
 })
 
 test('listDeployWatchable returns shipped solve Items, excludes unshipped', () => {

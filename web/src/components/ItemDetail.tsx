@@ -355,8 +355,20 @@ function DeployChip({
 			{label}
 		</span>
 	)
-	return href ? (
-		<a href={href} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+	// Only link http(s) — the deploy URL comes from external GitHub data, so a
+	// javascript:/data: URI must never reach the href (defense-in-depth; the
+	// server already drops non-http(s) deploy URLs before persisting).
+	const safeHref = (() => {
+		if (!href) return null
+		try {
+			const u = new URL(href)
+			return u.protocol === 'https:' || u.protocol === 'http:' ? href : null
+		} catch {
+			return null
+		}
+	})()
+	return safeHref ? (
+		<a href={safeHref} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
 			{chip}
 		</a>
 	) : (
