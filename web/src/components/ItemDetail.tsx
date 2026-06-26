@@ -103,7 +103,16 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 			style={{ display: 'flex', gap: 24, alignItems: 'flex-start', maxWidth: 1000, margin: '0 auto', flexWrap: 'wrap' }}
 		>
 			<div style={{ flex: '1 1 440px', minWidth: 0 }}>
-				<h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.4, marginBottom: 12 }}>
+				<h2
+					style={{
+						fontSize: 20,
+						fontWeight: 600,
+						color: 'var(--text-0)',
+						lineHeight: 1.4,
+						marginBottom: 12,
+						overflowWrap: 'break-word',
+					}}
+				>
 					{item.title}
 				</h2>
 
@@ -183,7 +192,9 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 
 				{item.resultSummary && (
 					<Section title="Result">
-						<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7 }}>{item.resultSummary}</p>
+						<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7, overflowWrap: 'break-word' }}>
+							{item.resultSummary}
+						</p>
 					</Section>
 				)}
 
@@ -420,7 +431,13 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 						) : (
 							<p
 								key={`t:${b.text}`}
-								style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}
+								style={{
+									fontSize: 14,
+									color: 'var(--text-1)',
+									lineHeight: 1.7,
+									whiteSpace: 'pre-wrap',
+									overflowWrap: 'break-word',
+								}}
 							>
 								{b.text}
 							</p>
@@ -429,7 +446,15 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 				</div>
 			) : (
 				task.description && (
-					<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+					<p
+						style={{
+							fontSize: 14,
+							color: 'var(--text-1)',
+							lineHeight: 1.7,
+							whiteSpace: 'pre-wrap',
+							overflowWrap: 'break-word',
+						}}
+					>
 						{task.description}
 					</p>
 				)
@@ -446,7 +471,15 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 					{comments.map(c => (
 						<div key={`${c.createdAt}-${c.author}`} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 10 }}>
 							<div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>{c.author}</div>
-							<div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+							<div
+								style={{
+									fontSize: 13,
+									color: 'var(--text-2)',
+									lineHeight: 1.5,
+									whiteSpace: 'pre-wrap',
+									overflowWrap: 'break-word',
+								}}
+							>
 								{c.body}
 							</div>
 						</div>
