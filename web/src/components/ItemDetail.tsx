@@ -71,6 +71,7 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 			: (item.completedAt ?? item.updatedAt),
 	)
 	const elapsedLabel = item.status === 'processing' ? 'running' : item.status === 'review' ? 'in review' : item.status
+	const created = useRelativeTime(item.createdAt)
 
 	const runAction = async (action: DashboardActionId) => {
 		setPendingAction(action)
@@ -98,218 +99,235 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 	}
 
 	return (
-		<div style={{ maxWidth: 760, margin: '0 auto' }}>
-			<h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.4, marginBottom: 12 }}>
-				{item.title}
-			</h2>
+		<div
+			style={{ display: 'flex', gap: 24, alignItems: 'flex-start', maxWidth: 1000, margin: '0 auto', flexWrap: 'wrap' }}
+		>
+			<div style={{ flex: '1 1 440px', minWidth: 0 }}>
+				<h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-0)', lineHeight: 1.4, marginBottom: 12 }}>
+					{item.title}
+				</h2>
 
-			<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
-				<StatusBadge value={item.card.statusLabel} tone={item.card.statusTone} />
-				{item.runObservation.pr.merged && (
-					<span
-						style={{
-							fontSize: 10,
-							fontWeight: 700,
-							color: 'var(--green)',
-							background: 'var(--green-dim)',
-							borderRadius: 6,
-							padding: '2px 7px',
-						}}
-					>
-						MERGED
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+					<StatusBadge value={item.card.statusLabel} tone={item.card.statusTone} />
+					{item.runObservation.pr.merged && (
+						<span
+							style={{
+								fontSize: 10,
+								fontWeight: 700,
+								color: 'var(--green)',
+								background: 'var(--green-dim)',
+								borderRadius: 6,
+								padding: '2px 7px',
+							}}
+						>
+							MERGED
+						</span>
+					)}
+					<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-4)', textTransform: 'uppercase' }}>
+						{item.kind}
 					</span>
-				)}
-				<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-4)', textTransform: 'uppercase' }}>
-					{item.kind}
-				</span>
-				{item.runOutcome && item.runOutcome !== 'ok' && (
-					<span
-						title="The agent run errored or wrote no result file — the work may still be fine, verify the branch/PR."
-						style={{
-							fontSize: 10,
-							fontWeight: 700,
-							color: 'var(--amber)',
-							background: 'var(--amber-dim)',
-							borderRadius: 6,
-							padding: '2px 7px',
-						}}
-					>
-						run: {item.runOutcome === 'no_result' ? 'no result' : item.runOutcome}
-					</span>
-				)}
-				{elapsed && (
-					<span style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-						{elapsedLabel} {elapsed}
-					</span>
-				)}
-				<span style={{ flex: 1 }} />
-				<HeaderLink link={item.links.source} label="Task" />
-				<HeaderLink link={item.links.pr} label="GitHub" />
-			</div>
+					{item.runOutcome && item.runOutcome !== 'ok' && (
+						<span
+							title="The agent run errored or wrote no result file — the work may still be fine, verify the branch/PR."
+							style={{
+								fontSize: 10,
+								fontWeight: 700,
+								color: 'var(--amber)',
+								background: 'var(--amber-dim)',
+								borderRadius: 6,
+								padding: '2px 7px',
+							}}
+						>
+							run: {item.runOutcome === 'no_result' ? 'no result' : item.runOutcome}
+						</span>
+					)}
+					{elapsed && (
+						<span style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+							{elapsedLabel} {elapsed}
+						</span>
+					)}
+				</div>
 
-			<div
-				style={{
-					display: 'flex',
-					flexWrap: 'wrap',
-					gap: '4px 20px',
-					fontSize: 12,
-					color: 'var(--text-3)',
-					marginBottom: 16,
-				}}
-			>
-				<span>
-					Project: <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{item.projectSlug}</strong>
-				</span>
-				<span>
-					BaseRef: <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{item.baseRef}</strong>
-				</span>
-				{item.branchName && (
-					<span>
-						Branch:{' '}
-						<code style={{ color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-							{item.branchName}
-						</code>
-					</span>
-				)}
-			</div>
+				{item.sourceTask && <SourceTaskView task={item.sourceTask} />}
 
-			{item.sourceTask && <SourceTaskView task={item.sourceTask} />}
-
-			{item.errorMessage && (
-				<div
-					style={{
-						padding: '12px 16px',
-						marginBottom: 24,
-						borderRadius: 'var(--radius-sm)',
-						background: 'var(--red-dim)',
-						border: '1px solid color-mix(in srgb, var(--red) 25%, transparent)',
-					}}
-				>
+				{item.errorMessage && (
 					<div
-						style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}
-					>
-						Error{item.errorPhase ? ` (${item.errorPhase})` : ''}
-					</div>
-					<div style={{ fontSize: 13, color: 'color-mix(in srgb, var(--red) 80%, white)', lineHeight: 1.5 }}>
-						{item.errorMessage}
-					</div>
-				</div>
-			)}
-
-			{hasCommands && (
-				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-					{item.allowedActions.map(action => (
-						<ActionButton
-							key={action.id}
-							label={pendingAction === action.id ? `${action.label}…` : action.label}
-							tone={action.tone}
-							disabled={commandPending}
-							onClick={() => runAction(action.id)}
-						/>
-					))}
-					{canPlan && (
-						<ActionButton
-							label={pendingPlan ? 'Planning...' : hasPlan ? 'Re-plan' : 'Plan'}
-							tone="muted"
-							disabled={commandPending || item.status === 'processing'}
-							onClick={runPlan}
-						/>
-					)}
-					{canFork && onFork && (
-						<ActionButton label="Fork" tone="muted" disabled={commandPending} onClick={() => onFork(item)} />
-					)}
-				</div>
-			)}
-			{actionError && (
-				<div style={{ color: 'var(--red)', fontSize: 12, lineHeight: 1.5, marginBottom: 24 }}>{actionError}</div>
-			)}
-
-			{onSetStatus && (
-				<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-					<span style={{ fontSize: 11, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-						Set status
-					</span>
-					<select
-						value={item.status}
-						disabled={item.status === 'processing' || pendingStatus}
-						title={
-							item.status === 'processing'
-								? 'Cancel the running Item before changing its status'
-								: 'Manual status override'
-						}
-						onChange={async e => {
-							const next = e.target.value as ItemStatus
-							if (next === item.status) return
-							setPendingStatus(true)
-							setActionError(null)
-							try {
-								await onSetStatus(item.id, next)
-							} catch (err) {
-								setActionError(err instanceof Error ? err.message : String(err))
-							} finally {
-								setPendingStatus(false)
-							}
-						}}
 						style={{
-							padding: '4px 8px',
-							background: 'var(--bg-0)',
-							border: '1px solid var(--border)',
+							padding: '12px 16px',
+							marginBottom: 24,
 							borderRadius: 'var(--radius-sm)',
-							color: 'var(--text-1)',
-							fontSize: 12,
-							fontFamily: 'var(--font-sans)',
-							cursor: item.status === 'processing' ? 'not-allowed' : 'pointer',
+							background: 'var(--red-dim)',
+							border: '1px solid color-mix(in srgb, var(--red) 25%, transparent)',
 						}}
 					>
-						{ITEM_STATUSES.map(s => (
-							<option key={s} value={s} disabled={s === 'processing'}>
-								{s}
-							</option>
-						))}
-					</select>
-				</div>
-			)}
-			{planInfo ? <PlanInfoBlock info={planInfo} /> : item.plan && <PersistedPlanBlock plan={item.plan} />}
+						<div
+							style={{
+								fontSize: 11,
+								color: 'var(--red)',
+								fontWeight: 600,
+								marginBottom: 4,
+								textTransform: 'uppercase',
+							}}
+						>
+							Error{item.errorPhase ? ` (${item.errorPhase})` : ''}
+						</div>
+						<div style={{ fontSize: 13, color: 'color-mix(in srgb, var(--red) 80%, white)', lineHeight: 1.5 }}>
+							{item.errorMessage}
+						</div>
+					</div>
+				)}
 
-			<DeployLadder deployState={item.deployState} />
+				{planInfo ? <PlanInfoBlock info={planInfo} /> : item.plan && <PersistedPlanBlock plan={item.plan} />}
 
-			<RunObservationView item={item} />
+				<RunObservationView item={item} />
 
-			{item.resultSummary && (
-				<Section title="Summary">
-					<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7 }}>{item.resultSummary}</p>
+				{item.resultSummary && (
+					<Section title="Result">
+						<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7 }}>{item.resultSummary}</p>
+					</Section>
+				)}
+
+				{item.solveInputSnapshot && (
+					<details style={{ marginTop: 28 }}>
+						<summary
+							style={{
+								fontSize: 11,
+								fontWeight: 600,
+								textTransform: 'uppercase',
+								letterSpacing: '0.04em',
+								color: 'var(--text-4)',
+								cursor: 'pointer',
+							}}
+						>
+							Solve input
+						</summary>
+						<pre
+							style={{
+								fontSize: 12,
+								color: 'var(--text-2)',
+								lineHeight: 1.6,
+								whiteSpace: 'pre-wrap',
+								wordBreak: 'break-word',
+								fontFamily: 'var(--font-sans)',
+								margin: '12px 0 0',
+							}}
+						>
+							{item.solveInputSnapshot}
+						</pre>
+					</details>
+				)}
+			</div>
+
+			<aside style={{ flex: '0 0 250px', width: 250, position: 'sticky', top: 0 }}>
+				{hasCommands && (
+					<Section title="Actions">
+						<div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+							{item.allowedActions.map(action => (
+								<ActionButton
+									key={action.id}
+									label={pendingAction === action.id ? `${action.label}…` : action.label}
+									tone={action.tone}
+									disabled={commandPending}
+									onClick={() => runAction(action.id)}
+								/>
+							))}
+							{canPlan && (
+								<ActionButton
+									label={pendingPlan ? 'Planning...' : hasPlan ? 'Re-plan' : 'Plan'}
+									tone="muted"
+									disabled={commandPending || item.status === 'processing'}
+									onClick={runPlan}
+								/>
+							)}
+							{canFork && onFork && (
+								<ActionButton label="Fork" tone="muted" disabled={commandPending} onClick={() => onFork(item)} />
+							)}
+						</div>
+						{onSetStatus && (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+								<span style={{ fontSize: 11, color: 'var(--text-4)' }}>Status</span>
+								<select
+									value={item.status}
+									disabled={item.status === 'processing' || pendingStatus}
+									title={
+										item.status === 'processing'
+											? 'Cancel the running Item before changing its status'
+											: 'Manual status override'
+									}
+									onChange={async e => {
+										const next = e.target.value as ItemStatus
+										if (next === item.status) return
+										setPendingStatus(true)
+										setActionError(null)
+										try {
+											await onSetStatus(item.id, next)
+										} catch (err) {
+											setActionError(err instanceof Error ? err.message : String(err))
+										} finally {
+											setPendingStatus(false)
+										}
+									}}
+									style={{
+										flex: 1,
+										padding: '4px 8px',
+										background: 'var(--bg-0)',
+										border: '1px solid var(--border)',
+										borderRadius: 'var(--radius-sm)',
+										color: 'var(--text-1)',
+										fontSize: 12,
+										fontFamily: 'var(--font-sans)',
+										cursor: item.status === 'processing' ? 'not-allowed' : 'pointer',
+									}}
+								>
+									{ITEM_STATUSES.map(s => (
+										<option key={s} value={s} disabled={s === 'processing'}>
+											{s}
+										</option>
+									))}
+								</select>
+							</div>
+						)}
+						{actionError && (
+							<div style={{ color: 'var(--red)', fontSize: 12, lineHeight: 1.5, marginTop: 10 }}>{actionError}</div>
+						)}
+					</Section>
+				)}
+
+				<Section title="Details">
+					<div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--text-3)' }}>
+						<span>
+							Project <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{item.projectSlug}</strong>
+						</span>
+						<span>
+							BaseRef <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{item.baseRef}</strong>
+						</span>
+						{item.branchName && (
+							<span>
+								Branch{' '}
+								<code style={{ color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+									{item.branchName}
+								</code>
+							</span>
+						)}
+						{created && (
+							<span>
+								Created <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{created} ago</strong>
+							</span>
+						)}
+					</div>
 				</Section>
-			)}
 
-			{item.solveInputSnapshot && (
-				<details style={{ marginTop: 28 }}>
-					<summary
-						style={{
-							fontSize: 11,
-							fontWeight: 600,
-							textTransform: 'uppercase',
-							letterSpacing: '0.04em',
-							color: 'var(--text-4)',
-							cursor: 'pointer',
-						}}
-					>
-						Solve input
-					</summary>
-					<pre
-						style={{
-							fontSize: 12,
-							color: 'var(--text-2)',
-							lineHeight: 1.6,
-							whiteSpace: 'pre-wrap',
-							wordBreak: 'break-word',
-							fontFamily: 'var(--font-sans)',
-							margin: '12px 0 0',
-						}}
-					>
-						{item.solveInputSnapshot}
-					</pre>
-				</details>
-			)}
+				{(item.links.source?.url || item.links.pr?.url) && (
+					<Section title="Links">
+						<div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+							<HeaderLink link={item.links.source} label="Task" />
+							<HeaderLink link={item.links.pr} label="GitHub" />
+						</div>
+					</Section>
+				)}
+
+				<DeployLadder deployState={item.deployState} />
+			</aside>
 		</div>
 	)
 }
