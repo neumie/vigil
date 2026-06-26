@@ -3258,6 +3258,30 @@ test('markItemMerged moves a review solve Item to completed and is idempotent', 
 	})
 })
 
+test('setItemStatus is a guarded manual override', () => {
+	withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 't', projectSlug: 'vigil', prompt: 'p' }) // queued
+
+		const done = commands.setItemStatus(item.id, 'completed')
+		assert.equal(done.status, 'completed')
+		assert.ok(done.completedAt)
+		assert.equal(db.items.countEvents(item.id, 'item_status_set'), 1)
+
+		const requeued = commands.setItemStatus(item.id, 'queued')
+		assert.equal(requeued.status, 'queued')
+		assert.ok(requeued.queuedAt)
+		assert.equal(requeued.completedAt, null)
+
+		// cannot fake `processing`
+		assert.throws(() => commands.setItemStatus(item.id, 'processing'))
+
+		// cannot override a running Item — cancel it first
+		commands.startItem(item.id)
+		assert.throws(() => commands.setItemStatus(item.id, 'completed'))
+	})
+})
+
 test('server single Item reads include sibling group dashboard metadata', async () => {
 	await withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)

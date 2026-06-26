@@ -109,7 +109,10 @@ const RESERVED_EVENT_TYPES = new Set([
 	'deploy_merged',
 	'deploy_succeeded',
 	'item_merged',
+	'item_status_set',
 ])
+
+const COMPLETED_AT_STATUSES = new Set<ItemRecord['status']>(['review', 'completed', 'failed', 'cancelled', 'skipped'])
 
 function successfulEnvironments(state: DeployState | null): Set<string> {
 	const envs = new Set<string>()
@@ -661,6 +664,33 @@ export class ItemCommands {
 	 * merged PR. Idempotent: a no-op once the Item has already left `review`, so
 	 * it never re-fires on subsequent polls or stomps a manual transition.
 	 */
+	/**
+	 * Manual status override — the deliberate escape hatch for "set this Item's
+	 * status to X by hand", separate from the constrained lifecycle actions. Still
+	 * a guarded command (not a raw status write): refuses to touch a `processing`
+	 * Item (cancel it first) and refuses to fake `processing` (run-owned). Sets
+	 * sensible timestamps (queuedAt on → queued, completedAt on terminal/review)
+	 * and clears the error banner unless the target is `failed`. Non-destructive:
+	 * keeps branch / prUrl / result so an override can be reverted.
+	 */
+	setItemStatus(id: string, status: ItemRecord['status']): ItemRecord {
+		const item = this.requireItem(id)
+		if (status === item.status) return item
+		if (item.status === 'processing') throw new Error('Cancel the running Item before changing its status')
+		if (status === 'processing') throw new Error('Cannot manually set an Item to processing')
+
+		const now = new Date().toISOString()
+		const updated = this.store.update(id, {
+			status,
+			queuedAt: status === 'queued' ? now : item.queuedAt,
+			completedAt: COMPLETED_AT_STATUSES.has(status) ? now : null,
+			errorMessage: status === 'failed' ? item.errorMessage : null,
+			errorPhase: status === 'failed' ? item.errorPhase : null,
+		})
+		this.store.insertEvent(id, 'item_status_set', { from: item.status, to: status })
+		return updated
+	}
+
 	markItemMerged(id: string): ItemRecord {
 		const item = this.requireItem(id)
 		if (item.kind !== 'solve') throw new Error('Only solve Items can be completed via merge')

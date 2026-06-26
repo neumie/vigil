@@ -384,6 +384,22 @@ export function apiRoutes(
 		}
 	})
 
+	api.post('/items/:id/status', async c => {
+		const body = (await c.req.json().catch(() => ({}))) as { status?: unknown }
+		const parsed = itemStatusSchema.safeParse(body.status)
+		if (!parsed.success) {
+			return c.json({ error: `Invalid status. Must be one of: ${itemStatusSchema.options.join(', ')}` }, 400)
+		}
+		try {
+			const item = itemCommands.setItemStatus(c.req.param('id'), parsed.data)
+			if (item.status === 'queued') queue.wake()
+			return c.json({ data: dashboardItem(item) })
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err)
+			return c.json({ error: msg }, msg.startsWith('Item not found') ? 404 : 400)
+		}
+	})
+
 	api.post('/items/:id/reopen', c => {
 		try {
 			const item = itemCommands.reopenItem(c.req.param('id'))

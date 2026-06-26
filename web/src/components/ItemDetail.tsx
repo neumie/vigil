@@ -7,16 +7,19 @@ import type {
 	DashboardPlan,
 	DashboardTone,
 	DeployState,
+	ItemStatus,
 	PlanInfo,
 	RunObservationState,
 	SourceTask,
 } from '../api'
+import { ITEM_STATUSES } from '../api'
 import { useRelativeTime } from '../hooks'
 import { StatusBadge } from './StatusBadge'
 
 interface ItemDetailProps {
 	item: DashboardItem
 	onAction: (id: string, action: DashboardActionId) => Promise<void>
+	onSetStatus?: (id: string, status: ItemStatus) => Promise<void>
 	onPlan?: (id: string) => Promise<PlanInfo>
 	onFork?: (item: DashboardItem) => void
 }
@@ -51,9 +54,10 @@ export function runObservationDetails(observation: DashboardItem['runObservation
 	return details
 }
 
-export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) {
+export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: ItemDetailProps) {
 	const [pendingAction, setPendingAction] = useState<DashboardActionId | null>(null)
 	const [pendingPlan, setPendingPlan] = useState(false)
+	const [pendingStatus, setPendingStatus] = useState(false)
 	const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null)
 	const [actionError, setActionError] = useState<string | null>(null)
 	const canFork = Boolean(item.forkContext && onFork)
@@ -218,6 +222,52 @@ export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) 
 			)}
 			{actionError && (
 				<div style={{ color: 'var(--red)', fontSize: 12, lineHeight: 1.5, marginBottom: 24 }}>{actionError}</div>
+			)}
+
+			{onSetStatus && (
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+					<span style={{ fontSize: 11, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+						Set status
+					</span>
+					<select
+						value={item.status}
+						disabled={item.status === 'processing' || pendingStatus}
+						title={
+							item.status === 'processing'
+								? 'Cancel the running Item before changing its status'
+								: 'Manual status override'
+						}
+						onChange={async e => {
+							const next = e.target.value as ItemStatus
+							if (next === item.status) return
+							setPendingStatus(true)
+							setActionError(null)
+							try {
+								await onSetStatus(item.id, next)
+							} catch (err) {
+								setActionError(err instanceof Error ? err.message : String(err))
+							} finally {
+								setPendingStatus(false)
+							}
+						}}
+						style={{
+							padding: '4px 8px',
+							background: 'var(--bg-0)',
+							border: '1px solid var(--border)',
+							borderRadius: 'var(--radius-sm)',
+							color: 'var(--text-1)',
+							fontSize: 12,
+							fontFamily: 'var(--font-sans)',
+							cursor: item.status === 'processing' ? 'not-allowed' : 'pointer',
+						}}
+					>
+						{ITEM_STATUSES.map(s => (
+							<option key={s} value={s} disabled={s === 'processing'}>
+								{s}
+							</option>
+						))}
+					</select>
+				</div>
 			)}
 			{planInfo ? <PlanInfoBlock info={planInfo} /> : item.plan && <PersistedPlanBlock plan={item.plan} />}
 

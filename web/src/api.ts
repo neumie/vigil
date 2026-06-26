@@ -38,6 +38,29 @@ async function putJSON<T>(path: string, body: unknown): Promise<T> {
 
 export type DashboardTone = 'gray' | 'blue' | 'green' | 'amber' | 'red'
 export type DashboardActionTone = 'primary' | 'muted' | 'danger'
+export type ItemStatus =
+	| 'unverified'
+	| 'planned'
+	| 'queued'
+	| 'processing'
+	| 'review'
+	| 'completed'
+	| 'failed'
+	| 'cancelled'
+	| 'skipped'
+
+export const ITEM_STATUSES: ItemStatus[] = [
+	'unverified',
+	'planned',
+	'queued',
+	'processing',
+	'review',
+	'completed',
+	'failed',
+	'cancelled',
+	'skipped',
+]
+
 export type DashboardActionId = 'approve' | 'reject' | 'start' | 'cancel' | 'retry' | 'reopen'
 export type RunOutcome = 'ok' | 'errored' | 'no_result' | 'cancelled'
 
@@ -314,6 +337,7 @@ export const api = {
 	status: () => fetchJSON<DaemonStatus>('/status'),
 	items: (params?: string) => fetchJSON<DashboardItem[]>(`/items${params ? `?${params}` : ''}`),
 	item: (id: string) => fetchJSON<DashboardItem>(`/items/${id}`),
+	setItemStatus: (id: string, status: ItemStatus) => postJSONBody<DashboardItem>(`/items/${id}/status`, { status }),
 	createItem: (input: CreateItemInput) => postJSONBody<DashboardItem | DashboardItem[]>('/items', input),
 	planItem: (id: string) => postJSONBody<PlanInfo>(`/items/${id}/plan`, {}),
 	itemAction: (id: string, action: DashboardActionId) => {

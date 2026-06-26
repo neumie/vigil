@@ -4,6 +4,7 @@ import {
 	type DaemonStatus,
 	type DashboardActionId,
 	type DashboardItem,
+	type ItemStatus,
 	type PlanInfo,
 	api,
 } from './api'
@@ -108,6 +109,18 @@ export function App() {
 		loadDetail(id)
 	}
 
+	const handleSetStatus = async (id: string, status: ItemStatus) => {
+		try {
+			const updated = await api.setItemStatus(id, status)
+			if (updated) applyUpdated(updated)
+		} catch (err) {
+			console.error('Set status failed:', err)
+			throw err
+		}
+		refresh()
+		loadDetail(id)
+	}
+
 	const handlePlanItem = async (id: string): Promise<PlanInfo> => {
 		const info = await api.planItem(id)
 		await refresh()
@@ -180,6 +193,7 @@ export function App() {
 						<ItemDetail
 							item={selectedItem}
 							onAction={handleItemAction}
+							onSetStatus={handleSetStatus}
 							onPlan={handlePlanItem}
 							onFork={item => {
 								setCreateDraft({ forkFrom: item })
