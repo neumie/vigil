@@ -86,8 +86,11 @@ export function apiRoutes(
 		}
 		return expanded
 	}
-	const dashboardItems = (items: ItemRecord[]) =>
-		toDashboardItems(expandGroupedItems(items), item => observeItemRun(item, { store: db.items }))
+	// List uses the cheap DB-only observation: the card/status/links/actions all
+	// derive from the Item row, and the list doesn't render run details. Full
+	// observeItemRun (log reads + a `gh pr view` network call per item) is reserved
+	// for the single-Item detail route, so the list stays fast as PRs accumulate.
+	const dashboardItems = (items: ItemRecord[]) => toDashboardItems(expandGroupedItems(items))
 
 	async function readSolverAgent(
 		bodyPromise: Promise<{ solverAgent?: unknown }>,
