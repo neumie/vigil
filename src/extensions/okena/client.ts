@@ -149,13 +149,9 @@ export class OkenaClient {
 	 * `freshTerminal` for a REUSED terminal that may have a running agent — ctrl_c
 	 * would abort it.
 	 */
-	async runCommand(
-		terminalId: string,
-		command: string,
-		opts?: { freshTerminal?: boolean; settleMs?: number },
-	): Promise<void> {
+	async runCommand(terminalId: string, command: string, opts?: { freshTerminal?: boolean }): Promise<void> {
 		if (opts?.freshTerminal) {
-			await delay(opts.settleMs ?? 1500)
+			await delay(FRESH_TERMINAL_SETTLE_MS)
 			try {
 				await this.action({ action: 'send_special_key', terminal_id: terminalId, key: 'ctrl_c' })
 				await delay(200)
@@ -184,6 +180,11 @@ export interface OkenaState {
 		terminal_names?: Record<string, string>
 	}>
 }
+
+// How long to let a freshly-created/auto okena terminal settle before typing the
+// command. okena has no readiness API, so this is a fixed best-effort guard
+// (paired with the ctrl_c line-clear); not worth a config knob.
+const FRESH_TERMINAL_SETTLE_MS = 1500
 
 function delay(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms))

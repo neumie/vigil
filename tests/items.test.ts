@@ -65,14 +65,7 @@ const config: VigilConfig = {
 	},
 	projects: [{ slug: 'vigil', repoPath: '/repo', baseBranch: 'main' }],
 	polling: { intervalSeconds: 60 },
-	solver: {
-		type: 'default',
-		agent: 'claude',
-		concurrency: 2,
-		timeoutMinutes: 30,
-		setupDelaySeconds: 2,
-		nameModel: { enabled: false },
-	},
+	solver: { type: 'default', agent: 'claude', concurrency: 2, timeoutMinutes: 30, nameModel: { enabled: false } },
 	spawner: { name: 'default' },
 	server: { port: 7474, host: 'localhost' },
 	github: { createPrs: false, postComments: true, prPrefix: '[Vigil]' },
@@ -167,8 +160,11 @@ test('unknownConfigPaths flags config keys the schema does not recognize', () =>
 		projects: [{ slug: 'v', repoPath: '/r' }],
 	}
 	assert.deepEqual(unknownConfigPaths(base), [])
-	assert.deepEqual(unknownConfigPaths({ ...base, solver: { setupDelaySeconds: 2 } }), [])
-	assert.deepEqual(unknownConfigPaths({ ...base, solver: { mcpDelay: 9 }, bogus: 1 }), ['solver.mcpDelay', 'bogus'])
+	assert.deepEqual(unknownConfigPaths({ ...base, solver: { concurrency: 4 } }), [])
+	assert.deepEqual(unknownConfigPaths({ ...base, solver: { setupDelaySeconds: 9 }, bogus: 1 }), [
+		'solver.setupDelaySeconds',
+		'bogus',
+	])
 })
 
 class FakeSolveSolver implements Solver {

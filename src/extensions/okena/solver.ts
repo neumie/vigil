@@ -79,10 +79,7 @@ export class OkenaSolver implements Solver {
 		try {
 			// Solve always uses a fresh/auto terminal — let it settle and clear the
 			// prompt line so leftover input can't merge into the command.
-			await this.client.runCommand(terminalId, command, {
-				freshTerminal: true,
-				settleMs: solverConfig.setupDelaySeconds * 1000,
-			})
+			await this.client.runCommand(terminalId, command, { freshTerminal: true })
 		} catch (err) {
 			throw phaseError('solve', `Failed to run command in Okena terminal: ${err instanceof Error ? err.message : err}`)
 		}

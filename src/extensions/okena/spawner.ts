@@ -54,10 +54,7 @@ export class OkenaSpawner implements Spawner {
 		try {
 			// A fresh/auto terminal needs settling + line-clear; a reused plan
 			// terminal must NOT get ctrl_c (it may have a running agent).
-			await this.client.runCommand(terminalId, command, {
-				freshTerminal: !reusedTerminal,
-				settleMs: params.solverConfig.setupDelaySeconds * 1000,
-			})
+			await this.client.runCommand(terminalId, command, { freshTerminal: !reusedTerminal })
 		} catch (err) {
 			throw new Error(`Failed to start planning session: ${err instanceof Error ? err.message : err}`)
 		}

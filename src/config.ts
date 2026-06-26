@@ -48,10 +48,6 @@ export const configSchema = z.object({
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
 			timeoutMinutes: z.number().min(1).default(30),
-			// Seconds to let a freshly-created Okena terminal settle (and have its
-			// prompt line cleared) before the solver/spawner types the command —
-			// guards against the command merging into leftover prompt text.
-			setupDelaySeconds: z.number().min(0).default(2),
 			// Opt-in: derive a conventional branch name (feat/…, fix/…) from task
 			// context via a cheap one-shot model call. `model` overrides the per-agent
 			// default (claude → claude-haiku-4-5, codex → gpt-5-mini). Any failure
