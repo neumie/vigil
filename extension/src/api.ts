@@ -21,6 +21,15 @@ export interface DeployState {
 	checkedAt: string
 }
 
+export interface SourceTask {
+	title: string
+	description?: string
+	metadata?: Record<string, string>
+	comments?: Array<{ author: string; createdAt: string; body: string }>
+	attachments?: Array<{ name: string; url: string }>
+	projectContext?: string
+}
+
 export interface DashboardAction {
 	id: DashboardActionId
 	label: string
@@ -110,6 +119,7 @@ export interface DashboardItem {
 	errorPhase: string | null
 	runOutcome: RunOutcome | null
 	deployState: DeployState | null
+	sourceTask?: SourceTask | null
 	card: {
 		state: string
 		statusLabel: string

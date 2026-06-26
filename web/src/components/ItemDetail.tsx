@@ -9,6 +9,7 @@ import type {
 	DeployState,
 	PlanInfo,
 	RunObservationState,
+	SourceTask,
 } from '../api'
 import { useRelativeTime } from '../hooks'
 import { StatusBadge } from './StatusBadge'
@@ -168,6 +169,8 @@ export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) 
 				)}
 			</div>
 
+			{item.sourceTask && <SourceTaskView task={item.sourceTask} />}
+
 			{item.errorMessage && (
 				<div
 					style={{
@@ -306,6 +309,44 @@ function PersistedPlanBlock({ plan }: { plan: DashboardPlan }) {
 				.
 			</div>
 		</div>
+	)
+}
+
+/** The source task's actual content — description, metadata, comments — so the
+ *  operator can read the task without leaving Vigil. */
+function SourceTaskView({ task }: { task: SourceTask }) {
+	const metaEntries = task.metadata ? Object.entries(task.metadata) : []
+	const comments = task.comments ?? []
+	if (!task.description && metaEntries.length === 0 && comments.length === 0) return null
+	return (
+		<Section title="Task">
+			{metaEntries.length > 0 && (
+				<div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: task.description ? 12 : 0 }}>
+					{metaEntries.map(([k, v]) => (
+						<span key={k} style={{ fontSize: 11, color: 'var(--text-3)' }}>
+							{k}: <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{v}</strong>
+						</span>
+					))}
+				</div>
+			)}
+			{task.description && (
+				<p style={{ fontSize: 14, color: 'var(--text-1)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+					{task.description}
+				</p>
+			)}
+			{comments.length > 0 && (
+				<div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+					{comments.map((c, i) => (
+						<div key={`${c.createdAt}-${i}`} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 10 }}>
+							<div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>{c.author}</div>
+							<div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+								{c.body}
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</Section>
 	)
 }
 

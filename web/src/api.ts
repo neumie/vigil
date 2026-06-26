@@ -55,6 +55,15 @@ export interface DeployState {
 	checkedAt: string
 }
 
+export interface SourceTask {
+	title: string
+	description?: string
+	metadata?: Record<string, string>
+	comments?: Array<{ author: string; createdAt: string; body: string }>
+	attachments?: Array<{ name: string; url: string }>
+	projectContext?: string
+}
+
 export interface DashboardAction {
 	id: DashboardActionId
 	label: string
@@ -144,6 +153,7 @@ export interface DashboardItem {
 	errorPhase: string | null
 	runOutcome: RunOutcome | null
 	deployState: DeployState | null
+	sourceTask?: SourceTask | null
 	card: {
 		state: string
 		statusLabel: string
@@ -298,6 +308,7 @@ export const api = {
 	config: () => fetchJSON<AppConfig>('/config'),
 	status: () => fetchJSON<DaemonStatus>('/status'),
 	items: (params?: string) => fetchJSON<DashboardItem[]>(`/items${params ? `?${params}` : ''}`),
+	item: (id: string) => fetchJSON<DashboardItem>(`/items/${id}`),
 	createItem: (input: CreateItemInput) => postJSONBody<DashboardItem | DashboardItem[]>('/items', input),
 	planItem: (id: string) => postJSONBody<PlanInfo>(`/items/${id}/plan`, {}),
 	itemAction: (id: string, action: DashboardActionId) => {

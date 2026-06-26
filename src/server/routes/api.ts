@@ -22,6 +22,7 @@ import { createSpawner, listSpawnerAdapters, spawnerNameSchema } from '../../spa
 import type { SpawnerName } from '../../spawner/registry.js'
 import type { Spawner } from '../../spawner/spawner.js'
 import { isCancellation } from '../../util/errors.js'
+import { log } from '../../util/logger.js'
 
 function buildItemPlanReadmeBody(item: ItemRecord, branchName: string, planDirName: string): string {
 	return [
@@ -193,10 +194,20 @@ export function apiRoutes(
 		return c.json({ data: dashboardItem(item) }, 201)
 	})
 
-	api.get('/items/:id', c => {
+	api.get('/items/:id', async c => {
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
-		return c.json({ data: dashboardItem(item) })
+		// Surface the live source-task content in the detail view. Best-effort:
+		// a provider fetch failure degrades to no task body, never a 500.
+		let sourceTask: TaskContext | null = null
+		if (item.source) {
+			try {
+				sourceTask = await provider.getTaskContext(item.source.externalId)
+			} catch (err) {
+				log.warn('api', `Failed to load source task for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
+			}
+		}
+		return c.json({ data: { ...dashboardItem(item), sourceTask } })
 	})
 
 	api.post('/items', async c => {

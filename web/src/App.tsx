@@ -25,6 +25,9 @@ export function App() {
 	const { selection, selectItem } = useHashRoute()
 	const [projectFilter, setProjectFilter] = useState<string | null>(() => localStorage.getItem('vigil.project') || null)
 	const [createDraft, setCreateDraft] = useState<{ forkFrom?: DashboardItem } | null>(null)
+	// Full single-item detail (run observation + source-task content), fetched
+	// separately from the cheap list so the list stays fast.
+	const [detail, setDetail] = useState<DashboardItem | null>(null)
 
 	const refresh = useCallback(async () => {
 		try {
@@ -56,7 +59,26 @@ export function App() {
 	const projectSlugs = [...new Set(items.map(i => i.projectSlug))]
 
 	const selectedItemId = selection?.kind === 'item' ? selection.id : null
-	const selectedItem = selectedItemId ? (items.find(i => i.id === selectedItemId) ?? null) : null
+	const listItem = selectedItemId ? (items.find(i => i.id === selectedItemId) ?? null) : null
+	// Prefer the richer fetched detail; fall back to the list row while it loads.
+	const selectedItem = detail && detail.id === selectedItemId ? detail : listItem
+
+	const loadDetail = useCallback(async (id: string | null) => {
+		if (!id) return setDetail(null)
+		try {
+			setDetail(await api.item(id))
+		} catch (err) {
+			console.error('Failed to load item detail:', err)
+		}
+	}, [])
+
+	// Fetch on selection change, and keep the open item fresh on each poll.
+	useEffect(() => {
+		loadDetail(selectedItemId)
+	}, [selectedItemId, loadDetail])
+	useInterval(() => {
+		if (selectedItemId) loadDetail(selectedItemId)
+	}, 5000)
 	const selectionMissing = selectedItemId !== null && selectedItem === null && loaded && !createDraft
 	const { running: runningCount, needsYou: needsCount } = workAttentionCounts(items)
 
@@ -80,6 +102,7 @@ export function App() {
 			console.error('Action failed:', err)
 		}
 		refresh()
+		loadDetail(id)
 	}
 
 	const handlePlanItem = async (id: string): Promise<PlanInfo> => {

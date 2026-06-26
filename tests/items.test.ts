@@ -2547,7 +2547,9 @@ test('server exposes created Items through the dashboard contract', async () => 
 		const readRes = await api.request(`/items/${created.data.id}`)
 		assert.equal(readRes.status, 200)
 		const read = (await readRes.json()) as { data: ReturnType<typeof toDashboardItem> }
-		assert.deepEqual(read.data, created.data)
+		// The detail route enriches with the live source-task content (null here:
+		// this Item is source-less). Otherwise it matches the creation contract.
+		assert.deepEqual(read.data, { ...created.data, sourceTask: null })
 	})
 })
 

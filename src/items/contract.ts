@@ -1,4 +1,5 @@
 import { PlanWorkspace } from '../plan/workspace.js'
+import type { TaskContext } from '../providers/provider.js'
 import { emptyRunObservation } from './observation.js'
 import type { RunObservation } from './observation.js'
 import type { ItemRecord } from './schema.js'
@@ -66,6 +67,9 @@ export interface DashboardItem {
 	errorPhase: string | null
 	runOutcome: ItemRecord['runOutcome']
 	deployState: ItemRecord['deployState']
+	// The live source-task content (description/metadata/comments). Populated only
+	// by the single-Item detail route (a provider fetch); undefined in list rows.
+	sourceTask?: TaskContext | null
 	card: DashboardCard
 	allowedActions: DashboardAction[]
 	runObservation: RunObservation
