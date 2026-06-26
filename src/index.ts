@@ -1,6 +1,7 @@
 import { unknownConfigPaths } from './config-document.js'
 import { loadConfig } from './config.js'
 import { DB } from './db/client.js'
+import { DeployWatcher } from './github/deploy-watcher.js'
 import { Poller } from './poller/poller.js'
 import { createProvider } from './providers/registry.js'
 import { Drainer } from './queue/drainer.js'
@@ -44,6 +45,7 @@ async function main() {
 	}
 
 	const poller = new Poller(config, db, provider)
+	const deployWatcher = new DeployWatcher(config, db)
 
 	// Start API server
 	const app = createApp(config, configPath, db, queue, poller, provider, spawner)
@@ -58,11 +60,15 @@ async function main() {
 	// Start processing queue
 	queue.start()
 
+	// Start GitHub deploy lifecycle watcher (read-only; independent of the queue)
+	deployWatcher.start()
+
 	// Graceful shutdown
 	const shutdown = () => {
 		log.info('vigil', 'Shutting down...')
 		poller.stop()
 		queue.stop()
+		deployWatcher.stop()
 		db.close()
 		process.exit(0)
 	}

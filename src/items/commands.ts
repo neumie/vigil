@@ -5,7 +5,7 @@ import { solverAgentSchema } from '../solver/agent.js'
 import type { SolverAgent } from '../solver/agent.js'
 import type { ErrorPhase } from '../types.js'
 import { itemSourceSchema } from './schema.js'
-import type { ItemKind, ItemRecord, ItemSource, RunOutcome } from './schema.js'
+import type { DeployState, ItemKind, ItemRecord, ItemSource, RunOutcome } from './schema.js'
 import type { ItemStore } from './store.js'
 
 const createItemInitialStatusSchema = z.enum(['queued', 'planned'])
@@ -106,7 +106,18 @@ const RESERVED_EVENT_TYPES = new Set([
 	'comment_posted',
 	'dispatch_skipped',
 	'action_completed',
+	'deploy_merged',
+	'deploy_succeeded',
 ])
+
+function successfulEnvironments(state: DeployState | null): Set<string> {
+	const envs = new Set<string>()
+	if (!state) return envs
+	for (const d of state.deployments) {
+		if (d.state === 'success') envs.add(d.environment)
+	}
+	return envs
+}
 
 interface BaseRefSelection {
 	projectSlug: string
@@ -609,6 +620,38 @@ export class ItemCommands {
 		if (item.kind !== 'solve') throw new Error('Only solve Items can record solve input snapshots')
 		if (item.status !== 'processing') throw new Error('Only processing solve Items can record solve input snapshots')
 		return this.store.update(id, { solveInputSnapshot: prompt })
+	}
+
+	/**
+	 * Persist the GitHub-observed deploy state (PR merge + per-environment
+	 * deployments) and record transition events for newly-reached milestones —
+	 * `deploy_merged` and `deploy_succeeded` (per environment). The event seam is
+	 * what Phase 3's ClientCare status sync hooks into. Idempotent: no write when
+	 * the state is unchanged, no duplicate events for already-reached milestones.
+	 */
+	recordDeployState(id: string, next: DeployState): ItemRecord {
+		const item = this.requireItem(id)
+		const prev = item.deployState
+
+		const unchanged =
+			prev &&
+			prev.merged === next.merged &&
+			prev.mergeSha === next.mergeSha &&
+			JSON.stringify(prev.deployments) === JSON.stringify(next.deployments)
+		if (unchanged) return item
+
+		const updated = this.store.updateDeployState(id, next)
+
+		if (next.merged && !prev?.merged) {
+			this.store.insertEvent(id, 'deploy_merged', { sha: next.mergeSha, at: next.mergedAt })
+		}
+		const before = successfulEnvironments(prev)
+		for (const d of next.deployments) {
+			if (d.state === 'success' && !before.has(d.environment)) {
+				this.store.insertEvent(id, 'deploy_succeeded', { environment: d.environment, url: d.url })
+			}
+		}
+		return updated
 	}
 
 	recordEvent(id: string, eventType: string, payload?: unknown): void {

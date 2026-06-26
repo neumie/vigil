@@ -250,11 +250,13 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 		{
 			id: 'github',
 			title: 'GitHub',
-			description: 'PR and comment settings',
+			description: 'PR, comment, and deploy-tracking settings',
 			controls: [
 				{ type: 'field', path: ['github', 'createPrs'], label: 'Create PRs', input: 'boolean' },
 				{ type: 'field', path: ['github', 'postComments'], label: 'Post Comments', input: 'boolean' },
 				{ type: 'field', path: ['github', 'prPrefix'], label: 'PR Prefix', input: 'text' },
+				{ type: 'field', path: ['github', 'trackDeployments'], label: 'Track Deployments', input: 'boolean' },
+				{ type: 'field', path: ['github', 'deployPollSeconds'], label: 'Deploy Poll (seconds)', input: 'number' },
 			],
 		},
 	],

@@ -7,6 +7,20 @@ export type DashboardActionTone = 'primary' | 'muted' | 'danger'
 export type DashboardActionId = 'approve' | 'reject' | 'start' | 'cancel' | 'retry' | 'reopen'
 export type RunOutcome = 'ok' | 'errored' | 'no_result' | 'cancelled'
 
+export interface DeploymentEntry {
+	environment: string
+	state: string
+	url: string | null
+	updatedAt: string | null
+}
+export interface DeployState {
+	merged: boolean
+	mergedAt: string | null
+	mergeSha: string | null
+	deployments: DeploymentEntry[]
+	checkedAt: string
+}
+
 export interface DashboardAction {
 	id: DashboardActionId
 	label: string
@@ -95,6 +109,7 @@ export interface DashboardItem {
 	errorMessage: string | null
 	errorPhase: string | null
 	runOutcome: RunOutcome | null
+	deployState: DeployState | null
 	card: {
 		state: string
 		statusLabel: string

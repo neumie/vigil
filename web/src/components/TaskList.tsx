@@ -52,6 +52,19 @@ export function itemMetaLabels(item: DashboardItem): string[] {
 	return [item.projectSlug, item.kind, ...(item.group ? [item.group.label] : [])]
 }
 
+/** Compact furthest-deploy signal for a row, or null when nothing's shipped. */
+function deploySummary(item: DashboardItem): { label: string; tone: string } | null {
+	const ds = item.deployState
+	if (!ds) return null
+	const succeeded = ds.deployments.filter(d => d.state === 'success').map(d => d.environment)
+	if (succeeded.length) return { label: `${succeeded.join('·')} ✓`, tone: 'var(--green)' }
+	const failed = ds.deployments.find(d => d.state === 'failure' || d.state === 'error')
+	if (failed) return { label: `${failed.environment} ✕`, tone: 'var(--red)' }
+	if (ds.deployments.length) return { label: 'deploying', tone: 'var(--blue)' }
+	if (ds.merged) return { label: 'merged', tone: 'var(--text-3)' }
+	return null
+}
+
 /** Most meaningful timestamp to age, by state. */
 function rowTimestamp(item: DashboardItem): string {
 	if (item.status === 'processing') return item.startedAt ?? item.queuedAt ?? item.createdAt
@@ -253,6 +266,7 @@ function ItemRow({
 			: item.status === 'review' && messyRun
 				? { text: '⚠ run errored — verify the branch/PR', tone: 'var(--amber)' }
 				: null
+	const deploy = deploySummary(item)
 
 	return (
 		<div
@@ -338,6 +352,11 @@ function ItemRow({
 
 			<div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
 				<StatusBadge value={item.card.statusLabel} tone={item.card.statusTone} />
+				{deploy && (
+					<span style={{ fontSize: 10, fontWeight: 700, color: deploy.tone, whiteSpace: 'nowrap' }}>
+						{deploy.label}
+					</span>
+				)}
 				{item.links.pr?.url && <RowLink href={item.links.pr.url} label="PR ↗" tone="var(--green)" />}
 				{item.links.source?.url && <RowLink href={item.links.source.url} label="source ↗" tone="var(--text-3)" />}
 				<span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>

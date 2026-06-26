@@ -72,6 +72,10 @@ export const configSchema = z.object({
 			createPrs: z.boolean().default(true),
 			postComments: z.boolean().default(true),
 			prPrefix: z.string().default('[Vigil]'),
+			// DeployWatcher: observe PR merge + GitHub Deployments per environment for
+			// shipped Items and surface the deploy ladder. Read-only GitHub polling.
+			trackDeployments: z.boolean().default(true),
+			deployPollSeconds: z.number().min(15).default(120),
 		})
 		.default({}),
 })

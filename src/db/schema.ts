@@ -205,4 +205,14 @@ CREATE TABLE app_state (
 ALTER TABLE items ADD COLUMN run_outcome TEXT;
 `,
 	},
+	{
+		// deploy_state (JSON) tracks the post-ship lifecycle observed from GitHub:
+		// PR merge + per-environment GitHub Deployments (staging/production/…). It's
+		// a separate axis from `status` (which stays the work-handling lifecycle),
+		// updated by the DeployWatcher poller, not the solve pipeline.
+		version: 14,
+		sql: `
+ALTER TABLE items ADD COLUMN deploy_state TEXT;
+`,
+	},
 ]

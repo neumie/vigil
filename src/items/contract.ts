@@ -65,6 +65,7 @@ export interface DashboardItem {
 	errorMessage: string | null
 	errorPhase: string | null
 	runOutcome: ItemRecord['runOutcome']
+	deployState: ItemRecord['deployState']
 	card: DashboardCard
 	allowedActions: DashboardAction[]
 	runObservation: RunObservation
@@ -228,6 +229,7 @@ export function toDashboardItem(
 		errorMessage: item.errorMessage,
 		errorPhase: item.errorPhase,
 		runOutcome: item.runOutcome,
+		deployState: item.deployState,
 		card: {
 			state: item.status,
 			statusLabel: STATUS_LABEL[item.status],

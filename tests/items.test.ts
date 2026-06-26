@@ -17,6 +17,7 @@ import {
 import { configSchema } from '../src/config.js'
 import type { VigilConfig } from '../src/config.js'
 import { DB } from '../src/db/client.js'
+import { parsePrUrl } from '../src/github/deploy-watcher.js'
 import { ItemCommands } from '../src/items/commands.js'
 import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
 import { resolveItemWorkspace } from '../src/items/identity.js'
@@ -68,7 +69,13 @@ const config: VigilConfig = {
 	solver: { type: 'default', agent: 'claude', concurrency: 2, timeoutMinutes: 30, nameModel: { enabled: false } },
 	spawner: { name: 'default' },
 	server: { port: 7474, host: 'localhost' },
-	github: { createPrs: false, postComments: true, prPrefix: '[Vigil]' },
+	github: {
+		createPrs: false,
+		postComments: true,
+		prPrefix: '[Vigil]',
+		trackDeployments: false,
+		deployPollSeconds: 120,
+	},
 }
 
 const queue = {
@@ -3125,6 +3132,93 @@ test('reopenItem is the manual false-failure override (failed solve → review)'
 			toDashboardItem(db.items.get(loop.id) ?? loop).allowedActions.map(a => a.id),
 			['retry'],
 		)
+	})
+})
+
+test('parsePrUrl extracts owner/repo from a GitHub PR URL', () => {
+	assert.deepEqual(parsePrUrl('https://github.com/neumie/vigil/pull/123'), { owner: 'neumie', repo: 'vigil' })
+	assert.equal(parsePrUrl('https://example.com/not/a/pr'), null)
+})
+
+test('listDeployWatchable returns shipped solve Items, excludes unshipped', () => {
+	withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const shipped = commands.createSolveItem({ title: 'shipped', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(shipped.id)
+		commands.completeSolveItem(shipped.id, {
+			worktreePath: '/tmp/a',
+			branchName: 'b',
+			planDirName: 'p',
+			resultSummary: 's',
+		})
+		commands.recordDispatchPr(shipped.id, { prUrl: 'https://github.com/neumie/vigil/pull/1' })
+		const queuedNoPr = commands.createSolveItem({ title: 'queued', projectSlug: 'vigil', prompt: 'x' })
+
+		const ids = db.items.listDeployWatchable().map(i => i.id)
+		assert.ok(ids.includes(shipped.id))
+		assert.ok(!ids.includes(queuedNoPr.id))
+	})
+})
+
+test('recordDeployState persists the ladder and emits transition events exactly once', () => {
+	withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'shipped', projectSlug: 'vigil', prompt: 'do it' })
+		commands.startItem(item.id)
+		commands.completeSolveItem(item.id, {
+			worktreePath: '/tmp/wt',
+			branchName: 'vigil/item/x',
+			planDirName: '2026-06-26-x',
+			resultSummary: 'done',
+		})
+		commands.recordDispatchPr(item.id, { prUrl: 'https://github.com/neumie/vigil/pull/9' })
+
+		// first observation: merged, staging success, production in-progress
+		const s1 = commands.recordDeployState(item.id, {
+			merged: true,
+			mergedAt: '2026-06-26T10:00:00Z',
+			mergeSha: 'abc',
+			deployments: [
+				{ environment: 'staging', state: 'success', url: 'https://staging', updatedAt: null },
+				{ environment: 'production', state: 'in_progress', url: null, updatedAt: null },
+			],
+			checkedAt: '2026-06-26T10:01:00Z',
+		})
+		assert.equal(s1.deployState?.merged, true)
+		assert.equal(db.items.countEvents(item.id, 'deploy_merged'), 1)
+		assert.equal(db.items.countEvents(item.id, 'deploy_succeeded'), 1) // staging only
+
+		// production now succeeds → one more deploy_succeeded, merged event NOT re-fired
+		commands.recordDeployState(item.id, {
+			merged: true,
+			mergedAt: '2026-06-26T10:00:00Z',
+			mergeSha: 'abc',
+			deployments: [
+				{ environment: 'staging', state: 'success', url: 'https://staging', updatedAt: null },
+				{ environment: 'production', state: 'success', url: 'https://prod', updatedAt: null },
+			],
+			checkedAt: '2026-06-26T10:05:00Z',
+		})
+		assert.equal(db.items.countEvents(item.id, 'deploy_merged'), 1)
+		assert.equal(db.items.countEvents(item.id, 'deploy_succeeded'), 2)
+
+		const row = db.items.get(item.id)
+		assert.ok(row)
+		assert.equal(toDashboardItem(row).deployState?.deployments.length, 2)
+
+		// idempotent: identical state again writes nothing new
+		const before = db.items.getEvents(item.id).length
+		commands.recordDeployState(item.id, {
+			merged: true,
+			mergedAt: '2026-06-26T10:00:00Z',
+			mergeSha: 'abc',
+			deployments: [
+				{ environment: 'staging', state: 'success', url: 'https://staging', updatedAt: null },
+				{ environment: 'production', state: 'success', url: 'https://prod', updatedAt: null },
+			],
+			checkedAt: '2026-06-26T10:09:00Z',
+		})
+		assert.equal(db.items.getEvents(item.id).length, before)
 	})
 })
 

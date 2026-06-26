@@ -6,6 +6,7 @@ import type {
 	DashboardLink,
 	DashboardPlan,
 	DashboardTone,
+	DeployState,
 	PlanInfo,
 	RunObservationState,
 } from '../api'
@@ -210,6 +211,8 @@ export function ItemDetail({ item, onAction, onPlan, onFork }: ItemDetailProps) 
 			)}
 			{planInfo ? <PlanInfoBlock info={planInfo} /> : item.plan && <PersistedPlanBlock plan={item.plan} />}
 
+			<DeployLadder deployState={item.deployState} />
+
 			<RunObservationView item={item} />
 
 			{item.resultSummary && (
@@ -296,6 +299,68 @@ function PersistedPlanBlock({ plan }: { plan: DashboardPlan }) {
 				.
 			</div>
 		</div>
+	)
+}
+
+function deployTone(state: string): string {
+	if (state === 'success') return 'var(--green)'
+	if (state === 'failure' || state === 'error') return 'var(--red)'
+	if (state === 'inactive') return 'var(--text-4)'
+	return 'var(--blue)' // pending / in_progress / queued / waiting
+}
+
+/** The post-ship deploy ladder: merge → each GitHub environment + its state. */
+function DeployLadder({ deployState }: { deployState: DeployState | null }) {
+	if (!deployState || (!deployState.merged && deployState.deployments.length === 0)) return null
+	return (
+		<Section title="Deploy">
+			<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+				<DeployChip label="merged" active={deployState.merged} tone="var(--green)" />
+				{deployState.deployments.length === 0 && deployState.merged && (
+					<span style={{ fontSize: 12, color: 'var(--text-4)' }}>no deployments yet</span>
+				)}
+				{deployState.deployments.map(d => (
+					<DeployChip
+						key={d.environment}
+						label={`${d.environment}: ${d.state}`}
+						active
+						tone={deployTone(d.state)}
+						href={d.url}
+					/>
+				))}
+			</div>
+		</Section>
+	)
+}
+
+function DeployChip({
+	label,
+	active,
+	tone,
+	href,
+}: { label: string; active: boolean; tone: string; href?: string | null }) {
+	const chip = (
+		<span
+			style={{
+				fontSize: 11,
+				fontWeight: 600,
+				padding: '3px 9px',
+				borderRadius: 'var(--radius-sm)',
+				color: active ? tone : 'var(--text-4)',
+				background: active ? 'color-mix(in srgb, currentColor 14%, transparent)' : 'transparent',
+				border: `1px solid ${active ? 'color-mix(in srgb, currentColor 35%, transparent)' : 'var(--border)'}`,
+				whiteSpace: 'nowrap',
+			}}
+		>
+			{label}
+		</span>
+	)
+	return href ? (
+		<a href={href} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+			{chip}
+		</a>
+	) : (
+		chip
 	)
 }
 

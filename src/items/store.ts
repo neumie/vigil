@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { itemRecordSchema } from './schema.js'
-import type { ItemKind, ItemPayload, ItemRecord, ItemSource, ItemStatus } from './schema.js'
+import type { DeployState, ItemKind, ItemPayload, ItemRecord, ItemSource, ItemStatus } from './schema.js'
 
 export interface CreateItemInput {
 	id?: string
@@ -114,6 +114,7 @@ export class ItemStore {
 			solveInputSnapshot: null,
 			prUrl: null,
 			runOutcome: null,
+			deployState: null,
 		})
 
 		this.db
@@ -122,12 +123,12 @@ export class ItemStore {
 					id, kind, status, project_slug, title, source, base_ref, spawner, group_id, payload,
 					worktree_path, branch_name, plan_dir_name, almanac_run_id,
 					created_at, queued_at, started_at, completed_at, updated_at,
-					error_message, error_phase, result_summary, solve_input_snapshot, pr_url, run_outcome
+					error_message, error_phase, result_summary, solve_input_snapshot, pr_url, run_outcome, deploy_state
 				) VALUES (
 					@id, @kind, @status, @projectSlug, @title, @source, @baseRef, @spawner, @groupId, @payload,
 					@worktreePath, @branchName, @planDirName, @almanacRunId,
 					@createdAt, @queuedAt, @startedAt, @completedAt, @updatedAt,
-					@errorMessage, @errorPhase, @resultSummary, @solveInputSnapshot, @prUrl, @runOutcome
+					@errorMessage, @errorPhase, @resultSummary, @solveInputSnapshot, @prUrl, @runOutcome, @deployState
 				)`,
 			)
 			.run(this.toDbParams(item))
@@ -181,6 +182,22 @@ export class ItemStore {
 			if (result.changes === 0) throw new Error(`Item not found: ${id}`)
 		}
 
+		const updated = this.get(id)
+		if (!updated) throw new Error(`Item not found: ${id}`)
+		return updated
+	}
+
+	// deployState is a JSON object column (like source/payload), so it gets a
+	// dedicated serializing writer rather than the scalar generic `update`.
+	updateDeployState(id: string, deployState: DeployState | null): ItemRecord {
+		const current = this.get(id)
+		if (!current) throw new Error(`Item not found: ${id}`)
+		const updatedAt = new Date().toISOString()
+		validateItem({ ...current, deployState, updatedAt })
+		const result = this.db
+			.prepare('UPDATE items SET deploy_state = ?, updated_at = ? WHERE id = ?')
+			.run(deployState ? JSON.stringify(deployState) : null, updatedAt, id)
+		if (result.changes === 0) throw new Error(`Item not found: ${id}`)
 		const updated = this.get(id)
 		if (!updated) throw new Error(`Item not found: ${id}`)
 		return updated
@@ -254,6 +271,20 @@ export class ItemStore {
 		return rows.map(row => this.rowToItem(row))
 	}
 
+	// Solve Items that have shipped a PR and may still be merging/deploying — the
+	// DeployWatcher's work-list. review + completed (not failed/cancelled).
+	listDeployWatchable(limit = 100): ItemRecord[] {
+		const rows = this.db
+			.prepare(
+				`SELECT * FROM items
+				 WHERE kind = 'solve' AND pr_url IS NOT NULL AND status IN ('review', 'completed')
+				 ORDER BY updated_at DESC
+				 LIMIT ?`,
+			)
+			.all(limit) as Record<string, unknown>[]
+		return rows.map(row => this.rowToItem(row))
+	}
+
 	branchNameExists(branchName: string, exceptId?: string): boolean {
 		const row = exceptId
 			? this.db
@@ -318,6 +349,7 @@ export class ItemStore {
 			solveInputSnapshot: item.solveInputSnapshot,
 			prUrl: item.prUrl,
 			runOutcome: item.runOutcome,
+			deployState: item.deployState ? JSON.stringify(item.deployState) : null,
 		}
 	}
 
@@ -348,6 +380,7 @@ export class ItemStore {
 			solveInputSnapshot: row.solve_input_snapshot ?? null,
 			prUrl: row.pr_url ?? null,
 			runOutcome: row.run_outcome ?? null,
+			deployState: readJson(row.deploy_state, 'deployState'),
 		})
 	}
 }

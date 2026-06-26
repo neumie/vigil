@@ -29,6 +29,29 @@ export const itemSourceSchema = z
 	})
 	.strict()
 
+// One GitHub Deployment for the Item's merge commit, by environment. `state` is
+// the deployment's latest status (success/in_progress/pending/failure/error/…).
+export const deploymentEntrySchema = z
+	.object({
+		environment: z.string(),
+		state: z.string(),
+		url: z.string().nullable(),
+		updatedAt: z.string().nullable(),
+	})
+	.strict()
+
+// Post-ship lifecycle observed from GitHub (separate axis from `status`):
+// PR merge + per-environment deployments. Owned by the DeployWatcher poller.
+export const deployStateSchema = z
+	.object({
+		merged: z.boolean(),
+		mergedAt: z.string().nullable(),
+		mergeSha: z.string().nullable(),
+		deployments: z.array(deploymentEntrySchema),
+		checkedAt: z.string(),
+	})
+	.strict()
+
 export const solveItemPayloadSchema = z
 	.object({
 		kind: z.literal('solve'),
@@ -90,11 +113,14 @@ export const itemRecordSchema = z.object({
 	solveInputSnapshot: z.string().nullable(),
 	prUrl: z.string().nullable(),
 	runOutcome: runOutcomeSchema.nullable(),
+	deployState: deployStateSchema.nullable(),
 })
 
 export type ItemKind = z.infer<typeof itemKindSchema>
 export type ItemStatus = z.infer<typeof itemStatusSchema>
 export type RunOutcome = z.infer<typeof runOutcomeSchema>
+export type DeploymentEntry = z.infer<typeof deploymentEntrySchema>
+export type DeployState = z.infer<typeof deployStateSchema>
 export type ItemSource = z.infer<typeof itemSourceSchema>
 export type ItemPayload = z.infer<typeof itemPayloadSchema>
 export type ItemRecord = z.infer<typeof itemRecordSchema>
