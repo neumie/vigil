@@ -278,7 +278,7 @@ export interface AppConfig {
 	github?: Record<string, unknown>
 }
 
-export type ConfigFieldInput = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'color'
+export type ConfigFieldInput = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'color' | 'textarea'
 
 export interface ConfigFieldOption {
 	value: string

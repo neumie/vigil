@@ -17,7 +17,10 @@ import {
 import type { TaskContext } from '../src/providers/provider.js'
 import { taskCancelled } from '../src/util/errors.js'
 
-function makeConfig(overrides?: Partial<VigilConfig['solver']['nameModel']>): VigilConfig {
+function makeConfig(overrides?: {
+	branchNaming?: Partial<VigilConfig['solver']['branchNaming']>
+	displayName?: Partial<VigilConfig['solver']['displayName']>
+}): VigilConfig {
 	return configSchema.parse({
 		provider: {
 			type: 'contember',
@@ -26,7 +29,12 @@ function makeConfig(overrides?: Partial<VigilConfig['solver']['nameModel']>): Vi
 			apiToken: 'token',
 		},
 		projects: [{ slug: 'vigil', repoPath: '/repo', baseBranch: 'main' }],
-		solver: { type: 'default', agent: 'claude', nameModel: { enabled: true, ...overrides } },
+		solver: {
+			type: 'default',
+			agent: 'claude',
+			branchNaming: { enabled: true, ...overrides?.branchNaming },
+			displayName: { enabled: true, ...overrides?.displayName },
+		},
 	})
 }
 
@@ -200,7 +208,7 @@ test('ensureItemWorkspaceName skips loop (ralph/harden) Items', () =>
 
 test('ensureItemWorkspaceName is a no-op when disabled', () =>
 	withTempDb(async db => {
-		const config = makeConfig({ enabled: false })
+		const config = makeConfig({ branchNaming: { enabled: false } })
 		const commands = new ItemCommands(db.items, config)
 		const item = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
 
@@ -388,7 +396,7 @@ test('ensureItemDisplayName skips an already-short title (no model call)', () =>
 
 test('ensureItemDisplayName is a no-op when displayNames is disabled', () =>
 	withTempDb(async db => {
-		const config = makeConfig({ displayNames: false })
+		const config = makeConfig({ displayName: { enabled: false } })
 		const commands = new ItemCommands(db.items, config)
 		const item = commands.createSolveItem({ title: LONG_TITLE, projectSlug: 'vigil', prompt: 'do it' })
 
@@ -454,4 +462,30 @@ test('ensureItemDisplayName does not override an existing display name', () =>
 
 		assert.equal(called, false)
 		assert.equal(result.displayName, 'Preset name')
+	}))
+
+test('ensureItemDisplayName threads a custom prompt and provider override', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ displayName: { prompt: 'CUSTOM-INSTRUCTIONS-HERE', agent: 'codex' } })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: LONG_TITLE, projectSlug: 'vigil', prompt: 'do it' })
+
+		let seenAgent: string | undefined
+		let seenPrompt = ''
+		await ensureItemDisplayName({
+			commands,
+			item,
+			config,
+			deps: {
+				runOneShot: async opts => {
+					seenAgent = opts.agent
+					seenPrompt = opts.prompt
+					return 'Some short name'
+				},
+			},
+		})
+
+		assert.equal(seenAgent, 'codex') // per-feature provider override wins
+		assert.ok(seenPrompt.includes('CUSTOM-INSTRUCTIONS-HERE')) // custom instructions used
+		assert.ok(seenPrompt.includes('Please remove the operative')) // task data still injected by code
 	}))

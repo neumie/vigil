@@ -32,7 +32,7 @@ export class ItemEnricher {
 	}
 
 	private get enabled(): boolean {
-		return this.config.solver.nameModel.displayNames || this.config.solver.triage.enabled
+		return this.config.solver.displayName.enabled || this.config.solver.triage.enabled
 	}
 
 	/** One-time startup sweep over source Items still missing any enrichment. */

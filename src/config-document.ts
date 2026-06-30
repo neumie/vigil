@@ -1,12 +1,42 @@
 import { z } from 'zod'
 import { configSchema } from './config.js'
 import type { VigilConfig } from './config.js'
+import { DEFAULT_ASSESSMENT_INSTRUCTIONS } from './items/assess.js'
+import { DEFAULT_DISPLAY_INSTRUCTIONS, DEFAULT_NAMING_INSTRUCTIONS } from './items/naming.js'
 import { listSpawnerAdapters } from './spawner/registry.js'
 import type { SpawnerAdapterInfo } from './spawner/registry.js'
 
 export const CONFIG_SECRET_REDACTION = '********'
 
-export type ConfigFieldInput = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'color'
+export type ConfigFieldInput = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'color' | 'textarea'
+
+// The four editable controls every AI helper (branch naming / display name /
+// triage) shares: on/off, provider override, model override, and a custom
+// instruction prompt (blank → the built-in default, shown as the placeholder).
+function aiHelperControls(base: string[], promptDefault: string): ConfigEditFieldControl[] {
+	return [
+		{ type: 'field', path: [...base, 'enabled'], label: 'Enabled', input: 'boolean' },
+		{
+			type: 'field',
+			path: [...base, 'agent'],
+			label: 'Provider',
+			input: 'select',
+			options: [
+				{ value: '', label: 'Use solver agent' },
+				{ value: 'claude', label: 'Claude Code' },
+				{ value: 'codex', label: 'Codex' },
+			],
+		},
+		{
+			type: 'field',
+			path: [...base, 'model'],
+			label: 'Model',
+			input: 'text',
+			placeholder: 'claude-haiku-4-5 / gpt-5-mini (optional)',
+		},
+		{ type: 'field', path: [...base, 'prompt'], label: 'Prompt', input: 'textarea', placeholder: promptDefault },
+	]
+}
 
 export interface ConfigFieldOption {
 	value: string
@@ -198,19 +228,6 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 					input: 'text',
 					placeholder: 'Agent model override (optional)',
 				},
-				{
-					type: 'field',
-					path: ['solver', 'nameModel', 'enabled'],
-					label: 'AI Branch Naming',
-					input: 'boolean',
-				},
-				{
-					type: 'field',
-					path: ['solver', 'nameModel', 'model'],
-					label: 'Naming Model',
-					input: 'text',
-					placeholder: 'claude-haiku-4-5 / gpt-5-mini (optional)',
-				},
 				{ type: 'field', path: ['solver', 'timeoutMinutes'], label: 'Timeout (min)', input: 'number' },
 				{
 					type: 'field',
@@ -220,6 +237,24 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 					placeholder: '(optional)',
 				},
 			],
+		},
+		{
+			id: 'ai-branch',
+			title: 'AI · Branch naming',
+			description: 'Cheap one-shot model that derives a conventional branch name (feat/…, fix/…)',
+			controls: aiHelperControls(['solver', 'branchNaming'], DEFAULT_NAMING_INSTRUCTIONS),
+		},
+		{
+			id: 'ai-display',
+			title: 'AI · Display name',
+			description: 'Compresses each source task title into a short dashboard label',
+			controls: aiHelperControls(['solver', 'displayName'], DEFAULT_DISPLAY_INSTRUCTIONS),
+		},
+		{
+			id: 'ai-triage',
+			title: 'AI · Intent triage',
+			description: 'Pre-solve pass: restates intent, drafts acceptance criteria, assigns a verdict',
+			controls: aiHelperControls(['solver', 'triage'], DEFAULT_ASSESSMENT_INSTRUCTIONS),
 		},
 		{
 			id: 'spawner',
@@ -262,10 +297,67 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 	],
 })
 
+type AiHelperConfig = VigilConfig['solver']['triage']
+
+const HELPER_DEFAULT_PROMPTS = {
+	branchNaming: DEFAULT_NAMING_INSTRUCTIONS,
+	displayName: DEFAULT_DISPLAY_INSTRUCTIONS,
+	triage: DEFAULT_ASSESSMENT_INSTRUCTIONS,
+} as const
+
+function defaultHelperModel(agent: VigilConfig['solver']['agent']): string {
+	return agent === 'codex' ? 'gpt-5-mini' : 'claude-haiku-4-5'
+}
+
+/**
+ * Fill each AI helper's `model` + `prompt` with its resolved default so the Settings
+ * view shows them as real, editable values (not placeholders/previews). The model
+ * default follows the helper's effective provider (its `agent` override, else
+ * `solver.agent`).
+ */
+function hydrateAiDefaults(config: VigilConfig): VigilConfig {
+	const fill = (helper: AiHelperConfig, defaultPrompt: string): AiHelperConfig => ({
+		...helper,
+		model: helper.model ?? defaultHelperModel(helper.agent ?? config.solver.agent),
+		prompt: helper.prompt ?? defaultPrompt,
+	})
+	return {
+		...config,
+		solver: {
+			...config.solver,
+			branchNaming: fill(config.solver.branchNaming, HELPER_DEFAULT_PROMPTS.branchNaming),
+			displayName: fill(config.solver.displayName, HELPER_DEFAULT_PROMPTS.displayName),
+			triage: fill(config.solver.triage, HELPER_DEFAULT_PROMPTS.triage),
+		},
+	}
+}
+
+/**
+ * Inverse of {@link hydrateAiDefaults}: drop a helper's `model`/`prompt` when it still
+ * equals the default, so saving persists only genuine overrides and the helpers keep
+ * following the provider + picking up future default-prompt improvements.
+ */
+function stripAiHelperDefaults(config: VigilConfig): VigilConfig {
+	const strip = (helper: AiHelperConfig, defaultPrompt: string): AiHelperConfig => ({
+		...helper,
+		model: helper.model === defaultHelperModel(helper.agent ?? config.solver.agent) ? undefined : helper.model,
+		prompt: helper.prompt === defaultPrompt ? undefined : helper.prompt,
+	})
+	return {
+		...config,
+		solver: {
+			...config.solver,
+			branchNaming: strip(config.solver.branchNaming, HELPER_DEFAULT_PROMPTS.branchNaming),
+			displayName: strip(config.solver.displayName, HELPER_DEFAULT_PROMPTS.displayName),
+			triage: strip(config.solver.triage, HELPER_DEFAULT_PROMPTS.triage),
+		},
+	}
+}
+
 export function buildConfigDocument(raw: unknown, fallback: VigilConfig): ConfigDocument {
 	const config = parseConfigWithFallback(raw, fallback)
 	return {
-		config: redactEditableConfig(config),
+		config: redactEditableConfig(hydrateAiDefaults(config)),
 		dashboard: toDashboardSafeConfig(config),
 		edit: editMetadata,
 		secretRedaction: CONFIG_SECRET_REDACTION,
@@ -308,7 +400,11 @@ export function parseConfigUpdate(body: unknown, currentConfig: VigilConfig) {
 			),
 		} as const
 	}
-	return configSchema.safeParse(next)
+	const parsed = configSchema.safeParse(next)
+	// Only persist AI-helper overrides that genuinely differ from the default, so the
+	// hydrated defaults shown in Settings don't bloat the config file or freeze it.
+	if (parsed.success) return { success: true as const, data: stripAiHelperDefaults(parsed.data) }
+	return parsed
 }
 
 export function parseConfigWithFallback(raw: unknown, fallback: VigilConfig): VigilConfig {

@@ -273,6 +273,17 @@ function ConfigInput({
 		)
 	}
 
+	if (field.input === 'textarea') {
+		return (
+			<TextAreaField
+				label={field.label}
+				value={String(value ?? '')}
+				onChange={next => onChange(normalizeTextValue(next, field))}
+				placeholder={field.placeholder}
+			/>
+		)
+	}
+
 	return (
 		<Field
 			label={field.label}
@@ -410,6 +421,52 @@ function Field({
 				}}
 				onBlur={e => {
 					e.currentTarget.style.borderColor = empty ? 'var(--red)' : 'var(--border)'
+				}}
+			/>
+		</label>
+	)
+}
+
+/** Multi-line text editor for long values (e.g. an AI helper's instruction prompt).
+ *  Blank = the built-in default, shown as the placeholder so the user sees it. */
+function TextAreaField({
+	label,
+	value,
+	onChange,
+	placeholder,
+}: {
+	label: string
+	value: string
+	onChange: (v: string) => void
+	placeholder?: string
+}) {
+	return (
+		<label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+			<span style={{ fontSize: 12, color: 'var(--text-3)' }}>{label}</span>
+			<textarea
+				value={value}
+				placeholder={placeholder}
+				rows={8}
+				onChange={e => onChange(e.target.value)}
+				style={{
+					width: '100%',
+					padding: '8px 10px',
+					background: 'var(--bg-0)',
+					border: '1px solid var(--border)',
+					borderRadius: 'var(--radius-sm)',
+					color: 'var(--text-1)',
+					fontSize: 12,
+					lineHeight: 1.5,
+					fontFamily: 'var(--font-mono)',
+					outline: 'none',
+					resize: 'vertical',
+					transition: 'border-color 150ms',
+				}}
+				onFocus={e => {
+					e.currentTarget.style.borderColor = 'var(--accent)'
+				}}
+				onBlur={e => {
+					e.currentTarget.style.borderColor = 'var(--border)'
 				}}
 			/>
 		</label>

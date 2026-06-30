@@ -17,6 +17,20 @@ const contemberProviderSchema = z.object({
 // z.discriminatedUnion('type', [...]) again and branch in providers/registry.ts.
 const providerSchema = contemberProviderSchema
 
+// A cheap one-shot AI helper (branch naming, display naming, intent triage). Each
+// is independently toggleable and can override the provider (`agent`), `model`,
+// and instruction `prompt` (blank → the built-in default; the task data is always
+// injected by code, so a custom prompt only replaces the instructions).
+const aiHelperSchema = (defaultEnabled: boolean) =>
+	z
+		.object({
+			enabled: z.boolean().default(defaultEnabled),
+			agent: solverAgentSchema.optional(),
+			model: z.string().optional(),
+			prompt: z.string().optional(),
+		})
+		.default({})
+
 const projectSchema = z.object({
 	slug: z.string(),
 	repoPath: z.string(),
@@ -48,33 +62,20 @@ export const configSchema = z.object({
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
 			timeoutMinutes: z.number().min(1).default(30),
-			// Opt-in: derive a conventional branch name (feat/…, fix/…) from task
-			// context via a cheap one-shot model call. `model` overrides the per-agent
-			// default (claude → claude-haiku-4-5, codex → gpt-5-mini). Any failure
-			// degrades to the deterministic vigil/item/<slug> default.
-			nameModel: z
-				.object({
-					enabled: z.boolean().default(false),
-					// Independent of `enabled` (which gates branch naming): compress each
-					// item's raw provider title into a short human display name via the
-					// same cheap one-shot model, shown in the dashboard (title stays the
-					// source of truth). Failure degrades silently to the raw title.
-					displayNames: z.boolean().default(true),
-					model: z.string().optional(),
-				})
-				.default({}),
-			// Pre-solve intent triage: a cheap one-shot model pass over each source
-			// task that restates intent, drafts acceptance criteria, and assigns a
-			// verdict (clear / needs_clarification / human_decision / not_code /
-			// security) so the human checkpoint becomes "approve the intent" instead
-			// of "test the finished PR". Advisory only — never changes status. `model`
-			// overrides the per-agent default (claude → claude-haiku-4-5, codex → gpt-5-mini).
-			triage: z
-				.object({
-					enabled: z.boolean().default(true),
-					model: z.string().optional(),
-				})
-				.default({}),
+			// AI helpers (cheap one-shot model calls), each independently configurable
+			// in Settings (on/off, provider, model, prompt). Defaults: model per-agent
+			// (claude → claude-haiku-4-5, codex → gpt-5-mini), provider = `solver.agent`.
+			// Branch naming: derive a conventional branch (feat/…, fix/…); failure →
+			// deterministic vigil/item/<slug>. Opt-in (default off).
+			branchNaming: aiHelperSchema(false),
+			// Display name: compress each source title into a short dashboard label;
+			// failure → the raw title. Default on.
+			displayName: aiHelperSchema(true),
+			// Intent triage: restate intent + acceptance criteria + a verdict (clear /
+			// needs_clarification / human_decision / not_code / security) so the human
+			// checkpoint is "approve the intent" not "test the PR". Advisory; never
+			// changes status. Default on.
+			triage: aiHelperSchema(true),
 		})
 		.default({}),
 	spawner: spawnerSchema,

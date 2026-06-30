@@ -25,7 +25,7 @@ const ALLOWED_TYPES = new Set([
 	'revert',
 ])
 
-/** Cheap per-agent default when `solver.nameModel.model` is unset. */
+/** Cheap per-agent default when a helper's `model` override is unset. */
 function defaultNameModel(agent: SolverAgent): string {
 	return agent === 'codex' ? 'gpt-5-mini' : 'claude-haiku-4-5'
 }
@@ -41,20 +41,19 @@ const MIN_TITLE_LEN_TO_NAME = 40
 const MAX_DISPLAY_WORDS = 8
 const MAX_DISPLAY_LEN = 60
 
-export function buildDisplayNamePrompt(title: string): string {
-	return [
-		'You write short, human-readable titles for software tasks. Reply with ONLY the title on a single line — no quotes, no surrounding punctuation, no explanation.',
-		'',
-		'Rules:',
-		'- Imperative mood, like a pull-request title (e.g. "Unify invoice recipient logic")',
-		'- At most 6 words',
-		'- Drop ticket ids, bracketed prefixes (e.g. "[Echo]"), and any trailing period',
-		"- Preserve the task's original language",
-		'',
-		`Task: ${title.slice(0, 500)}`,
-		'',
-		'Short title:',
-	].join('\n')
+/** Default instruction block for display naming (the editable `solver.displayName.prompt`). */
+export const DEFAULT_DISPLAY_INSTRUCTIONS = [
+	'You write short, human-readable titles for software tasks. Reply with ONLY the title on a single line — no quotes, no surrounding punctuation, no explanation.',
+	'',
+	'Rules:',
+	'- Imperative mood, like a pull-request title (e.g. "Unify invoice recipient logic")',
+	'- At most 6 words',
+	'- Drop ticket ids, bracketed prefixes (e.g. "[Echo]"), and any trailing period',
+	"- Preserve the task's original language",
+].join('\n')
+
+export function buildDisplayNamePrompt(title: string, instructions: string = DEFAULT_DISPLAY_INSTRUCTIONS): string {
+	return [instructions, '', `Task: ${title.slice(0, 500)}`, '', 'Short title:'].join('\n')
 }
 
 /**
@@ -111,22 +110,24 @@ export interface EnsureItemDisplayNameParams {
 /**
  * Optionally derive a short display name from the Item's raw `title` via a cheap
  * one-shot model call and persist it through `ItemCommands.recordDisplayName`.
- * Gated by `solver.nameModel.displayNames`. No-op (returns the input Item) when
- * disabled, already named, or the title is already short. Best-effort: a model
- * failure, timeout, or empty/unparseable answer degrades silently to the input
- * Item so the dashboard keeps showing the raw title. Re-throws only cancellation.
+ * Gated by `solver.displayName.enabled` (provider/model/prompt overridable on the
+ * same block). No-op (returns the input Item) when disabled, already named, or the
+ * title is already short. Best-effort: a model failure, timeout, or empty/
+ * unparseable answer degrades silently to the input Item so the dashboard keeps
+ * showing the raw title. Re-throws only cancellation.
  */
 export async function ensureItemDisplayName(params: EnsureItemDisplayNameParams): Promise<ItemRecord> {
 	const { commands, item, config, signal, deps } = params
-	if (!config.solver.nameModel.displayNames) return item
+	const feature = config.solver.displayName
+	if (!feature.enabled) return item
 	if (item.displayName) return item
 	if (item.title.length <= MIN_TITLE_LEN_TO_NAME) return item
 
-	const agent = params.agent ?? config.solver.agent
+	const agent = feature.agent ?? params.agent ?? config.solver.agent
 	try {
-		const model = config.solver.nameModel.model ?? defaultNameModel(agent)
+		const model = feature.model ?? defaultNameModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
-		const raw = await run({ agent, model, prompt: buildDisplayNamePrompt(item.title), signal })
+		const raw = await run({ agent, model, prompt: buildDisplayNamePrompt(item.title, feature.prompt), signal })
 		if (!raw) return item
 
 		const name = parseDisplayName(raw)
@@ -145,19 +146,23 @@ export async function ensureItemDisplayName(params: EnsureItemDisplayNameParams)
 	}
 }
 
-export function buildNamingPrompt(taskContext: TaskContext): string {
-	const lines = [
-		'You name git branches for a software task. Reply with ONLY the branch name on a single line — no quotes, no backticks, no explanation.',
-		'',
-		'Rules:',
-		'- Format: <type>/<summary>',
-		'- <type> is exactly one of: feat, fix, chore, refactor, docs, test, perf, build, ci',
-		'- <summary> is 2-5 lowercase words joined by hyphens, describing the change',
-		'- Use only the characters a-z, 0-9, hyphen and one slash',
-		'- Keep the whole name under 50 characters',
-		'',
-		`Task title: ${taskContext.title}`,
-	]
+/** Default instruction block for branch naming (the editable `solver.branchNaming.prompt`). */
+export const DEFAULT_NAMING_INSTRUCTIONS = [
+	'You name git branches for a software task. Reply with ONLY the branch name on a single line — no quotes, no backticks, no explanation.',
+	'',
+	'Rules:',
+	'- Format: <type>/<summary>',
+	'- <type> is exactly one of: feat, fix, chore, refactor, docs, test, perf, build, ci',
+	'- <summary> is 2-5 lowercase words joined by hyphens, describing the change',
+	'- Use only the characters a-z, 0-9, hyphen and one slash',
+	'- Keep the whole name under 50 characters',
+].join('\n')
+
+export function buildNamingPrompt(
+	taskContext: TaskContext,
+	instructions: string = DEFAULT_NAMING_INSTRUCTIONS,
+): string {
+	const lines = [instructions, '', `Task title: ${taskContext.title}`]
 	if (taskContext.description) {
 		lines.push('', 'Task details:', taskContext.description.slice(0, 1500))
 	}
@@ -256,20 +261,23 @@ export interface EnsureItemNameParams {
  * pipeline's abort-aware catch); nothing else throws.
  */
 export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Promise<ItemRecord> {
-	const { commands, item, taskContext, config, repoPath, agent, signal, deps } = params
-	if (!config.solver.nameModel.enabled) return item
+	const { commands, item, taskContext, config, repoPath, signal, deps } = params
+	const feature = config.solver.branchNaming
+	if (!feature.enabled) return item
 	// Solve-only: enforced here (not just at call sites) so the plan route can't
 	// name a ralph/harden Item — loop Items keep the deterministic vigil/item name.
 	if (item.kind !== 'solve') return item
 	if (item.branchName) return item // already planned / forked / named
 
+	// Per-feature provider override wins over the effective solve agent the caller passed.
+	const agent = feature.agent ?? params.agent
 	try {
-		const model = config.solver.nameModel.model ?? defaultNameModel(agent)
+		const model = feature.model ?? defaultNameModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		const raw = await run({
 			agent,
 			model,
-			prompt: buildNamingPrompt(taskContext),
+			prompt: buildNamingPrompt(taskContext, feature.prompt),
 			signal,
 		})
 		if (!raw) return item
