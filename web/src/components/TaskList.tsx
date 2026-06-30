@@ -65,6 +65,38 @@ function rowTimestamp(item: DashboardItem): string {
 	return item.completedAt ?? item.updatedAt
 }
 
+/**
+ * The project color as legible text on the dark sidebar background: floors HSL
+ * lightness (and saturation) so a dark configured color (e.g. a deep red) is
+ * lifted to a readable tone while keeping its hue. Falls back to muted text when
+ * no color is set, and passes through any non-hex value untouched.
+ */
+export function projectTextColor(hex?: string): string {
+	if (!hex) return 'var(--text-3)'
+	const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+	if (!m) return hex
+	const full = m[1].length === 3 ? m[1].replace(/(.)/g, '$1$1') : m[1]
+	const n = Number.parseInt(full, 16)
+	const r = ((n >> 16) & 255) / 255
+	const g = ((n >> 8) & 255) / 255
+	const b = (n & 255) / 255
+	const max = Math.max(r, g, b)
+	const min = Math.min(r, g, b)
+	const l = (max + min) / 2
+	const d = max - min
+	let hue = 0
+	let sat = 0
+	if (d !== 0) {
+		sat = d / (1 - Math.abs(2 * l - 1))
+		if (max === r) hue = ((g - b) / d) % 6
+		else if (max === g) hue = (b - r) / d + 2
+		else hue = (r - g) / d + 4
+		hue = (hue * 60 + 360) % 360
+	}
+	// Floor lightness for contrast on the dark bg; floor saturation so it stays colourful.
+	return `hsl(${Math.round(hue)} ${Math.round(Math.max(sat, 0.5) * 100)}% ${Math.round(Math.max(l, 0.62) * 100)}%)`
+}
+
 export function TaskList({
 	items,
 	selectedItemId,
@@ -334,24 +366,13 @@ function ItemRow({
 				if (!selected) e.currentTarget.style.background = 'transparent'
 			}}
 		>
-			{/* Meta: project dot (project color) + project + kind chip + group, age right */}
+			{/* Meta: project name (in the project color) + status + group, age right */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-				<span
-					className={item.card.pulse ? 'vg-pulse' : undefined}
-					title={item.projectSlug}
-					style={{
-						width: 8,
-						height: 8,
-						borderRadius: '50%',
-						flexShrink: 0,
-						background: projectColor ?? 'var(--text-4)',
-					}}
-				/>
 				<span
 					style={{
 						fontSize: 10,
-						fontWeight: 600,
-						color: 'var(--text-4)',
+						fontWeight: 700,
+						color: projectTextColor(projectColor),
 						textTransform: 'uppercase',
 						letterSpacing: '0.04em',
 					}}

@@ -5,7 +5,12 @@ import type { CreateItemInput, DashboardItem, PlanInfo } from '../web/src/api.ts
 import { queueLaneSummaries } from '../web/src/components/Header.tsx'
 import { buildCreateItemInput, createItemWithIntent } from '../web/src/components/ItemCreateForm.tsx'
 import { runObservationDetails } from '../web/src/components/ItemDetail.tsx'
-import { itemMetaLabels, partitionWorkEntries, workAttentionCounts } from '../web/src/components/TaskList.tsx'
+import {
+	itemMetaLabels,
+	partitionWorkEntries,
+	projectTextColor,
+	workAttentionCounts,
+} from '../web/src/components/TaskList.tsx'
 
 const originalFetch = globalThis.fetch
 
@@ -212,6 +217,21 @@ test('dashboard attention counts surface review + failed as "needs you", process
 		running: 1,
 		needsYou: 2,
 	})
+})
+
+test('projectTextColor floors lightness so any project color stays legible on the dark sidebar', () => {
+	const lightnessOf = (css: string): number => {
+		const m = /hsl\(\d+ \d+% (\d+)%\)/.exec(css)
+		return m ? Number(m[1]) : Number.NaN
+	}
+	// A deep red (jvs) and a bright blue (psyon) are both lifted past the floor.
+	assert.ok(lightnessOf(projectTextColor('#cd0e0e')) >= 62, projectTextColor('#cd0e0e'))
+	assert.ok(lightnessOf(projectTextColor('#2a94e5')) >= 62, projectTextColor('#2a94e5'))
+	// 3-digit hex is supported; a near-black color is lifted, not left unreadable.
+	assert.ok(lightnessOf(projectTextColor('#100')) >= 62, projectTextColor('#100'))
+	// No color → muted fallback; a non-hex value passes through untouched.
+	assert.equal(projectTextColor(undefined), 'var(--text-3)')
+	assert.equal(projectTextColor('var(--accent)'), 'var(--accent)')
 })
 
 test('TaskList uses server-owned Item group labels', () => {
