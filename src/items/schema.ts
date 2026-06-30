@@ -135,6 +135,9 @@ export const itemRecordSchema = z.object({
 	queuedAt: z.string().nullable(),
 	startedAt: z.string().nullable(),
 	completedAt: z.string().nullable(),
+	// Set once when an interactive planning session is prepared; the unambiguous
+	// "the user planned this" signal (worktree fields are also set by a normal run).
+	plannedAt: z.string().nullable(),
 	updatedAt: z.string().min(1),
 	errorMessage: z.string().nullable(),
 	errorPhase: z.string().nullable(),

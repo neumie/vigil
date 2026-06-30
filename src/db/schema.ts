@@ -264,4 +264,21 @@ UPDATE items SET status = 'cancelled' WHERE status = 'skipped';
 ALTER TABLE items ADD COLUMN captured_context TEXT;
 `,
 	},
+	{
+		// `planned_at` — set once when an interactive planning session is prepared
+		// (`recordPlanPrepared`). This is the UNAMBIGUOUS "the user planned this"
+		// signal: worktreePath/branchName/planDirName are ALSO set by a normal solve
+		// run, so `plan != null` can't distinguish planned-by-hand from has-run.
+		// Free to read in the list (a row column), so the dashboard can show a
+		// "Planned" chip without a per-row event query.
+		version: 19,
+		sql: `
+ALTER TABLE items ADD COLUMN planned_at TEXT;
+UPDATE items SET planned_at = (
+  SELECT MIN(created_at) FROM item_events
+  WHERE item_events.item_id = items.id AND item_events.event_type = 'plan_prepared'
+)
+WHERE id IN (SELECT item_id FROM item_events WHERE event_type = 'plan_prepared');
+`,
+	},
 ]

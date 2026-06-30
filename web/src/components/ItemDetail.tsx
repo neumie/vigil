@@ -5,7 +5,6 @@ import type {
 	DashboardActionTone,
 	DashboardItem,
 	DashboardLink,
-	DashboardPlan,
 	DashboardTone,
 	DeployState,
 	ItemStatus,
@@ -217,7 +216,8 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 					</div>
 				)}
 
-				{planInfo ? <PlanInfoBlock info={planInfo} /> : item.plan && <PersistedPlanBlock plan={item.plan} />}
+				{planInfo && <PlanInfoBlock info={planInfo} />}
+				{item.plannedAt && <PlanPreview item={item} />}
 
 				<RunObservationView item={item} />
 
@@ -426,27 +426,87 @@ function PlanInfoBlock({ info }: { info: PlanInfo }) {
 	)
 }
 
-function PersistedPlanBlock({ plan }: { plan: DashboardPlan }) {
+/** Plan preview — "what we've decided to do": the plan files the user wrote
+ *  while planning (brief.md / prd.md / …), each expandable. The auto-written
+ *  context.md / README.md are hidden (the task itself shows above). */
+function PlanPreview({ item }: { item: DashboardItem }) {
+	const planned = useRelativeTime(item.plannedAt)
+	const docs = (item.planArtifacts ?? []).filter(a => {
+		const n = a.name.toLowerCase()
+		return n !== 'context.md' && n !== 'readme.md'
+	})
 	return (
-		<div
-			style={{
-				padding: '10px 12px',
-				marginBottom: 16,
-				borderRadius: 'var(--radius-sm)',
-				border: '1px solid var(--border)',
-				background: 'var(--bg-1)',
-				fontSize: 12,
-				lineHeight: 1.6,
-				color: 'var(--text-2)',
-			}}
-		>
-			<div style={{ color: 'var(--text-1)', fontWeight: 600 }}>Plan prepared</div>
-			<div>
-				Plan artifacts live in{' '}
-				<code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-1)' }}>{plan.planDirName}</code>
-				.
+		<Section title="Plan">
+			<div
+				style={{
+					display: 'flex',
+					flexWrap: 'wrap',
+					gap: '4px 16px',
+					fontSize: 12,
+					color: 'var(--text-3)',
+					marginBottom: docs.length ? 12 : 0,
+				}}
+			>
+				{planned && (
+					<span>
+						planned <strong style={{ color: 'var(--text-1)', fontWeight: 500 }}>{planned} ago</strong>
+					</span>
+				)}
+				{item.plan?.branchName && (
+					<span>
+						branch{' '}
+						<code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>
+							{item.plan.branchName}
+						</code>
+					</span>
+				)}
 			</div>
-		</div>
+			{docs.length === 0 ? (
+				<p style={{ fontSize: 13, color: 'var(--text-4)', lineHeight: 1.5, margin: 0 }}>
+					No plan notes yet — only the task context. In the planning agent, run <code>/grill-me</code> or{' '}
+					<code>/prd-create</code> to write a brief.
+				</p>
+			) : (
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+					<div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+						{docs.length} plan file{docs.length > 1 ? 's' : ''}:
+					</div>
+					{docs.map(doc => (
+						<details key={doc.name} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+							<summary
+								style={{
+									cursor: 'pointer',
+									padding: '7px 10px',
+									fontSize: 13,
+									fontWeight: 500,
+									color: 'var(--accent)',
+									fontFamily: 'var(--font-mono)',
+								}}
+							>
+								{doc.name}
+							</summary>
+							<pre
+								style={{
+									margin: 0,
+									padding: '10px 12px',
+									borderTop: '1px solid var(--border)',
+									fontSize: 12,
+									lineHeight: 1.6,
+									color: 'var(--text-2)',
+									fontFamily: 'var(--font-sans)',
+									whiteSpace: 'pre-wrap',
+									wordBreak: 'break-word',
+									maxHeight: 360,
+									overflow: 'auto',
+								}}
+							>
+								{doc.content}
+							</pre>
+						</details>
+					))}
+				</div>
+			)}
+		</Section>
 	)
 }
 

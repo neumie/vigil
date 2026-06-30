@@ -630,6 +630,9 @@ export class ItemCommands {
 			worktreePath: fields.worktreePath,
 			branchName: fields.branchName,
 			planDirName: fields.planDirName,
+			// Stamp the "planned" signal here (not on the worktree fields, which a
+			// normal solve also sets) so the dashboard can tell planned from has-run.
+			plannedAt: item.plannedAt ?? new Date().toISOString(),
 		})
 		this.store.insertEvent(id, 'plan_prepared', {
 			worktreePath: fields.worktreePath,

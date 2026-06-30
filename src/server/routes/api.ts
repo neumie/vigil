@@ -403,7 +403,18 @@ export function apiRoutes(
 		} catch (err) {
 			log.warn('api', `Failed to load source task for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
 		}
-		return c.json({ data: { ...dashboardItem(item), sourceTask } })
+		// Plan preview: the *.md the user wrote while planning (brief/prd/…), read
+		// from the worktree's plan dir. Only for interactively-planned Items, and
+		// best-effort — a cleaned-up worktree degrades to []. Per-item IO (detail only).
+		let planArtifacts: Array<{ name: string; content: string }> = []
+		if (item.plannedAt && item.worktreePath && item.planDirName) {
+			try {
+				planArtifacts = new PlanWorkspace(item.worktreePath, item.planDirName).listArtifacts()
+			} catch (err) {
+				log.warn('api', `Failed to read plan artifacts for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
+			}
+		}
+		return c.json({ data: { ...dashboardItem(item), sourceTask, planArtifacts } })
 	})
 
 	api.post('/items', async c => {

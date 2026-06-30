@@ -79,6 +79,12 @@ export type DescriptionBlock =
 	| { type: 'text'; text: string; heading?: number }
 	| { type: 'image'; url: string; name?: string; contentType?: string }
 
+/** One plan-dir markdown file (brief.md / prd.md / …) for the detail preview. */
+export interface PlanArtifact {
+	name: string
+	content: string
+}
+
 export interface SourceTask {
 	title: string
 	description?: string
@@ -181,6 +187,8 @@ export interface DashboardItem {
 	runOutcome: RunOutcome | null
 	deployState: DeployState | null
 	sourceTask?: SourceTask | null
+	// Detail-only (omitted from list rows): the user's plan files for the preview.
+	planArtifacts?: PlanArtifact[]
 	card: {
 		state: string
 		statusLabel: string
@@ -198,6 +206,7 @@ export interface DashboardItem {
 	queuedAt: string | null
 	startedAt: string | null
 	completedAt: string | null
+	plannedAt: string | null
 	updatedAt: string
 }
 

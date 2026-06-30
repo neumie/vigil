@@ -2626,8 +2626,9 @@ test('server exposes created Items through the dashboard contract', async () => 
 		assert.equal(readRes.status, 200)
 		const read = (await readRes.json()) as { data: ReturnType<typeof toDashboardItem> }
 		// The detail route enriches with the live source-task content (null here:
-		// this Item is source-less). Otherwise it matches the creation contract.
-		assert.deepEqual(read.data, { ...created.data, sourceTask: null })
+		// this Item is source-less) and the plan preview (empty: not planned).
+		// Otherwise it matches the creation contract.
+		assert.deepEqual(read.data, { ...created.data, sourceTask: null, planArtifacts: [] })
 	})
 })
 
@@ -3801,6 +3802,66 @@ test('server Item work-start routes persist selected solve agent before queue ha
 		assert.equal(db.items.get(startTarget.id)?.payload.solverAgent, 'codex')
 		assert.equal(db.items.get(retryTarget.id)?.payload.solverAgent, 'codex')
 	})
+})
+
+test('recordPlanPrepared stamps plannedAt (the "planned" signal) and re-plan preserves the original', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'Plan me', projectSlug: 'vigil', prompt: 'do it' })
+		assert.equal(item.plannedAt, null) // a fresh item is unplanned
+
+		const planned = commands.recordPlanPrepared(item.id, {
+			worktreePath: '/tmp/wt',
+			branchName: 'feat/x',
+			planDirName: '2026-06-30-x',
+			spawner: 'default',
+		})
+		assert.ok(planned.plannedAt, 'plannedAt stamped on plan')
+		assert.equal(toDashboardItem(planned).plannedAt, planned.plannedAt) // contract surfaces it (free in list)
+
+		// Re-planning keeps the first-planned time (don't reset the historical fact).
+		const replanned = commands.recordPlanPrepared(item.id, {
+			worktreePath: '/tmp/wt',
+			branchName: 'feat/x',
+			planDirName: '2026-06-30-x',
+			spawner: 'default',
+		})
+		assert.equal(replanned.plannedAt, planned.plannedAt)
+	}))
+
+test('PlanWorkspace.listArtifacts returns each .md file with content and skips non-markdown', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'vigil-plan-'))
+	try {
+		const ws = new PlanWorkspace(dir, '2026-06-30-demo')
+		ws.ensureDir()
+		writeFileSync(join(ws.dir, 'context.md'), 'task context', 'utf-8')
+		writeFileSync(join(ws.dir, 'brief.md'), '# Brief\nDecision: do X', 'utf-8')
+		writeFileSync(join(ws.dir, '.planning-prompt.txt'), 'not markdown', 'utf-8')
+
+		const arts = ws.listArtifacts()
+		assert.deepEqual(
+			arts.map(a => a.name).sort(),
+			['brief.md', 'context.md'],
+		)
+		assert.equal(arts.find(a => a.name === 'brief.md')?.content, '# Brief\nDecision: do X')
+		assert.ok(!arts.some(a => a.name.endsWith('.txt'))) // non-markdown excluded
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('PlanWorkspace.listArtifacts truncates a pathologically large plan file for the preview', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'vigil-plan-big-'))
+	try {
+		const ws = new PlanWorkspace(dir, '2026-06-30-big')
+		ws.ensureDir()
+		writeFileSync(join(ws.dir, 'prd.md'), 'x'.repeat(200_000), 'utf-8')
+		const [art] = ws.listArtifacts()
+		assert.ok(art.content.length < 200_000, 'content capped')
+		assert.match(art.content, /truncated for preview/)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
 })
 
 // Manual AI passes from the item detail — the route force-runs each pass with an

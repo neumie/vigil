@@ -33,6 +33,7 @@ type ItemUpdateInput = Partial<
 		| 'queuedAt'
 		| 'startedAt'
 		| 'completedAt'
+		| 'plannedAt'
 		| 'worktreePath'
 		| 'branchName'
 		| 'planDirName'
@@ -51,6 +52,7 @@ const ITEM_UPDATE_COLUMNS = {
 	queuedAt: 'queued_at',
 	startedAt: 'started_at',
 	completedAt: 'completed_at',
+	plannedAt: 'planned_at',
 	worktreePath: 'worktree_path',
 	branchName: 'branch_name',
 	planDirName: 'plan_dir_name',
@@ -112,6 +114,7 @@ export class ItemStore {
 			queuedAt: input.status === 'ready' ? now : null,
 			startedAt: null,
 			completedAt: null,
+			plannedAt: null,
 			updatedAt: now,
 			errorMessage: null,
 			errorPhase: null,
@@ -127,12 +130,12 @@ export class ItemStore {
 				`INSERT INTO items (
 					id, kind, status, project_slug, title, display_name, assessment, source, captured_context, base_ref, spawner, group_id, payload,
 					worktree_path, branch_name, plan_dir_name, almanac_run_id,
-					created_at, queued_at, started_at, completed_at, updated_at,
+					created_at, queued_at, started_at, completed_at, planned_at, updated_at,
 					error_message, error_phase, result_summary, solve_input_snapshot, pr_url, run_outcome, deploy_state
 				) VALUES (
 					@id, @kind, @status, @projectSlug, @title, @displayName, @assessment, @source, @capturedContext, @baseRef, @spawner, @groupId, @payload,
 					@worktreePath, @branchName, @planDirName, @almanacRunId,
-					@createdAt, @queuedAt, @startedAt, @completedAt, @updatedAt,
+					@createdAt, @queuedAt, @startedAt, @completedAt, @plannedAt, @updatedAt,
 					@errorMessage, @errorPhase, @resultSummary, @solveInputSnapshot, @prUrl, @runOutcome, @deployState
 				)`,
 			)
@@ -391,6 +394,7 @@ export class ItemStore {
 			queuedAt: item.queuedAt,
 			startedAt: item.startedAt,
 			completedAt: item.completedAt,
+			plannedAt: item.plannedAt,
 			updatedAt: item.updatedAt,
 			errorMessage: item.errorMessage,
 			errorPhase: item.errorPhase,
@@ -425,6 +429,7 @@ export class ItemStore {
 			queuedAt: row.queued_at ?? null,
 			startedAt: row.started_at ?? null,
 			completedAt: row.completed_at ?? null,
+			plannedAt: row.planned_at ?? null,
 			updatedAt: row.updated_at,
 			errorMessage: row.error_message ?? null,
 			errorPhase: row.error_phase ?? null,

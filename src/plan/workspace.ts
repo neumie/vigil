@@ -99,6 +99,30 @@ export class PlanWorkspace {
 	}
 
 	/**
+	 * Each `*.md` artifact in the plan dir as `{ name, content }` (oldest-first by
+	 * mtime) for the dashboard plan preview. Empty if the dir is absent/empty.
+	 * Unlike `readArtifacts`, this keeps files separate (no `<plan_artifact>`
+	 * wrapping) so the UI can list/expand them individually.
+	 */
+	listArtifacts(): Array<{ name: string; content: string }> {
+		if (!existsSync(this.dir)) return []
+		// Cap per-file content so one pathologically large plan doc can't bloat the
+		// detail response — this is a preview, not the full prompt feed (readArtifacts).
+		const MAX_PREVIEW_BYTES = 80_000
+		return readdirSync(this.dir)
+			.filter(name => name.endsWith('.md'))
+			.map(name => {
+				const fullPath = join(this.dir, name)
+				const raw = readFileSync(fullPath, 'utf-8')
+				const content =
+					raw.length > MAX_PREVIEW_BYTES ? `${raw.slice(0, MAX_PREVIEW_BYTES)}\n\n… (truncated for preview)` : raw
+				return { name, content, mtime: statSync(fullPath).mtimeMs }
+			})
+			.sort((a, b) => a.mtime - b.mtime)
+			.map(({ name, content }) => ({ name, content }))
+	}
+
+	/**
 	 * Concatenate every `*.md` artifact in the plan dir (oldest-first by mtime),
 	 * each wrapped in a `<plan_artifact>` block. Null if the dir is absent/empty.
 	 */

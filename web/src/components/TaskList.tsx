@@ -392,6 +392,14 @@ function ItemRow({
 				</span>
 				{item.card.pulse && <span className="vg-spin" aria-hidden="true" />}
 				{item.assessment && <VerdictChip verdict={item.assessment.verdict} />}
+				{item.plannedAt && (
+					<span
+						title="An interactive plan was prepared for this item"
+						style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', whiteSpace: 'nowrap' }}
+					>
+						📐 Planned
+					</span>
+				)}
 				{item.group && (
 					<span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-4)' }}>{item.group.label}</span>
 				)}

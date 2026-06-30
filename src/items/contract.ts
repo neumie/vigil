@@ -86,6 +86,7 @@ export interface DashboardItem {
 	queuedAt: string | null
 	startedAt: string | null
 	completedAt: string | null
+	plannedAt: string | null
 	updatedAt: string
 }
 
@@ -253,6 +254,7 @@ export function toDashboardItem(
 		queuedAt: item.queuedAt,
 		startedAt: item.startedAt,
 		completedAt: item.completedAt,
+		plannedAt: item.plannedAt,
 		updatedAt: item.updatedAt,
 	}
 }
