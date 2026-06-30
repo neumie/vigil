@@ -106,32 +106,22 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 			style={{ display: 'flex', gap: 24, alignItems: 'flex-start', maxWidth: 1000, margin: '0 auto', flexWrap: 'wrap' }}
 		>
 			<div style={{ flex: '1 1 440px', minWidth: 0 }}>
+				{/* Header = the short AI display name; the task's real provider title lives
+				    in the task block below, with its description. */}
 				<h2
 					style={{
 						fontSize: 20,
 						fontWeight: 600,
 						color: 'var(--text-0)',
 						lineHeight: 1.4,
-						marginBottom: item.displayName ? 4 : 12,
+						marginBottom: 16,
 						overflowWrap: 'break-word',
 					}}
 				>
 					{item.displayName ?? item.title}
 				</h2>
-				{/* When a short AI name leads, keep the full raw title visible underneath. */}
-				{item.displayName && (
-					<p
-						style={{
-							fontSize: 13,
-							color: 'var(--text-3)',
-							lineHeight: 1.45,
-							marginBottom: 16,
-							overflowWrap: 'break-word',
-						}}
-					>
-						{item.title}
-					</p>
-				)}
+
+				{item.sourceTask && <SourceTaskView task={item.sourceTask} title={item.displayName ? item.title : null} />}
 
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
 					<StatusBadge value={item.card.statusLabel} tone={item.card.statusTone} />
@@ -175,8 +165,6 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 				</div>
 
 				{item.assessment && <AssessmentPanel assessment={item.assessment} />}
-
-				{item.sourceTask && <SourceTaskView task={item.sourceTask} />}
 
 				{item.errorMessage && (
 					<div
@@ -517,7 +505,7 @@ function AssessmentPanel({ assessment }: { assessment: Assessment }) {
 /** The source task's actual content — description (with inline images in
  *  document order), metadata, attachments, comments — so the operator can read
  *  the task without leaving Vigil. */
-function SourceTaskView({ task }: { task: SourceTask }) {
+function SourceTaskView({ task, title }: { task: SourceTask; title: string | null }) {
 	const metaEntries = task.metadata ? Object.entries(task.metadata) : []
 	const comments = task.comments ?? []
 	const blocks = task.descriptionBlocks ?? []
@@ -527,9 +515,33 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 	const attachments = (task.attachments ?? []).filter(a => !inlineUrls.has(a.url))
 	const hasContent =
 		task.description || blocks.length > 0 || metaEntries.length > 0 || comments.length > 0 || attachments.length > 0
-	if (!hasContent) return null
+	if (!title && !hasContent) return null
 	return (
-		<Section title="Task">
+		<div
+			style={{
+				background: 'var(--bg-1)',
+				border: '1px solid var(--border)',
+				borderRadius: 'var(--radius)',
+				padding: '16px 18px',
+				marginBottom: 16,
+			}}
+		>
+			{/* The task's real (provider) name lives with its description; passed only
+			    when the header already shows a distinct short displayName, so it's not duplicated. */}
+			{title && (
+				<h3
+					style={{
+						fontSize: 15,
+						fontWeight: 600,
+						color: 'var(--text-0)',
+						lineHeight: 1.4,
+						marginBottom: 12,
+						overflowWrap: 'break-word',
+					}}
+				>
+					{title}
+				</h3>
+			)}
 			{metaEntries.length > 0 && (
 				<div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
 					{metaEntries.map(([k, v]) => (
@@ -609,7 +621,7 @@ function SourceTaskView({ task }: { task: SourceTask }) {
 					))}
 				</div>
 			)}
-		</Section>
+		</div>
 	)
 }
 
