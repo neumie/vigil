@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
+import type { ItemEnricher } from '../items/enricher.js'
 import type { Poller } from '../poller/poller.js'
 import type { TaskProvider } from '../providers/provider.js'
 import type { Drainer } from '../queue/drainer.js'
@@ -28,13 +29,14 @@ export function createApp(
 	poller: Poller,
 	provider: TaskProvider,
 	spawner: Spawner,
+	enricher: ItemEnricher,
 ) {
 	const app = new Hono()
 	const webDir = resolve(import.meta.dirname, '../web')
 
 	app.use('*', cors())
 
-	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, spawner))
+	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, spawner, enricher))
 
 	// Any unmatched /api/* request returns JSON, never the SPA HTML below —
 	// otherwise a stale/mismatched client gets `index.html` and dies with

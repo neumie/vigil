@@ -344,6 +344,16 @@ export const api = {
 				return postJSON<DashboardItem>(`/items/${id}/${action}`)
 		}
 	},
+	// Open an ingested attachment in the host's native app (the daemon is local).
+	// `attachmentUrl` is the served path on the item (already `/api/...`), so it is
+	// POSTed directly, not through the BASE-prefixed helpers.
+	openAttachment: async (attachmentUrl: string): Promise<void> => {
+		const res = await fetch(`${attachmentUrl}/open`, { method: 'POST' })
+		if (!res.ok) {
+			const json = await res.json().catch(() => ({}))
+			throw new Error(json.error ?? `Open failed: ${res.status}`)
+		}
+	},
 	triggerPoll: () => postJSON<{ message: string }>('/poll/trigger'),
 	pauseQueue: () => postJSON<{ paused: boolean }>('/queue/pause'),
 	resumeQueue: () => postJSON<{ paused: boolean }>('/queue/resume'),

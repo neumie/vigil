@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { taskContextSchema } from '../providers/provider.js'
 import { solverAgentSchema } from '../solver/agent.js'
 
 export const itemKindSchema = z.enum(['solve', 'ralph', 'harden'])
@@ -119,6 +120,9 @@ export const itemRecordSchema = z.object({
 	// Pre-solve intent triage; null until assessed. Advisory, never changes status.
 	assessment: assessmentSchema.nullable(),
 	source: itemSourceSchema.nullable(),
+	// Frozen TaskContext for an Item with no live provider (ingested email etc.):
+	// resolved in place of provider.getTaskContext. Null for provider-polled Items.
+	capturedContext: taskContextSchema.nullable(),
 	baseRef: z.string().min(1),
 	spawner: z.string().min(1).nullable(),
 	groupId: z.string().nullable(),

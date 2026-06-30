@@ -174,7 +174,6 @@ export function App() {
 						setCreateDraft(null)
 						selectItem(id)
 					}}
-					onItemAction={handleItemAction}
 					projects={projectSlugs}
 					selectedProject={projectFilter}
 					onProjectChange={setProjectFilter}

@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 /**
  * A discovered task from the external source.
  * Minimal info needed to decide whether to enqueue it.
@@ -8,28 +10,40 @@ export interface DiscoveredTask {
 	createdAt: string
 }
 
-/**
- * Vigil's canonical internal representation of a task.
- * Each provider normalizes its native data into this shape.
- * All fields optional except title — providers fill in what they can.
- */
 /** One block of a rich task description, in document order, so inline images
  *  render between the surrounding text instead of all dumped at the end. */
-export type DescriptionBlock =
-	| { type: 'text'; text: string; heading?: number }
-	| { type: 'image'; url: string; name?: string; contentType?: string }
+export const descriptionBlockSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('text'), text: z.string(), heading: z.number().optional() }),
+	z.object({
+		type: z.literal('image'),
+		url: z.string(),
+		name: z.string().optional(),
+		contentType: z.string().optional(),
+	}),
+])
+export type DescriptionBlock = z.infer<typeof descriptionBlockSchema>
 
-export interface TaskContext {
-	title: string
-	description?: string
+/**
+ * Vigil's canonical internal representation of a task. Each provider normalizes
+ * its native data into this shape; all fields optional except title. It is a Zod
+ * schema (not just an interface) because an Item can FREEZE one as its
+ * `capturedContext` column (an ingested email etc., with no live provider to
+ * re-poll), so it must validate on the DB round-trip. Plain (non-strict) z.object:
+ * unknown keys are STRIPPED on parse, so any new field a provider sets must also
+ * be declared here or it will silently vanish on the next `captured_context` read.
+ */
+export const taskContextSchema = z.object({
+	title: z.string(),
+	description: z.string().optional(),
 	/** Ordered rich blocks (text + inline images). `description` stays the flat
 	 *  text used for the solve prompt; this is for faithful display only. */
-	descriptionBlocks?: DescriptionBlock[]
-	metadata?: Record<string, string>
-	comments?: Array<{ author: string; createdAt: string; body: string }>
-	attachments?: Array<{ name: string; url: string; contentType?: string }>
-	projectContext?: string
-}
+	descriptionBlocks: z.array(descriptionBlockSchema).optional(),
+	metadata: z.record(z.string()).optional(),
+	comments: z.array(z.object({ author: z.string(), createdAt: z.string(), body: z.string() })).optional(),
+	attachments: z.array(z.object({ name: z.string(), url: z.string(), contentType: z.string().optional() })).optional(),
+	projectContext: z.string().optional(),
+})
+export type TaskContext = z.infer<typeof taskContextSchema>
 
 /**
  * Lightweight task summary used when enqueueing a task by its external id —

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { STDERR_LOG, STDOUT_LOG, getPid, isLoaded, load, unload } from './launchd.js'
 
 const HELP = `Usage: vigil <command>
@@ -12,7 +13,31 @@ Commands:
   status   Show daemon status
   logs     Tail daemon logs (--err for stderr)
   add      Create queued Item(s)
+  ingest   File a self-contained task (email, note, …) into a project
   help     Show this help message`
+
+const INGEST_HELP = `Usage: vigil ingest --project <slug> --title <title> [options]
+
+File a self-contained task — an email, an Obsidian note, anything tied to a
+project — into Vigil. Posts to the RUNNING daemon's /api/items/ingest, so it
+works from ANY directory (no vigil.config.json needed) and any agent can use it.
+The task lands in triage with a security-aware assessment; you approve it in the
+dashboard, then it solves with its attachments available to the agent.
+
+Required:
+  --project <slug>        Vigil project slug
+  --title <title>         Short task title
+
+Options:
+  --body <text>           Task description (inline)
+  --body-file <path>      Read the description from a file (markdown/text)
+  --attach <path>         Attach a file (repeatable; max 20, 25MB total)
+  --meta <key=value>      Add a metadata line (repeatable, e.g. --meta From=a@b.com)
+  --source-label <label>  Provenance label shown as the source (default: Manual)
+  --external-id <id>      Idempotency key — re-ingesting the same id returns the
+                          existing Item instead of a duplicate
+  --source-url <url>      http(s) link back to the original
+  --url <baseUrl>         Daemon base URL (default: $VIGIL_URL or http://localhost:7474)`
 
 const ADD_HELP = `Usage: vigil add <kind> [options]
 
@@ -107,6 +132,19 @@ function optionValueAny(args: string[], names: string[]): string | undefined {
 	return undefined
 }
 
+/** Collect every value for a repeatable option (e.g. --attach a --attach b). */
+function optionValues(args: string[], name: string): string[] {
+	const out: string[] = []
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] !== name) continue
+		const value = args[i + 1]
+		if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}`)
+		out.push(value)
+		i++
+	}
+	return out
+}
+
 function requiredOption(args: string[], name: string): string {
 	const value = optionValue(args, name)
 	if (!value) throw new Error(`Missing required option: ${name}`)
@@ -195,6 +233,68 @@ async function add(): Promise<void> {
 	}
 }
 
+async function ingest(): Promise<void> {
+	const args = process.argv.slice(3)
+	if (args.includes('--help') || args.includes('-h') || args.length === 0) {
+		console.log(INGEST_HELP)
+		process.exit(args.length === 0 ? 1 : 0)
+	}
+
+	const project = requiredOption(args, '--project')
+	const title = requiredOption(args, '--title')
+	const bodyFile = optionValue(args, '--body-file')
+	const body = bodyFile ? readFileSync(bodyFile, 'utf-8') : optionValue(args, '--body')
+
+	const attachments = optionValues(args, '--attach').map(path => ({
+		name: basename(path),
+		dataBase64: readFileSync(path).toString('base64'),
+	}))
+
+	const metadata: Record<string, string> = {}
+	for (const entry of optionValues(args, '--meta')) {
+		const eq = entry.indexOf('=')
+		if (eq === -1) throw new Error(`--meta must be key=value: ${entry}`)
+		metadata[entry.slice(0, eq)] = entry.slice(eq + 1)
+	}
+
+	const source: { label: string; externalId?: string; url?: string } = {
+		label: optionValue(args, '--source-label') ?? 'Manual',
+	}
+	const externalId = optionValue(args, '--external-id')
+	if (externalId) source.externalId = externalId
+	const sourceUrl = optionValue(args, '--source-url')
+	if (sourceUrl) source.url = sourceUrl
+
+	const payload = {
+		projectSlug: project,
+		title,
+		...(body ? { body } : {}),
+		...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+		source,
+		...(attachments.length > 0 ? { attachments } : {}),
+	}
+
+	const baseUrl = (optionValue(args, '--url') ?? process.env.VIGIL_URL ?? 'http://localhost:7474').replace(/\/+$/, '')
+	let res: Response
+	try {
+		res = await fetch(`${baseUrl}/api/items/ingest`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		})
+	} catch (err) {
+		throw new Error(
+			`Could not reach the Vigil daemon at ${baseUrl} — is it running? Start it with \`vigil start\`, or set --url / $VIGIL_URL. (${err instanceof Error ? err.message : err})`,
+		)
+	}
+
+	const json = (await res.json().catch(() => ({}))) as { data?: { id: string; status: string }; error?: string }
+	if (!res.ok) throw new Error(json.error ?? `Ingest failed: HTTP ${res.status}`)
+	const item = json.data
+	console.log(`Ingested into ${project}: ${item?.id} (${item?.status})`)
+	console.log(`Review and approve it at ${baseUrl}/`)
+}
+
 const command = process.argv[2]
 
 switch (command) {
@@ -212,6 +312,12 @@ switch (command) {
 		break
 	case 'add':
 		add().catch(err => {
+			console.error(`Error: ${err instanceof Error ? err.message : err}`)
+			process.exit(1)
+		})
+		break
+	case 'ingest':
+		ingest().catch(err => {
 			console.error(`Error: ${err instanceof Error ? err.message : err}`)
 			process.exit(1)
 		})

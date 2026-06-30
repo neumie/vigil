@@ -93,5 +93,10 @@ function shouldPostItemComment(
 ): item is ItemRecord & {
 	source: NonNullable<ItemRecord['source']>
 } {
+	// A captured-context Item (ingested email etc.) is provider-LESS — its
+	// `source.externalId` (`email:<uuid>`) is not a real provider task. Never post
+	// a comment for it, even if its `source.provider` label happens to collide with
+	// the active provider name (a caller-supplied label must not re-attach it).
+	if (item.capturedContext) return false
 	return config.github.postComments && item.source !== null && item.source.provider === provider.name
 }

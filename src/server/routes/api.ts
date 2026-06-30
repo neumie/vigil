@@ -1,12 +1,27 @@
+import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
+import {
+	attachmentMimeType,
+	attachmentPath,
+	copyAttachmentsToWorktree,
+	isInlineSafeContentType,
+	isOpenableAttachment,
+	readAttachment,
+	removeItemAttachments,
+	sanitizeAttachmentName,
+	saveAttachment,
+} from '../../attachments/store.js'
 import { buildConfigDocument, parseConfigUpdate, parseConfigWithFallback } from '../../config-document.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
 import { ItemCommands } from '../../items/commands.js'
-import { buildItemTaskContext } from '../../items/context.js'
+import { buildItemTaskContext, localizeCapturedAttachments, resolveItemSourceContext } from '../../items/context.js'
 import { toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
+import type { ItemEnricher } from '../../items/enricher.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
 import { ensureItemWorkspaceName } from '../../items/naming.js'
 import { observeItemRun } from '../../items/observation.js'
@@ -47,6 +62,64 @@ function buildItemPlanReadmeBody(item: ItemRecord, branchName: string, planDirNa
 	].join('\n')
 }
 
+// Generic task ingest (e.g. an email tied to a project): a self-contained task
+// with its content captured up front (no live provider to re-poll). Attachments
+// arrive base64-encoded; capped so a single request can't blow up memory/disk.
+const MAX_INGEST_ATTACHMENT_BYTES = 25 * 1024 * 1024
+// Hard request-body cap enforced by `bodyLimit` middleware BEFORE the body is
+// buffered/parsed — the per-field/attachment caps below only run post-parse.
+// Generous enough for ~25MB of attachments after base64 (+33%) + JSON overhead.
+const MAX_INGEST_BODY_BYTES = 40 * 1024 * 1024
+
+const ingestSchema = z
+	.object({
+		projectSlug: z.string().min(1),
+		title: z.string().min(1).max(2000),
+		body: z.string().max(500_000).optional(),
+		metadata: z.record(z.string().max(10_000)).optional(),
+		source: z
+			.object({
+				label: z.string().min(1).max(200).optional(),
+				externalId: z.string().min(1).max(1000).optional(),
+				url: z.string().max(2000).optional(),
+			})
+			.strict()
+			.optional(),
+		attachments: z
+			.array(
+				z
+					.object({
+						name: z.string().min(1).max(255),
+						contentType: z.string().max(255).optional(),
+						dataBase64: z.string().min(1),
+					})
+					.strict(),
+			)
+			.max(20)
+			.optional(),
+	})
+	.strict()
+	.superRefine((val, ctx) => {
+		if (val.metadata && Object.keys(val.metadata).length > 50) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'metadata has too many entries (max 50)' })
+		}
+		const total = (val.attachments ?? []).reduce((n, a) => n + Math.floor((a.dataBase64.length * 3) / 4), 0)
+		if (total > MAX_INGEST_ATTACHMENT_BYTES) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Attachments exceed 25MB total' })
+		}
+	})
+
+/** Only http(s) urls are usable as a source link; anything else (mailto:, message:) is dropped. */
+function httpSourceUrl(url: string | undefined): string | undefined {
+	if (!url) return undefined
+	try {
+		const parsed = new URL(url)
+		return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : undefined
+	} catch {
+		return undefined
+	}
+}
+
 export function apiRoutes(
 	config: VigilConfig,
 	configPath: string,
@@ -55,6 +128,7 @@ export function apiRoutes(
 	poller: Poller,
 	provider: TaskProvider,
 	spawner: Spawner,
+	enricher: ItemEnricher,
 	createPlanningSpawner: (config: VigilConfig, name: SpawnerName) => Promise<Spawner> = createSpawner,
 ) {
 	const api = new Hono()
@@ -194,18 +268,134 @@ export function apiRoutes(
 		return c.json({ data: dashboardItem(item) }, 201)
 	})
 
+	// Ingest a self-contained task (e.g. an email tied to a project): title, body,
+	// metadata, and base64 attachments captured up front. Creates a source-backed
+	// `triage` solve Item carrying a frozen capturedContext (no live provider to
+	// re-poll) and enqueues it for AI enrichment (display name + the security-aware
+	// intent assessment — this is untrusted external content). Idempotent by
+	// source.externalId, so re-ingesting the same message returns the existing Item.
+	api.post('/items/ingest', bodyLimit({ maxSize: MAX_INGEST_BODY_BYTES }), async c => {
+		const body = await c.req.json().catch(() => null)
+		const parsed = ingestSchema.safeParse(body)
+		if (!parsed.success) {
+			return c.json({ error: 'Invalid ingest payload', details: parsed.error.flatten() }, 400)
+		}
+		const input = parsed.data
+		if (!config.projects.some(p => p.slug === input.projectSlug)) {
+			return c.json({ error: `Project '${input.projectSlug}' is not configured in vigil.config.json` }, 400)
+		}
+
+		const externalId = input.source?.externalId ?? `email:${randomUUID()}`
+		const existing = itemCommands.getItemBySourceExternalId(externalId)
+		if (existing) return c.json({ data: dashboardItem(existing) })
+
+		// Atomic: pre-generate the id, save attachments + build the frozen context,
+		// then ONE create carrying source + capturedContext together — so a failure
+		// can never leave a source-backed Item without its capturedContext (which
+		// would mis-route the solve to the live provider). On any error, the
+		// already-written attachment files are cleaned up.
+		const id = randomUUID()
+		try {
+			// Relative, same-origin URL: the dashboard renders it regardless of the
+			// host it reached the daemon on; the worker/plan route rewrite it to a
+			// worktree-local path at run time.
+			const savedAttachments = (input.attachments ?? []).map(a => {
+				const finalName = saveAttachment(id, a.name, Buffer.from(a.dataBase64, 'base64'))
+				return {
+					name: a.name,
+					url: `/api/items/${id}/attachments/${finalName}`,
+					...(a.contentType ? { contentType: a.contentType } : {}),
+				}
+			})
+
+			const trimmedBody = input.body?.trim() ?? ''
+			const hasBody = trimmedBody.length > 0
+			const capturedContext: TaskContext = {
+				title: input.title,
+				...(hasBody ? { description: input.body } : {}),
+				...(input.metadata && Object.keys(input.metadata).length > 0 ? { metadata: input.metadata } : {}),
+				...(savedAttachments.length > 0 ? { attachments: savedAttachments } : {}),
+			}
+
+			const item = itemCommands.createSolveItem({
+				id,
+				projectSlug: input.projectSlug,
+				title: input.title,
+				prompt: hasBody ? trimmedBody : input.title,
+				source: {
+					provider: input.source?.label ?? 'Email',
+					externalId,
+					...(httpSourceUrl(input.source?.url) ? { url: httpSourceUrl(input.source?.url) } : {}),
+				},
+				capturedContext,
+			})
+			enricher.enqueue([item])
+			return c.json({ data: dashboardItem(item) }, 201)
+		} catch (err) {
+			removeItemAttachments(id)
+			const msg = err instanceof Error ? err.message : String(err)
+			log.error('api', `Ingest failed for ${externalId}: ${msg}`)
+			return c.json({ error: `Ingest failed: ${msg}` }, 500)
+		}
+	})
+
+	// Serve an ingested-task attachment's bytes (dashboard <img src>, links).
+	// Hardened against stored XSS: ingested content is untrusted, so the served
+	// Content-Type is derived server-side from the filename extension ONLY (never
+	// the caller-declared type — an attacker can't smuggle text/html or
+	// image/svg+xml), unknown types fall back to octet-stream, `nosniff` blocks
+	// MIME-sniffing, non-image/pdf types are forced to download, and a sandbox CSP
+	// neutralizes script even if a browser renders the response directly.
+	api.get('/items/:id/attachments/:name', c => {
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+		const name = c.req.param('name')
+		const bytes = readAttachment(item.id, name)
+		if (!bytes) return c.json({ error: 'Attachment not found' }, 404)
+		const contentType = attachmentMimeType(name)
+		const disposition = isInlineSafeContentType(contentType) ? 'inline' : 'attachment'
+		return c.body(new Uint8Array(bytes), 200, {
+			'Content-Type': contentType,
+			'Content-Disposition': `${disposition}; filename="${sanitizeAttachmentName(name)}"`,
+			'X-Content-Type-Options': 'nosniff',
+			'Content-Security-Policy': "default-src 'none'; sandbox",
+			'Cache-Control': 'private, max-age=300',
+		})
+	})
+
+	// Open an ingested attachment in the host's native app (the daemon is local, so
+	// "open" = open on the user's machine). Lets the dashboard preview an .xlsx etc.
+	// in Excel/Numbers instead of downloading. Gated to a document/media extension
+	// allowlist so a crafted attachment can't be turned into code execution, and the
+	// path is resolved under the Item's attachment dir (sanitized name → no traversal).
+	api.post('/items/:id/attachments/:name/open', c => {
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+		const name = c.req.param('name')
+		if (!isOpenableAttachment(name)) return c.json({ error: 'This attachment type cannot be opened' }, 400)
+		const path = attachmentPath(item.id, name)
+		if (!path) return c.json({ error: 'Attachment not found' }, 404)
+		const opener = process.platform === 'darwin' ? 'open' : process.platform === 'linux' ? 'xdg-open' : null
+		if (!opener) return c.json({ error: 'Opening attachments is only supported on macOS and Linux' }, 501)
+		// execFile (no shell) with a resolved, allowlisted path — fire-and-forget; the
+		// opener detaches. A spawn error is logged, not surfaced (the app launches async).
+		execFile(opener, [path], err => {
+			if (err) log.warn('api', `Failed to open attachment ${name}: ${err.message}`)
+		})
+		return c.json({ data: { opened: true } })
+	})
+
 	api.get('/items/:id', async c => {
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
-		// Surface the live source-task content in the detail view. Best-effort:
-		// a provider fetch failure degrades to no task body, never a 500.
+		// Surface the source-task content in the detail view: the frozen captured
+		// context (ingested email) wins, else a live provider fetch. Best-effort:
+		// a provider failure degrades to no task body, never a 500.
 		let sourceTask: TaskContext | null = null
-		if (item.source) {
-			try {
-				sourceTask = await provider.getTaskContext(item.source.externalId)
-			} catch (err) {
-				log.warn('api', `Failed to load source task for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
-			}
+		try {
+			sourceTask = await resolveItemSourceContext(item, provider)
+		} catch (err) {
+			log.warn('api', `Failed to load source task for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
 		}
 		return c.json({ data: { ...dashboardItem(item), sourceTask } })
 	})
@@ -438,16 +628,21 @@ export function apiRoutes(
 		if (!projectConfig) return c.json({ error: `Unknown project slug: ${item.projectSlug}` }, 400)
 
 		let sourceContext: TaskContext | null = null
-		if (item.payload.kind === 'solve' && item.source) {
+		if (item.payload.kind === 'solve' && (item.capturedContext || item.source)) {
 			try {
-				sourceContext = await provider.getTaskContext(item.source.externalId)
+				sourceContext = await resolveItemSourceContext(item, provider)
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
 				return c.json({ error: `Item source context failed to load: ${msg}` }, 502)
 			}
 			if (!sourceContext) return c.json({ error: 'Item source not found in source system' }, 502)
 		}
-		const taskContext = buildItemTaskContext(item, sourceContext)
+		// For a captured (email) Item, rewrite attachment URLs to worktree-local
+		// paths so the planning agent's context.md points at the local copies (placed
+		// below after the worktree exists) — symmetric with the solve path.
+		const taskContext = item.capturedContext
+			? localizeCapturedAttachments(buildItemTaskContext(item, sourceContext))
+			: buildItemTaskContext(item, sourceContext)
 
 		// Derive a conventional branch name before resolving identity, so planning
 		// writes its worktree under the AI-chosen name (no-op unless enabled). Wire
@@ -499,6 +694,11 @@ export function apiRoutes(
 			const msg = err instanceof Error ? err.message : String(err)
 			return c.json({ error: `Planning session failed to start: ${msg}` }, 500)
 		}
+
+		// Drop ingested attachments into the planning worktree (gitignored
+		// .vigil-attachments/) so the planning agent can open the local files the
+		// localized context.md references. No-op for provider-backed Items.
+		if (item.capturedContext) copyAttachmentsToWorktree(item.id, worktreePath)
 
 		const workspace = new PlanWorkspace(worktreePath, planDirName)
 		workspace.writeReadme(buildItemPlanReadmeBody(item, branchName, planDirName))

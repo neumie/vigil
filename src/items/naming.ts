@@ -57,6 +57,18 @@ export function buildDisplayNamePrompt(title: string, instructions: string = DEF
 }
 
 /**
+ * True when a display name SHOULD exist but doesn't — i.e. `ensureItemDisplayName`
+ * would attempt the model call but it hasn't landed. Mirrors the skip gates so a
+ * deliberately-skipped short title is NOT treated as "missing" (it never wanted a
+ * name). The enricher uses this to decide whether an enrichment genuinely failed
+ * and is worth retrying.
+ */
+export function itemWantsDisplayName(item: ItemRecord, config: VigilConfig): boolean {
+	const feature = config.solver.displayName
+	return feature.enabled && !item.displayName && item.title.length > MIN_TITLE_LEN_TO_NAME
+}
+
+/**
  * Pull a clean short title out of raw model stdout. The answer is the last
  * non-empty line (agent preamble/log noise precedes it); strip wrapping
  * quotes/backticks, a leading bullet or `Title:` label, collapse whitespace,

@@ -12,7 +12,7 @@ import type {
 	RunObservationState,
 	SourceTask,
 } from '../api'
-import { ITEM_STATUSES } from '../api'
+import { ITEM_STATUSES, api } from '../api'
 import type { Assessment } from '../api'
 import { useRelativeTime } from '../hooks'
 import { TONE_COLOR, TONE_DIM, VERDICT_META } from '../verdict'
@@ -630,8 +630,12 @@ const NON_IMAGE_EXT = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|csv|txt|mp[34]|mov|we
 
 function safeHttpUrl(url: string): string | null {
 	try {
-		const u = new URL(url)
-		return u.protocol === 'https:' || u.protocol === 'http:' ? url : null
+		// Resolve against the dashboard origin so same-origin RELATIVE urls work —
+		// ingested-attachment paths are stored relative ("/api/items/<id>/attachments/<name>").
+		// Absolute provider urls (https://…) ignore the base. Returns the resolved
+		// absolute href; still rejects javascript:/data: etc.
+		const u = new URL(url, window.location.origin)
+		return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
 	} catch {
 		return null
 	}
@@ -647,13 +651,23 @@ function maybeImage(att: { name: string; url: string; contentType?: string }): b
 	return true
 }
 
-/** An image renders as an inline thumbnail (click to open full); a non-image —
- *  or an image that fails to load — renders as a labeled link. URL is
- *  http(s)-guarded against javascript:/data:. */
+/** An image renders as an inline thumbnail (click to open full). A non-image
+ *  ingested (local) attachment opens in the host's NATIVE app (the daemon is
+ *  local) — e.g. an .xlsx in Excel/Numbers — with a small download fallback; a
+ *  remote (provider) one stays a plain link. URL is http(s)-guarded. */
 function Attachment({ att }: { att: { name: string; url: string; contentType?: string } }) {
 	const [notImage, setNotImage] = useState(false)
+	const [openErr, setOpenErr] = useState<string | null>(null)
 	const href = safeHttpUrl(att.url)
 	if (!href) return null
+	// Ingested attachments are served by this (local) daemon at a relative /api
+	// path → it can open them in a native app. Remote provider urls cannot.
+	const isLocal = att.url.startsWith('/')
+	const openNative = () => {
+		setOpenErr(null)
+		api.openAttachment(att.url).catch(e => setOpenErr(e instanceof Error ? e.message : 'Could not open'))
+	}
+
 	if (maybeImage(att) && !notImage) {
 		return (
 			<a href={href} target="_blank" rel="noreferrer" title={att.name}>
@@ -674,22 +688,42 @@ function Attachment({ att }: { att: { name: string; url: string; contentType?: s
 			</a>
 		)
 	}
+
+	const chipStyle = {
+		fontSize: 12,
+		color: 'var(--accent)',
+		textDecoration: 'none',
+		border: '1px solid var(--border)',
+		borderRadius: 'var(--radius-sm)',
+		padding: '6px 10px',
+		background: 'transparent',
+		cursor: 'pointer',
+		fontFamily: 'inherit',
+	} as const
+
 	return (
-		<a
-			href={href}
-			target="_blank"
-			rel="noreferrer"
-			style={{
-				fontSize: 12,
-				color: 'var(--accent)',
-				textDecoration: 'none',
-				border: '1px solid var(--border)',
-				borderRadius: 'var(--radius-sm)',
-				padding: '6px 10px',
-			}}
-		>
-			📎 {att.name}
-		</a>
+		<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+			{isLocal ? (
+				<button type="button" onClick={openNative} title="Open on this Mac" style={chipStyle}>
+					📎 {att.name}
+				</button>
+			) : (
+				<a href={href} target="_blank" rel="noreferrer" style={chipStyle}>
+					📎 {att.name}
+				</a>
+			)}
+			{isLocal && (
+				<a
+					href={href}
+					download={att.name}
+					title="Download"
+					style={{ fontSize: 13, color: 'var(--text-3)', textDecoration: 'none' }}
+				>
+					↓
+				</a>
+			)}
+			{openErr && <span style={{ fontSize: 11, color: 'var(--red)' }}>{openErr}</span>}
+		</span>
 	)
 }
 

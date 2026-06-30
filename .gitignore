@@ -12,5 +12,6 @@ vigil.config.json
 .superpowers/
 docs/superpowers/
 logs/
+attachments/
 .almanac/
 docs/plans/*/*.log

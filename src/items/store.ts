@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
+import type { TaskContext } from '../providers/provider.js'
 import { itemRecordSchema } from './schema.js'
 import type { Assessment, DeployState, ItemKind, ItemPayload, ItemRecord, ItemSource, ItemStatus } from './schema.js'
 
@@ -10,6 +11,7 @@ export interface CreateItemInput {
 	projectSlug: string
 	title: string
 	source?: ItemSource | null
+	capturedContext?: TaskContext | null
 	baseRef: string
 	spawner?: string | null
 	groupId?: string | null
@@ -97,6 +99,7 @@ export class ItemStore {
 			displayName: null,
 			assessment: null,
 			source: input.source ?? null,
+			capturedContext: input.capturedContext ?? null,
 			baseRef: input.baseRef,
 			spawner: input.spawner ?? null,
 			groupId: input.groupId ?? null,
@@ -122,12 +125,12 @@ export class ItemStore {
 		this.db
 			.prepare(
 				`INSERT INTO items (
-					id, kind, status, project_slug, title, display_name, assessment, source, base_ref, spawner, group_id, payload,
+					id, kind, status, project_slug, title, display_name, assessment, source, captured_context, base_ref, spawner, group_id, payload,
 					worktree_path, branch_name, plan_dir_name, almanac_run_id,
 					created_at, queued_at, started_at, completed_at, updated_at,
 					error_message, error_phase, result_summary, solve_input_snapshot, pr_url, run_outcome, deploy_state
 				) VALUES (
-					@id, @kind, @status, @projectSlug, @title, @displayName, @assessment, @source, @baseRef, @spawner, @groupId, @payload,
+					@id, @kind, @status, @projectSlug, @title, @displayName, @assessment, @source, @capturedContext, @baseRef, @spawner, @groupId, @payload,
 					@worktreePath, @branchName, @planDirName, @almanacRunId,
 					@createdAt, @queuedAt, @startedAt, @completedAt, @updatedAt,
 					@errorMessage, @errorPhase, @resultSummary, @solveInputSnapshot, @prUrl, @runOutcome, @deployState
@@ -375,6 +378,7 @@ export class ItemStore {
 			displayName: item.displayName,
 			assessment: item.assessment ? JSON.stringify(item.assessment) : null,
 			source: item.source ? JSON.stringify(item.source) : null,
+			capturedContext: item.capturedContext ? JSON.stringify(item.capturedContext) : null,
 			baseRef: item.baseRef,
 			spawner: item.spawner,
 			groupId: item.groupId,
@@ -408,6 +412,7 @@ export class ItemStore {
 			displayName: row.display_name ?? null,
 			assessment: readJson(row.assessment, 'assessment'),
 			source: readJson(row.source, 'source'),
+			capturedContext: readJson(row.captured_context, 'capturedContext'),
 			baseRef: row.base_ref,
 			spawner: row.spawner ?? null,
 			groupId: row.group_id ?? null,

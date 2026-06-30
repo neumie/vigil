@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AssessmentVerdict, DaemonStatus, DashboardActionId, DashboardItem } from '../api'
+import type { AssessmentVerdict, DaemonStatus, DashboardItem } from '../api'
 import { useRelativeTime } from '../hooks'
 import { TONE_COLOR, TONE_DIM, VERDICT_META } from '../verdict'
 import { Select } from './Select'
@@ -11,7 +11,6 @@ interface Props {
 	status: DaemonStatus | null
 	selectedItemId: string | null
 	onSelectItem: (id: string | null) => void
-	onItemAction: (id: string, action: DashboardActionId) => void
 	projects: string[]
 	selectedProject: string | null
 	onProjectChange: (slug: string | null) => void
@@ -83,7 +82,6 @@ export function TaskList({
 	items,
 	selectedItemId,
 	onSelectItem,
-	onItemAction,
 	projects,
 	selectedProject,
 	onProjectChange,
@@ -155,7 +153,6 @@ export function TaskList({
 							item={item}
 							selected={item.id === selectedItemId}
 							onClick={() => onSelectItem(item.id)}
-							onAction={onItemAction}
 							projectColor={projectColors[item.projectSlug]}
 						/>
 					))
@@ -303,13 +300,11 @@ function ItemRow({
 	item,
 	selected,
 	onClick,
-	onAction,
 	projectColor,
 }: {
 	item: DashboardItem
 	selected: boolean
 	onClick: () => void
-	onAction: (id: string, action: DashboardActionId) => void
 	projectColor?: string
 }) {
 	const age = useRelativeTime(rowTimestamp(item))
@@ -324,7 +319,6 @@ function ItemRow({
 				: null
 	const deploy = deploySummary(item)
 	const hasLinks = Boolean(deploy || item.links.pr?.url || item.links.source?.url)
-	const hasFooter = item.allowedActions.length > 0 || hasLinks
 
 	return (
 		<div
@@ -391,6 +385,7 @@ function ItemRow({
 				>
 					{item.card.statusLabel}
 				</span>
+				{item.card.pulse && <span className="vg-spin" aria-hidden="true" />}
 				{item.assessment && <VerdictChip verdict={item.assessment.verdict} />}
 				{item.group && (
 					<span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-4)' }}>{item.group.label}</span>
@@ -429,51 +424,23 @@ function ItemRow({
 				</div>
 			)}
 
-			{/* Footer: actions bottom-left, deploy/PR/source bottom-right */}
-			{hasFooter && (
+			{/* Footer: deploy/PR/source links only — actions live in the detail pane,
+			    the sidebar is pure navigation. */}
+			{hasLinks && (
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-					<span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-						{item.allowedActions.map(action => (
-							<button
-								key={action.id}
-								type="button"
-								onClick={e => {
-									e.stopPropagation()
-									onAction(item.id, action.id)
-								}}
-								style={{
-									fontSize: 11,
-									fontWeight: 600,
-									padding: '3px 10px',
-									borderRadius: 'var(--radius-sm)',
-									border: `1px solid ${action.tone === 'primary' ? 'transparent' : 'var(--border)'}`,
-									cursor: 'pointer',
-									background: action.tone === 'primary' ? 'var(--accent-dim)' : 'transparent',
-									color:
-										action.tone === 'danger'
-											? 'var(--red)'
-											: action.tone === 'primary'
-												? 'var(--accent)'
-												: 'var(--text-3)',
-								}}
-							>
-								{action.label}
-							</button>
-						))}
+					<span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+						{deploy && (
+							<span style={{ fontSize: 10, fontWeight: 700, color: deploy.tone, whiteSpace: 'nowrap' }}>
+								{deploy.label}
+							</span>
+						)}
+						{item.links.pr?.url && <RowLink href={item.links.pr.url} label="PR ↗" tone="var(--green)" />}
+						{item.links.source?.url && <RowLink href={item.links.source.url} label="source ↗" tone="var(--text-3)" />}
 					</span>
-					{hasLinks && (
-						<span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-							{deploy && (
-								<span style={{ fontSize: 10, fontWeight: 700, color: deploy.tone, whiteSpace: 'nowrap' }}>
-									{deploy.label}
-								</span>
-							)}
-							{item.links.pr?.url && <RowLink href={item.links.pr.url} label="PR ↗" tone="var(--green)" />}
-							{item.links.source?.url && <RowLink href={item.links.source.url} label="source ↗" tone="var(--text-3)" />}
-						</span>
-					)}
 				</div>
 			)}
+			{/* Indeterminate "AI working" bar while the agent is running. */}
+			{item.card.pulse && <div className="vg-progress" style={{ marginTop: 4 }} aria-hidden="true" />}
 		</div>
 	)
 }

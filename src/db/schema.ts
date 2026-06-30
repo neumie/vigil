@@ -251,4 +251,17 @@ UPDATE items SET status = 'done'      WHERE status = 'completed';
 UPDATE items SET status = 'cancelled' WHERE status = 'skipped';
 `,
 	},
+	{
+		// captured_context (JSON) freezes a TaskContext onto an Item that has no
+		// live, re-pollable provider — an ingested email (subject → title, body →
+		// description, sender/date → metadata, files → attachments served from the
+		// daemon's attachments/ dir). It is resolved IN PLACE OF
+		// provider.getTaskContext for these Items (worker, detail/plan routes,
+		// enricher), so a non-provider source ('Email') never round-trips Contember.
+		// Null for provider-polled Items, which always re-fetch live context.
+		version: 18,
+		sql: `
+ALTER TABLE items ADD COLUMN captured_context TEXT;
+`,
+	},
 ]

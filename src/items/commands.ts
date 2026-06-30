@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { VigilConfig } from '../config.js'
+import { taskContextSchema } from '../providers/provider.js'
 import { solverAgentSchema } from '../solver/agent.js'
 import type { SolverAgent } from '../solver/agent.js'
 import type { ErrorPhase } from '../types.js'
@@ -13,6 +14,10 @@ type CreateItemInitialStatus = z.infer<typeof createItemInitialStatusSchema>
 
 const createSolveItemInputSchema = z
 	.object({
+		// Caller-supplied id: used by ingest so the Item row, its on-disk attachment
+		// dir, and the frozen capturedContext are written in ONE atomic create (no
+		// zombie window). Only valid with parallelism 1 (a shared id can't fan out).
+		id: z.string().min(1).optional(),
 		title: z.string().min(1),
 		projectSlug: z.string().min(1),
 		prompt: z.string().min(1),
@@ -22,6 +27,8 @@ const createSolveItemInputSchema = z
 		solverAgent: solverAgentSchema.optional(),
 		initialStatus: createItemInitialStatusSchema.optional(),
 		source: itemSourceSchema.nullable().optional(),
+		// Frozen task content for a provider-less Item (ingested email etc.).
+		capturedContext: taskContextSchema.nullable().optional(),
 	})
 	.strict()
 
@@ -163,14 +170,17 @@ export class ItemCommands {
 		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
 
 		const count = parsed.data.parallelism ?? 1
+		if (parsed.data.id && count > 1) throw new Error('A caller-supplied id is incompatible with parallelism > 1')
 		const groupId = count > 1 ? randomUUID() : null
 		return Array.from({ length: count }, () =>
 			this.store.create({
+				...(parsed.data.id ? { id: parsed.data.id } : {}),
 				kind: 'solve',
 				status: initialStatus(parsed.data),
 				projectSlug: parsed.data.projectSlug,
 				title: parsed.data.title,
 				source: parsed.data.source ?? null,
+				capturedContext: parsed.data.capturedContext ?? null,
 				baseRef,
 				spawner: parsed.data.spawner ?? null,
 				groupId,

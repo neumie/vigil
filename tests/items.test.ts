@@ -43,6 +43,10 @@ import type { SolverResult as SolverResultFile } from '../src/types.js'
 import { phaseError, taskCancelled } from '../src/util/errors.js'
 import { createWorktree } from '../src/worktree/manager.js'
 
+// apiRoutes takes an ItemEnricher (used only by the ingest route); these route
+// tests don't ingest, so a no-op enqueue stub is enough.
+const fakeEnricher = { enqueue() {} }
+
 function withTempDb(fn: (db: DB) => Promise<void> | void) {
 	const dir = mkdtempSync(join(tmpdir(), 'vigil-items-'))
 	const db = new DB(join(dir, 'vigil.db'))
@@ -415,7 +419,16 @@ test('config routes use Config Document and preserve redacted secrets while reje
 			),
 			'utf-8',
 		)
-		const api = apiRoutes(config, configPath, db, queue as never, poller as never, provider as never, spawner as never)
+		const api = apiRoutes(
+			config,
+			configPath,
+			db,
+			queue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+		)
 
 		const safeRes = await api.request('/config')
 		assert.equal(safeRes.status, 200)
@@ -1047,6 +1060,7 @@ test('server creates queued ralph Items with PRD path and almanac flags', async 
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1097,6 +1111,7 @@ test('server creates parallel solve Items through dashboard contract', async () 
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1157,6 +1172,7 @@ test('server creates plan-intent Items without enqueueing execution', async () =
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1207,6 +1223,7 @@ test('server Item list expands grouped siblings across pagination windows', asyn
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items?limit=1')
@@ -1246,6 +1263,7 @@ test('server creates a new Item forked from an existing Item branch', async () =
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1316,6 +1334,7 @@ test('server creates queued harden Items with target and almanac flags', async (
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1356,6 +1375,7 @@ test('server creates parallel loop Items with shared GroupId', async () => {
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const ralphRes = await api.request('/items', {
@@ -2302,6 +2322,7 @@ test('server returns unknown and empty Run Observation fields when sources are m
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request(`/items/${item.id}`)
@@ -2445,6 +2466,56 @@ test('dispatchSolveItem opens fallback PRs and posts provider comments only for 
 	})
 })
 
+test('dispatchSolveItem never posts a provider comment for a captured (email) Item, even when source.provider matches', async () => {
+	await withTempDb(async db => {
+		const prConfig = { ...config, github: { ...config.github, createPrs: true, postComments: true } }
+		const commands = new ItemCommands(db.items, prConfig)
+		// A captured Item whose source.provider is spoofed to equal the active
+		// provider name — the capturedContext guard must still suppress the comment.
+		const captured = commands.createSolveItem({
+			title: 'Ingested email',
+			projectSlug: 'vigil',
+			prompt: 'Fix the thing from the email.',
+			source: { provider: 'contember', externalId: 'email:abc' },
+			capturedContext: { title: 'Ingested email' },
+		})
+		commands.approveItem(captured.id)
+		commands.startItem(captured.id)
+		commands.completeSolveItem(captured.id, {
+			worktreePath: '/tmp/vigil-captured',
+			branchName: 'vigil/item/captured',
+			planDirName: 'captured-plan',
+			resultSummary: 'done',
+		})
+		const comments: Array<{ externalId: string }> = []
+		const commentProvider = {
+			...provider,
+			name: 'contember',
+			postComment: async (externalId: string) => {
+				comments.push({ externalId })
+				return 'comment-1'
+			},
+		}
+		await dispatchSolveItem({
+			itemId: captured.id,
+			result: { summary: 'done', filesChanged: [], prTitle: 'PR', prBody: 'body' },
+			config: prConfig,
+			commands,
+			provider: commentProvider,
+			sideEffects: {
+				pushBranch: () => undefined,
+				createPr: () => 'https://github.com/neumie/vigil/pull/9',
+			},
+		})
+
+		assert.deepEqual(comments, []) // provider-less Item → no comment
+		assert.equal(
+			db.items.getEvents(captured.id).some(e => e.eventType === 'comment_posted'),
+			false,
+		)
+	})
+})
+
 test('ItemStore validates payload kind and shape at the persistence seam', async () => {
 	await withTempDb(db => {
 		const store = db.items
@@ -2513,6 +2584,7 @@ test('server exposes created Items through the dashboard contract', async () => 
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const createRes = await api.request('/items', {
@@ -2570,6 +2642,7 @@ test('server rejects Item creation with an unavailable Spawner adapter', async (
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -2613,6 +2686,7 @@ test('server plans Items through Spawner and records reusable Item workspace ide
 			poller as never,
 			provider as never,
 			planningSpawner,
+			fakeEnricher as never,
 		)
 
 		try {
@@ -2698,6 +2772,7 @@ test('server plans source-backed solve Items with provider task context', async 
 			poller as never,
 			sourceProvider as never,
 			planningSpawner,
+			fakeEnricher as never,
 		)
 
 		try {
@@ -2744,6 +2819,7 @@ test('server rejects planning for processing Items before mutating workspace ide
 			poller as never,
 			provider as never,
 			planningSpawner,
+			fakeEnricher as never,
 		)
 
 		try {
@@ -2787,6 +2863,7 @@ test('server plans Items with the per-Item selected Spawner', async () => {
 			poller as never,
 			provider as never,
 			defaultSpawner,
+			fakeEnricher as never,
 			async (_config, name) => {
 				assert.equal(name, 'okena')
 				return selectedSpawner
@@ -2917,6 +2994,7 @@ test('server planning route accepts loop Item kinds through the same Spawner sea
 			poller as never,
 			provider as never,
 			planningSpawner,
+			fakeEnricher as never,
 		)
 
 		try {
@@ -3306,6 +3384,7 @@ test('server single Item reads include sibling group dashboard metadata', async 
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request(`/items/${siblings[1].id}`)
@@ -3332,6 +3411,7 @@ test('server can find an Item dashboard contract by Source external id', async (
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 		db.items.create({
 			kind: 'solve',
@@ -3424,6 +3504,7 @@ test('server creates source-backed unverified Items from external ids', async ()
 			poller as never,
 			sourceProvider,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items/source', {
@@ -3471,6 +3552,7 @@ test('server rejects solverAgent on source Item creation', async () => {
 			poller as never,
 			sourceProvider,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const res = await api.request('/items/source', {
@@ -3543,6 +3625,7 @@ test('server approves and rejects Items through dashboard contract routes', asyn
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 		const approveTarget = db.items.create({
 			kind: 'solve',
@@ -3623,6 +3706,7 @@ test('server start and cancel Item action routes return dashboard contract', asy
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 
 		const startRes = await api.request(`/items/${startTarget.id}/start`, { method: 'POST' })
@@ -3699,6 +3783,7 @@ test('server Item work-start routes persist selected solve agent before queue ha
 			poller as never,
 			provider as never,
 			spawner as never,
+			fakeEnricher as never,
 		)
 		const postCodex = {
 			method: 'POST',

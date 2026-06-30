@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { dispatchSolveItem } from '../actions/dispatcher.js'
+import { copyAttachmentsToWorktree } from '../attachments/store.js'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import { ItemCommands } from '../items/commands.js'
-import { buildItemTaskContext } from '../items/context.js'
+import { buildItemTaskContext, localizeCapturedAttachments } from '../items/context.js'
 import { resolveItemWorkspace } from '../items/identity.js'
 import { ensureItemWorkspaceName } from '../items/naming.js'
 import type { ItemRecord } from '../items/schema.js'
@@ -114,6 +115,12 @@ async function buildSolveItemTaskContext(item: ItemRecord, provider: TaskProvide
 		throw phaseError('solve', `Item ${item.id} is ${item.kind}, not solve`)
 	}
 
+	// Frozen captured context (ingested email etc.) wins — its attachments are
+	// worktree-local files, not remote URLs.
+	if (item.capturedContext) {
+		return localizeCapturedAttachments(buildItemTaskContext(item, item.capturedContext))
+	}
+
 	if (item.source) {
 		const sourceContext = await provider.getTaskContext(item.source.externalId)
 		if (!sourceContext) {
@@ -177,6 +184,9 @@ export async function processSolveItem(
 			outputLogPath,
 			existingWorktreePath,
 			onWorktreeReady: worktreePath => {
+				// Drop ingested-task attachments into the (gitignored) worktree so the
+				// agent can open them as local files. No-op for provider-backed Items.
+				if (item.capturedContext) copyAttachmentsToWorktree(item.id, worktreePath)
 				commands.recordExecutionWorkspaceIdentity(itemId, { worktreePath, branchName, planDirName })
 			},
 			onPromptSnapshot: prompt => {

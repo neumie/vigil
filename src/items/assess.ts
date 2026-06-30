@@ -67,6 +67,16 @@ export function parseAssessment(raw: string): Omit<Assessment, 'assessedAt'> | n
 	return result.success ? result.data : null
 }
 
+/**
+ * True when an assessment SHOULD exist but doesn't — i.e. triage is enabled and
+ * the Item is unassessed (`ensureItemAssessment` would attempt the model call).
+ * The enricher uses this to decide whether the assessment genuinely failed (a
+ * timeout/parse miss) and is worth retrying.
+ */
+export function itemWantsAssessment(item: ItemRecord, config: VigilConfig): boolean {
+	return config.solver.triage.enabled && !item.assessment
+}
+
 export interface EnsureItemAssessmentDeps {
 	runOneShot?: (opts: OneShotOptions) => Promise<string | null>
 	now?: () => string
