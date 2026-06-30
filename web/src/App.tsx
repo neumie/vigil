@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+	type AiPass,
 	type AppConfig,
 	type DaemonStatus,
 	type DashboardActionId,
@@ -127,6 +128,18 @@ export function App() {
 		return info
 	}
 
+	const handleAiPass = async (id: string, pass: AiPass) => {
+		try {
+			const updated = await api.runAiPass(id, pass)
+			if (updated) applyUpdated(updated) // instant feedback; poll/detail reconcile
+		} catch (err) {
+			console.error('AI pass failed:', err)
+			throw err // surfaced by ItemDetail
+		}
+		refresh()
+		loadDetail(id)
+	}
+
 	const handleCreatedItem = async (created: DashboardItem | DashboardItem[]) => {
 		const first = Array.isArray(created) ? created[0] : created
 		setCreateDraft(null)
@@ -194,6 +207,7 @@ export function App() {
 							onAction={handleItemAction}
 							onSetStatus={handleSetStatus}
 							onPlan={handlePlanItem}
+							onAiPass={handleAiPass}
 							onFork={item => {
 								setCreateDraft({ forkFrom: item })
 								selectItem(null)

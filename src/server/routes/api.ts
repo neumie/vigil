@@ -18,12 +18,13 @@ import {
 import { buildConfigDocument, parseConfigUpdate, parseConfigWithFallback } from '../../config-document.js'
 import type { VigilConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
+import { ensureItemAssessment } from '../../items/assess.js'
 import { ItemCommands } from '../../items/commands.js'
 import { buildItemTaskContext, localizeCapturedAttachments, resolveItemSourceContext } from '../../items/context.js'
 import { toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
 import type { ItemEnricher } from '../../items/enricher.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
-import { ensureItemWorkspaceName } from '../../items/naming.js'
+import { ensureItemDisplayName, ensureItemWorkspaceName } from '../../items/naming.js'
 import { observeItemRun } from '../../items/observation.js'
 import { itemStatusSchema } from '../../items/schema.js'
 import type { ItemRecord } from '../../items/schema.js'
@@ -33,6 +34,7 @@ import type { TaskContext, TaskProvider } from '../../providers/provider.js'
 import type { Drainer } from '../../queue/drainer.js'
 import { solverAgentSchema } from '../../solver/agent.js'
 import type { SolverAgent } from '../../solver/agent.js'
+import type { OneShotOptions } from '../../solver/one-shot.js'
 import { createSpawner, listSpawnerAdapters, spawnerNameSchema } from '../../spawner/registry.js'
 import type { SpawnerName } from '../../spawner/registry.js'
 import type { Spawner } from '../../spawner/spawner.js'
@@ -130,9 +132,13 @@ export function apiRoutes(
 	spawner: Spawner,
 	enricher: ItemEnricher,
 	createPlanningSpawner: (config: VigilConfig, name: SpawnerName) => Promise<Spawner> = createSpawner,
+	// Injected only by tests so the manual AI-pass route can run without a real
+	// model; production leaves it undefined and the passes use the real one-shot.
+	aiOneShot?: (opts: OneShotOptions) => Promise<string | null>,
 ) {
 	const api = new Hono()
 	const itemCommands = new ItemCommands(db.items, config)
+	const aiDeps = aiOneShot ? { runOneShot: aiOneShot } : undefined
 	const dashboardItem = (item: ItemRecord) =>
 		toDashboardItemWithSiblings(
 			item,
@@ -720,6 +726,89 @@ export function apiRoutes(
 				hint,
 			},
 		})
+	})
+
+	// Manual AI passes — (re)run the cheap agent helpers on demand from the item
+	// detail instead of waiting for the automatic enricher / pre-solve pass. Each
+	// FORCES a fresh run (bypasses the "skip if already set" gates) and surfaces
+	// failures as an error. `display-name` needs only the title; `branch-name`
+	// (solve Items only, before a worktree exists) and `assess` resolve the task
+	// context (captured/provider) first. The request abort signal is wired so a
+	// client that gives up kills the one-shot model call.
+	api.post('/items/:id/ai/:pass', async c => {
+		const pass = c.req.param('pass')
+		if (pass !== 'display-name' && pass !== 'branch-name' && pass !== 'assess') {
+			return c.json({ error: `Unknown AI pass: ${pass}. Expected display-name, branch-name, or assess.` }, 400)
+		}
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+
+		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
+		if (solverAgent === null) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
+		const agent = solverAgent ?? config.solver.agent
+		const signal = c.req.raw.signal
+
+		// branch-name has structural guards: solve-only, not running, and only before
+		// a worktree exists — renaming the branch afterward would orphan the worktree.
+		if (pass === 'branch-name') {
+			if (item.kind !== 'solve') return c.json({ error: 'Branch naming applies to solve Items only' }, 400)
+			if (item.status === 'running') return c.json({ error: 'Cannot rename a running Item' }, 400)
+			if (item.worktreePath) {
+				return c.json({ error: 'Cannot rename the branch once a worktree exists — re-plan instead' }, 400)
+			}
+		}
+
+		const buildContext = async (): Promise<TaskContext> => {
+			const sourceContext = item.capturedContext || item.source ? await resolveItemSourceContext(item, provider) : null
+			return buildItemTaskContext(item, sourceContext)
+		}
+
+		try {
+			let updated: ItemRecord
+			if (pass === 'display-name') {
+				updated = await ensureItemDisplayName({
+					commands: itemCommands,
+					item,
+					config,
+					agent,
+					signal,
+					deps: aiDeps,
+					force: true,
+				})
+			} else if (pass === 'branch-name') {
+				const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
+				if (!projectConfig) return c.json({ error: `Unknown project slug: ${item.projectSlug}` }, 400)
+				updated = await ensureItemWorkspaceName({
+					commands: itemCommands,
+					item,
+					taskContext: await buildContext(),
+					config,
+					repoPath: projectConfig.repoPath,
+					agent,
+					signal,
+					deps: aiDeps,
+					force: true,
+				})
+			} else {
+				updated = await ensureItemAssessment({
+					commands: itemCommands,
+					item,
+					taskContext: await buildContext(),
+					config,
+					agent,
+					signal,
+					deps: aiDeps,
+					force: true,
+				})
+			}
+			return c.json({ data: dashboardItem(updated) })
+		} catch (err) {
+			if (isCancellation(err, signal)) return c.json({ error: 'Request aborted' }, 503)
+			const msg = err instanceof Error ? err.message : String(err)
+			return c.json({ error: `${pass} failed: ${msg}` }, 500)
+		}
 	})
 
 	// Config Document owns dashboard-safe shape and settings metadata.

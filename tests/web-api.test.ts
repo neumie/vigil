@@ -54,6 +54,41 @@ test('web API creates dashboard Items with posted payload', async () => {
 	}
 })
 
+test('web API surfaces the server error message from a no-body POST (postJSON)', async () => {
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify({ error: 'Cannot rename the branch once a worktree exists — re-plan instead' }), {
+			status: 400,
+			headers: { 'content-type': 'application/json' },
+		})
+	try {
+		// postJSON must parse the body and throw the server's `error`, not a bare status.
+		await assert.rejects(api.runAiPass('item-1', 'branch-name'), /Cannot rename the branch once a worktree exists/)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('web API runs an AI pass through the item AI route', async () => {
+	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
+	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+		calls.push({ path: input.toString(), init })
+		return new Response(JSON.stringify({ data: { id: 'item-1', displayName: 'Short label' } }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+
+	try {
+		const result = await api.runAiPass('item-1', 'branch-name')
+		assert.equal(result.id, 'item-1')
+		assert.equal(calls.length, 1)
+		assert.equal(calls[0].path, '/api/items/item-1/ai/branch-name')
+		assert.equal(calls[0].init?.method, 'POST')
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
 test('web API plans dashboard Items through the Item planning route', async () => {
 	const calls: Array<{ path: string; init: RequestInit | undefined }> = []
 	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {

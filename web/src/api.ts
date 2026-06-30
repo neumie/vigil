@@ -9,8 +9,11 @@ async function fetchJSON<T>(path: string): Promise<T> {
 
 async function postJSON<T>(path: string): Promise<T> {
 	const res = await fetch(`${BASE}${path}`, { method: 'POST' })
-	if (!res.ok) throw new Error(`API error: ${res.status}`)
-	const json = await res.json()
+	// Parse the body before throwing so the server's `{ error }` message reaches
+	// the UI (e.g. "Cannot rename the branch once a worktree exists"), not a bare
+	// status code — matching postJSONBody/putJSON.
+	const json = await res.json().catch(() => ({}))
+	if (!res.ok) throw new Error(json.error ?? `API error: ${res.status}`)
 	return json.data
 }
 
@@ -54,6 +57,9 @@ export const ITEM_STATUSES: ItemStatus[] = ['triage', 'ready', 'running', 'revie
 
 export type DashboardActionId = 'approve' | 'reject' | 'start' | 'cancel' | 'retry' | 'reopen'
 export type RunOutcome = 'ok' | 'errored' | 'no_result' | 'cancelled'
+
+/** The cheap on-demand agent passes runnable from the item detail. */
+export type AiPass = 'display-name' | 'branch-name' | 'assess'
 
 export interface DeploymentEntry {
 	environment: string
@@ -333,6 +339,9 @@ export const api = {
 	setItemStatus: (id: string, status: ItemStatus) => postJSONBody<DashboardItem>(`/items/${id}/status`, { status }),
 	createItem: (input: CreateItemInput) => postJSONBody<DashboardItem | DashboardItem[]>('/items', input),
 	planItem: (id: string) => postJSONBody<PlanInfo>(`/items/${id}/plan`, {}),
+	// Force-(re)run a cheap agent pass on demand — display name, branch name, or
+	// intent assessment. Returns the updated item with the new field.
+	runAiPass: (id: string, pass: AiPass) => postJSON<DashboardItem>(`/items/${id}/ai/${pass}`),
 	itemAction: (id: string, action: DashboardActionId) => {
 		switch (action) {
 			case 'approve':

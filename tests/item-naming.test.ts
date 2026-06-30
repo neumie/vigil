@@ -328,6 +328,108 @@ test('ensureItemWorkspaceName does not override an already-named Item', () =>
 		assert.equal(commands.getItem(item.id)?.branchName, 'vigil/item/preset-abcd1234')
 	}))
 
+test('ensureItemWorkspaceName force re-derives even when disabled and already named', () =>
+	withTempDb(async db => {
+		// Manual dashboard trigger: branchNaming is OFF and the Item already has a
+		// name — force must still run the model and overwrite.
+		const config = makeConfig({ branchNaming: { enabled: false } })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
+		db.items.update(item.id, { branchName: 'vigil/item/preset-abcd1234' })
+		const preset = commands.getItem(item.id)
+		assert(preset)
+
+		const result = await ensureItemWorkspaceName({
+			commands,
+			item: preset,
+			taskContext,
+			config,
+			repoPath: '/repo',
+			agent: 'claude',
+			force: true,
+			deps: { runOneShot: async () => 'feat/fresh-name', branchExists: () => false },
+		})
+
+		assert.equal(result.branchName, 'feat/fresh-name')
+		assert.equal(commands.getItem(item.id)?.branchName, 'feat/fresh-name')
+	}))
+
+test('ensureItemWorkspaceName force does NOT rename once a worktree exists (TOCTOU backstop)', () =>
+	withTempDb(async db => {
+		// Models the race: a concurrent solve created the worktree during the manual
+		// rename's model await. recordDerivedWorkspaceName re-fetches the row and
+		// refuses the write even though force is set, so the worktree can't desync.
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
+		db.items.update(item.id, { worktreePath: '/tmp/wt-created-concurrently' })
+		const withWorktree = commands.getItem(item.id)
+		assert(withWorktree)
+
+		const result = await ensureItemWorkspaceName({
+			commands,
+			item: withWorktree,
+			taskContext,
+			config,
+			repoPath: '/repo',
+			agent: 'claude',
+			force: true,
+			deps: { runOneShot: async () => 'feat/should-not-apply', branchExists: () => false },
+		})
+
+		assert.equal(result.branchName, null) // refused despite force — worktree present
+		assert.equal(commands.getItem(item.id)?.branchName, null)
+	}))
+
+test('ensureItemWorkspaceName force still skips loop Items (structural gate)', () =>
+	withTempDb(async db => {
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createRalphItem({ title: 'payments loop', projectSlug: 'vigil', prdPath: 'docs/prd/pay.md' })
+
+		let called = false
+		const result = await ensureItemWorkspaceName({
+			commands,
+			item,
+			taskContext,
+			config,
+			repoPath: '/repo',
+			agent: 'claude',
+			force: true,
+			deps: {
+				runOneShot: async () => {
+					called = true
+					return 'feat/x'
+				},
+				branchExists: () => false,
+			},
+		})
+
+		assert.equal(called, false)
+		assert.equal(result.branchName, null)
+	}))
+
+test('ensureItemWorkspaceName force throws on an unparseable model answer', () =>
+	withTempDb(async db => {
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
+
+		await assert.rejects(
+			ensureItemWorkspaceName({
+				commands,
+				item,
+				taskContext,
+				config,
+				repoPath: '/repo',
+				agent: 'claude',
+				force: true,
+				deps: { runOneShot: async () => 'I cannot help with that.', branchExists: () => false },
+			}),
+			/could not parse a branch name/i,
+		)
+	}))
+
 // --- display naming -------------------------------------------------------
 
 const LONG_TITLE = '[Echo] Please remove the operative crane exchange from the catalog view'
@@ -462,6 +564,51 @@ test('ensureItemDisplayName does not override an existing display name', () =>
 
 		assert.equal(called, false)
 		assert.equal(result.displayName, 'Preset name')
+	}))
+
+test('ensureItemDisplayName force overrides an existing name and runs on a short title', () =>
+	withTempDb(async db => {
+		// Manual trigger on an already-named Item with a SHORT title — force skips
+		// both the already-named and short-title gates and re-runs the model.
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'Fix login', projectSlug: 'vigil', prompt: 'do it' })
+		commands.recordDisplayName(item.id, 'Preset name')
+		const preset = commands.getItem(item.id)
+		assert(preset)
+
+		const result = await ensureItemDisplayName({
+			commands,
+			item: preset,
+			config,
+			force: true,
+			deps: { runOneShot: async () => 'Fresh short label' },
+		})
+
+		assert.equal(result.displayName, 'Fresh short label')
+		assert.equal(commands.getItem(item.id)?.displayName, 'Fresh short label')
+	}))
+
+test('ensureItemDisplayName force throws on a model failure (manual run surfaces it)', () =>
+	withTempDb(async db => {
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: LONG_TITLE, projectSlug: 'vigil', prompt: 'do it' })
+
+		await assert.rejects(
+			ensureItemDisplayName({
+				commands,
+				item,
+				config,
+				force: true,
+				deps: {
+					runOneShot: async () => {
+						throw new Error('boom')
+					},
+				},
+			}),
+			/boom/,
+		)
 	}))
 
 test('ensureItemDisplayName threads a custom prompt and provider override', () =>

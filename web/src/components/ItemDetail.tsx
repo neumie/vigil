@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type {
+	AiPass,
 	DashboardActionId,
 	DashboardActionTone,
 	DashboardItem,
@@ -24,6 +25,7 @@ interface ItemDetailProps {
 	onAction: (id: string, action: DashboardActionId) => Promise<void>
 	onSetStatus?: (id: string, status: ItemStatus) => Promise<void>
 	onPlan?: (id: string) => Promise<PlanInfo>
+	onAiPass?: (id: string, pass: AiPass) => Promise<void>
 	onFork?: (item: DashboardItem) => void
 }
 
@@ -57,17 +59,26 @@ export function runObservationDetails(observation: DashboardItem['runObservation
 	return details
 }
 
-export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: ItemDetailProps) {
+export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFork }: ItemDetailProps) {
 	const [pendingAction, setPendingAction] = useState<DashboardActionId | null>(null)
 	const [pendingPlan, setPendingPlan] = useState(false)
 	const [pendingStatus, setPendingStatus] = useState(false)
+	const [pendingAi, setPendingAi] = useState<AiPass | null>(null)
 	const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null)
 	const [actionError, setActionError] = useState<string | null>(null)
 	const canFork = Boolean(item.forkContext && onFork)
 	const canPlan = Boolean(onPlan)
 	const hasPlan = Boolean(planInfo || item.plan)
-	const commandPending = pendingAction !== null || pendingPlan
-	const hasCommands = item.allowedActions.length > 0 || canFork || canPlan
+	const commandPending = pendingAction !== null || pendingPlan || pendingAi !== null
+	// Branch renaming is only safe before a worktree exists (renaming after would
+	// orphan it), and only for solve Items not yet running — mirrors the server gate.
+	const canBranchName = item.kind === 'solve' && !item.plan && (item.status === 'triage' || item.status === 'ready')
+	const aiPasses: Array<{ pass: AiPass; label: string }> = [
+		{ pass: 'display-name', label: 'Display name' },
+		...(canBranchName ? [{ pass: 'branch-name' as const, label: 'Branch name' }] : []),
+		{ pass: 'assess', label: 'Re-assess intent' },
+	]
+	const hasCommands = item.allowedActions.length > 0 || canFork || canPlan || Boolean(onAiPass)
 	const elapsed = useRelativeTime(
 		item.status === 'running'
 			? (item.startedAt ?? item.queuedAt ?? item.createdAt)
@@ -98,6 +109,19 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 			setActionError(err instanceof Error ? err.message : String(err))
 		} finally {
 			setPendingPlan(false)
+		}
+	}
+
+	const runAi = async (pass: AiPass) => {
+		if (!onAiPass) return
+		setPendingAi(pass)
+		setActionError(null)
+		try {
+			await onAiPass(item.id, pass)
+		} catch (err) {
+			setActionError(err instanceof Error ? err.message : String(err))
+		} finally {
+			setPendingAi(null)
 		}
 	}
 
@@ -269,6 +293,33 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onFork }: Item
 								/>
 							)}
 						</div>
+						{onAiPass && (
+							<div style={{ marginTop: 14 }}>
+								<div
+									style={{
+										fontSize: 11,
+										color: 'var(--text-4)',
+										textTransform: 'uppercase',
+										letterSpacing: '0.04em',
+										marginBottom: 6,
+									}}
+								>
+									AI
+								</div>
+								<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+									{aiPasses.map(({ pass, label }) => (
+										<ActionButton
+											key={pass}
+											label={pendingAi === pass ? `${label}…` : `↻ ${label}`}
+											tone="muted"
+											disabled={commandPending}
+											fullWidth
+											onClick={() => runAi(pass)}
+										/>
+									))}
+								</div>
+							</div>
+						)}
 						{onSetStatus && (
 							<div style={{ marginTop: 14 }}>
 								<div

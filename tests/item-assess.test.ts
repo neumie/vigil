@@ -183,3 +183,60 @@ test('ensureItemAssessment re-throws cancellation', () =>
 			/cancelled/i,
 		)
 	}))
+
+test('ensureItemAssessment force re-assesses when disabled and already assessed', () =>
+	withTempDb(async db => {
+		// Manual trigger: triage OFF and the Item already has an assessment — force
+		// runs anyway and overwrites the verdict.
+		const config = makeConfig({ enabled: false })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'x', projectSlug: 'vigil', prompt: 'x' })
+		commands.recordAssessment(item.id, {
+			intent: 'preset',
+			acceptanceCriteria: [],
+			verdict: 'clear',
+			clarifyingQuestions: [],
+			securityNote: null,
+			assessedAt: '2026-01-01T00:00:00.000Z',
+		})
+		const preset = commands.getItem(item.id)
+		assert(preset)
+
+		const fresh = JSON.stringify({
+			intent: 'Touches CI secrets',
+			acceptanceCriteria: [],
+			verdict: 'security',
+			clarifyingQuestions: [],
+			securityNote: 'Asks to modify a workflow file',
+		})
+		const result = await ensureItemAssessment({
+			commands,
+			item: preset,
+			taskContext: ctx,
+			config,
+			force: true,
+			deps: { runOneShot: async () => fresh, now: () => '2026-06-30T00:00:00.000Z' },
+		})
+
+		assert.equal(result.assessment?.verdict, 'security')
+		assert.equal(commands.getItem(item.id)?.assessment?.intent, 'Touches CI secrets')
+	}))
+
+test('ensureItemAssessment force throws on an unparseable answer', () =>
+	withTempDb(async db => {
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'x', projectSlug: 'vigil', prompt: 'x' })
+
+		await assert.rejects(
+			ensureItemAssessment({
+				commands,
+				item,
+				taskContext: ctx,
+				config,
+				force: true,
+				deps: { runOneShot: async () => 'not json at all' },
+			}),
+			/could not parse an assessment/i,
+		)
+	}))

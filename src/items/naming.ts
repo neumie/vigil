@@ -117,6 +117,13 @@ export interface EnsureItemDisplayNameParams {
 	agent?: SolverAgent
 	signal?: AbortSignal
 	deps?: EnsureItemDisplayNameDeps
+	/**
+	 * Manual (re)run from the dashboard: bypass the skip gates (feature-enabled,
+	 * already-named, short-title) so the user can force a fresh name, and SURFACE
+	 * failures (throw) instead of swallowing them — the automatic enricher path
+	 * leaves `force` unset and stays best-effort.
+	 */
+	force?: boolean
 }
 
 /**
@@ -126,30 +133,37 @@ export interface EnsureItemDisplayNameParams {
  * same block). No-op (returns the input Item) when disabled, already named, or the
  * title is already short. Best-effort: a model failure, timeout, or empty/
  * unparseable answer degrades silently to the input Item so the dashboard keeps
- * showing the raw title. Re-throws only cancellation.
+ * showing the raw title. Re-throws only cancellation. A forced (manual) run skips
+ * the gates and throws on failure so the caller can report it.
  */
 export async function ensureItemDisplayName(params: EnsureItemDisplayNameParams): Promise<ItemRecord> {
-	const { commands, item, config, signal, deps } = params
+	const { commands, item, config, signal, deps, force } = params
 	const feature = config.solver.displayName
-	if (!feature.enabled) return item
-	if (item.displayName) return item
-	if (item.title.length <= MIN_TITLE_LEN_TO_NAME) return item
+	if (!force && !feature.enabled) return item
+	if (!force && item.displayName) return item
+	if (!force && item.title.length <= MIN_TITLE_LEN_TO_NAME) return item
 
 	const agent = feature.agent ?? params.agent ?? config.solver.agent
 	try {
 		const model = feature.model ?? defaultNameModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		const raw = await run({ agent, model, prompt: buildDisplayNamePrompt(item.title, feature.prompt), signal })
-		if (!raw) return item
+		if (!raw) {
+			if (force) throw new Error('Display naming model returned no output')
+			return item
+		}
 
 		const name = parseDisplayName(raw)
-		if (!name) return item
+		if (!name) {
+			if (force) throw new Error('Could not parse a display name from the model output')
+			return item
+		}
 
 		const named = commands.recordDisplayName(item.id, name)
 		log.info('naming', `Derived display name for Item ${item.id}: "${name}" (${agent}/${model})`)
 		return named
 	} catch (err) {
-		if (isCancellation(err, signal)) throw err
+		if (force || isCancellation(err, signal)) throw err
 		log.warn(
 			'naming',
 			`Display naming failed for Item ${item.id}, keeping raw title: ${err instanceof Error ? err.message : err}`,
@@ -260,6 +274,14 @@ export interface EnsureItemNameParams {
 	agent: SolverAgent
 	signal?: AbortSignal
 	deps?: EnsureItemNameDeps
+	/**
+	 * Manual (re)run from the dashboard: bypass the feature-enabled and
+	 * already-named gates so the user can force a fresh branch name, and throw on
+	 * failure instead of silently keeping the default. The solve-only structural
+	 * gate still applies; callers must additionally ensure no worktree exists yet
+	 * (renaming the branch after a worktree is created would desync it).
+	 */
+	force?: boolean
 }
 
 /**
@@ -273,13 +295,14 @@ export interface EnsureItemNameParams {
  * pipeline's abort-aware catch); nothing else throws.
  */
 export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Promise<ItemRecord> {
-	const { commands, item, taskContext, config, repoPath, signal, deps } = params
+	const { commands, item, taskContext, config, repoPath, signal, deps, force } = params
 	const feature = config.solver.branchNaming
-	if (!feature.enabled) return item
+	if (!force && !feature.enabled) return item
 	// Solve-only: enforced here (not just at call sites) so the plan route can't
 	// name a ralph/harden Item — loop Items keep the deterministic vigil/item name.
+	// Structural; applies even to a forced manual run.
 	if (item.kind !== 'solve') return item
-	if (item.branchName) return item // already planned / forked / named
+	if (!force && item.branchName) return item // already planned / forked / named
 
 	// Per-feature provider override wins over the effective solve agent the caller passed.
 	const agent = feature.agent ?? params.agent
@@ -292,10 +315,16 @@ export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Pro
 			prompt: buildNamingPrompt(taskContext, feature.prompt),
 			signal,
 		})
-		if (!raw) return item
+		if (!raw) {
+			if (force) throw new Error('Branch naming model returned no output')
+			return item
+		}
 
 		const parsed = parseBranchName(raw)
-		if (!parsed) return item
+		if (!parsed) {
+			if (force) throw new Error('Could not parse a branch name from the model output')
+			return item
+		}
 
 		// Clamp the slug so the assembled `type/slug` honors the whole-name budget
 		// the prompt advertises (the model's answer is untrusted and may be long).
@@ -316,11 +345,12 @@ export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Pro
 			suffix: itemSuffix(item),
 			planDirName,
 			gitTaken,
+			force,
 		})
 		log.info('naming', `Derived branch name for Item ${item.id}: ${named.branchName} (${agent}/${model})`)
 		return named
 	} catch (err) {
-		if (isCancellation(err, signal)) throw err
+		if (force || isCancellation(err, signal)) throw err
 		log.warn(
 			'naming',
 			`Branch naming failed for Item ${item.id}, using default: ${err instanceof Error ? err.message : err}`,

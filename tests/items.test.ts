@@ -3802,3 +3802,97 @@ test('server Item work-start routes persist selected solve agent before queue ha
 		assert.equal(db.items.get(retryTarget.id)?.payload.solverAgent, 'codex')
 	})
 })
+
+// Manual AI passes from the item detail — the route force-runs each pass with an
+// injected one-shot (no real model) and returns the updated item. apiRoutes takes
+// the injected one-shot as its trailing arg (9th = default planning spawner).
+function aiApi(db: DB, oneShot: () => Promise<string | null>) {
+	return apiRoutes(
+		config,
+		'vigil.config.json',
+		db,
+		queue as never,
+		poller as never,
+		provider as never,
+		spawner as never,
+		fakeEnricher as never,
+		undefined,
+		oneShot,
+	)
+}
+
+test('POST /items/:id/ai/display-name force-runs the pass and returns the updated item', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		// displayName is disabled in this config + the item starts unnamed — force
+		// must run regardless and persist the result.
+		const item = commands.createSolveItem({
+			title: 'A long provider title that should compress to a short human label',
+			projectSlug: 'vigil',
+			prompt: 'do the thing',
+		})
+		const api = aiApi(db, async () => 'Compress invoice recipient logic')
+		const res = await api.request(`/items/${item.id}/ai/display-name`, { method: 'POST' })
+		assert.equal(res.status, 200)
+		const { data } = (await res.json()) as { data: { displayName: string } }
+		assert.equal(data.displayName, 'Compress invoice recipient logic')
+		assert.equal(db.items.get(item.id)?.displayName, 'Compress invoice recipient logic')
+	}))
+
+test('POST /items/:id/ai/assess force-runs triage and stores the assessment', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Bug report',
+			projectSlug: 'vigil',
+			prompt: 'export 500s',
+			source: { provider: 'contember', externalId: 'assess-route-1' },
+		})
+		const assessmentJson = JSON.stringify({
+			intent: 'Fix the export 500',
+			acceptanceCriteria: ['Export returns 200'],
+			verdict: 'clear',
+			clarifyingQuestions: [],
+			securityNote: null,
+		})
+		const api = aiApi(db, async () => assessmentJson)
+		const res = await api.request(`/items/${item.id}/ai/assess`, { method: 'POST' })
+		assert.equal(res.status, 200)
+		const { data } = (await res.json()) as { data: { assessment: { verdict: string; intent: string } } }
+		assert.equal(data.assessment.verdict, 'clear')
+		assert.equal(db.items.get(item.id)?.assessment?.intent, 'Fix the export 500')
+	}))
+
+test('POST /items/:id/ai/branch-name force-derives a branch for a worktree-less solve Item', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
+		const api = aiApi(db, async () => 'feat/manual-branch')
+		const res = await api.request(`/items/${item.id}/ai/branch-name`, { method: 'POST' })
+		assert.equal(res.status, 200)
+		const { data } = (await res.json()) as { data: { branchName: string } }
+		assert.equal(data.branchName, 'feat/manual-branch')
+		assert.equal(db.items.get(item.id)?.branchName, 'feat/manual-branch')
+	}))
+
+test('POST /items/:id/ai/:pass guards unknown pass, missing item, and unsafe branch renames', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const solve = commands.createSolveItem({ title: 'whatever', projectSlug: 'vigil', prompt: 'do it' })
+		const ralph = commands.createRalphItem({ title: 'loop', projectSlug: 'vigil', prdPath: 'docs/prd/x.md' })
+		// A worktree already exists → renaming its branch would orphan it.
+		db.items.update(solve.id, { worktreePath: '/tmp/already-a-worktree' })
+
+		let modelCalled = false
+		const api = aiApi(db, async () => {
+			modelCalled = true
+			return 'feat/should-not-run'
+		})
+		const post = (path: string) => api.request(path, { method: 'POST' })
+
+		assert.equal((await post(`/items/${solve.id}/ai/bogus`)).status, 400) // unknown pass
+		assert.equal((await post('/items/nope/ai/display-name')).status, 404) // missing item
+		assert.equal((await post(`/items/${ralph.id}/ai/branch-name`)).status, 400) // loop kind
+		assert.equal((await post(`/items/${solve.id}/ai/branch-name`)).status, 400) // worktree exists
+		assert.equal(modelCalled, false) // every guard short-circuits before the model
+	}))

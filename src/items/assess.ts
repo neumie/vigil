@@ -91,6 +91,12 @@ export interface EnsureItemAssessmentParams {
 	agent?: SolverAgent
 	signal?: AbortSignal
 	deps?: EnsureItemAssessmentDeps
+	/**
+	 * Manual (re)run from the dashboard: bypass the enabled + already-assessed
+	 * gates so the user can force a fresh triage, and throw on failure instead of
+	 * swallowing it. The automatic enricher path leaves `force` unset.
+	 */
+	force?: boolean
 }
 
 /**
@@ -99,30 +105,37 @@ export interface EnsureItemAssessmentParams {
  * Gated by `solver.triage.enabled`. No-op (returns the input Item) when disabled
  * or already assessed. Best-effort: a model failure, timeout, or unparseable
  * answer degrades silently to the input Item (no assessment, no verdict shown).
- * Re-throws only cancellation. Advisory only — never changes the Item's status.
+ * Re-throws only cancellation. A forced (manual) run skips the gates and throws on
+ * failure so the caller can report it. Advisory only — never changes the status.
  */
 export async function ensureItemAssessment(params: EnsureItemAssessmentParams): Promise<ItemRecord> {
-	const { commands, item, taskContext, config, signal, deps } = params
+	const { commands, item, taskContext, config, signal, deps, force } = params
 	const feature = config.solver.triage
-	if (!feature.enabled) return item
-	if (item.assessment) return item
+	if (!force && !feature.enabled) return item
+	if (!force && item.assessment) return item
 
 	const agent = feature.agent ?? params.agent ?? config.solver.agent
 	try {
 		const model = feature.model ?? defaultTriageModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		const raw = await run({ agent, model, prompt: buildAssessmentPrompt(taskContext, feature.prompt), signal })
-		if (!raw) return item
+		if (!raw) {
+			if (force) throw new Error('Assessment model returned no output')
+			return item
+		}
 
 		const parsed = parseAssessment(raw)
-		if (!parsed) return item
+		if (!parsed) {
+			if (force) throw new Error('Could not parse an assessment from the model output')
+			return item
+		}
 
 		const assessment: Assessment = { ...parsed, assessedAt: deps?.now?.() ?? new Date().toISOString() }
 		const assessed = commands.recordAssessment(item.id, assessment)
 		log.info('triage', `Assessed Item ${item.id}: ${assessment.verdict} (${agent}/${model})`)
 		return assessed
 	} catch (err) {
-		if (isCancellation(err, signal)) throw err
+		if (force || isCancellation(err, signal)) throw err
 		log.warn('triage', `Assessment failed for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
 		return item
 	}

@@ -579,10 +579,21 @@ export class ItemCommands {
 	 */
 	recordDerivedWorkspaceName(
 		id: string,
-		fields: { base: string; suffix: string; planDirName: string; gitTaken: boolean },
+		// `force` is set only by a manual dashboard re-name: it overrides the
+		// already-named idempotency guard (the automatic path leaves it unset). The
+		// atomic uniqueness reservation still runs in both modes.
+		fields: { base: string; suffix: string; planDirName: string; gitTaken: boolean; force?: boolean },
 	): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.branchName) return item
+		// Never rename a branch once a worktree exists on it — not even forced.
+		// This is the atomic backstop for the manual-rename TOCTOU: the route checks
+		// worktreePath before its model await, but a concurrent solve could create
+		// the worktree during that await; this re-fetched check (synchronous, no
+		// await before the write) closes the window so the on-disk worktree can't
+		// desync from the row's branchName. The automatic naming path runs before
+		// any worktree exists, so this never blocks it.
+		if (item.worktreePath) return item
+		if (item.branchName && !fields.force) return item
 		const taken = fields.gitTaken || this.store.branchNameExists(fields.base, id)
 		const branchName = taken ? `${fields.base}-${fields.suffix}` : fields.base
 		return this.store.update(id, { branchName, planDirName: fields.planDirName })
