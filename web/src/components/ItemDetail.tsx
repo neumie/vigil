@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
 	AiPass,
 	DashboardActionId,
@@ -762,13 +763,101 @@ function maybeImage(att: { name: string; url: string; contentType?: string }): b
 	return true
 }
 
-/** An image renders as an inline thumbnail (click to open full). A non-image
- *  ingested (local) attachment opens in the host's NATIVE app (the daemon is
- *  local) — e.g. an .xlsx in Excel/Numbers — with a small download fallback; a
- *  remote (provider) one stays a plain link. URL is http(s)-guarded. */
+/** Full-screen image preview. Rendered through a portal on document.body so the
+ *  detail pane's overflow can't clip it. Closes on the × button, a click on the
+ *  dark backdrop, or Escape; a click on the image itself does NOT close (it sits
+ *  above the backdrop button). The backdrop is a real <button> so no click
+ *  handler lives on a non-interactive element (keeps a11y lint happy). */
+function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') onClose()
+		}
+		document.addEventListener('keydown', onKey)
+		// Lock background scroll while the modal is open, restore on close.
+		const prevOverflow = document.body.style.overflow
+		document.body.style.overflow = 'hidden'
+		return () => {
+			document.removeEventListener('keydown', onKey)
+			document.body.style.overflow = prevOverflow
+		}
+	}, [onClose])
+
+	return createPortal(
+		// biome-ignore lint/a11y/useSemanticElements: a React-controlled overlay; native <dialog>.showModal() would need ::backdrop CSS + top-layer/close-event handling that clashes with the inline-style, mount-driven pattern here. role/aria-modal/aria-label + Esc + focusable close buttons keep it accessible.
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-label={alt}
+			style={{
+				position: 'fixed',
+				inset: 0,
+				zIndex: 1000,
+				background: 'rgba(0, 0, 0, 0.82)',
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				padding: 24,
+			}}
+		>
+			{/* Full-bleed backdrop button: clicking anywhere outside the image closes. */}
+			<button
+				type="button"
+				onClick={onClose}
+				aria-label="Close preview"
+				style={{
+					position: 'absolute',
+					inset: 0,
+					background: 'transparent',
+					border: 'none',
+					cursor: 'zoom-out',
+				}}
+			/>
+			<button
+				type="button"
+				onClick={onClose}
+				aria-label="Close"
+				style={{
+					position: 'absolute',
+					top: 12,
+					right: 18,
+					fontSize: 30,
+					lineHeight: 1,
+					color: '#fff',
+					background: 'transparent',
+					border: 'none',
+					cursor: 'pointer',
+				}}
+			>
+				×
+			</button>
+			<img
+				src={src}
+				alt={alt}
+				style={{
+					position: 'relative',
+					maxWidth: '92vw',
+					maxHeight: '92vh',
+					objectFit: 'contain',
+					borderRadius: 'var(--radius-sm)',
+					boxShadow: '0 8px 40px rgba(0, 0, 0, 0.5)',
+				}}
+			/>
+		</div>,
+		document.body,
+	)
+}
+
+/** An image renders as an inline thumbnail (click to open a full-screen preview
+ *  modal — NOT a new tab). A non-image ingested (local) attachment opens in the
+ *  host's NATIVE app (the daemon is local) — e.g. an .xlsx in Excel/Numbers —
+ *  with a small download fallback; a remote (provider) one stays a plain link.
+ *  URL is http(s)-guarded. */
 function Attachment({ att }: { att: { name: string; url: string; contentType?: string } }) {
 	const [notImage, setNotImage] = useState(false)
 	const [openErr, setOpenErr] = useState<string | null>(null)
+	const [preview, setPreview] = useState(false)
+	const closePreview = useCallback(() => setPreview(false), [])
 	const href = safeHttpUrl(att.url)
 	if (!href) return null
 	// Ingested attachments are served by this (local) daemon at a relative /api
@@ -781,22 +870,30 @@ function Attachment({ att }: { att: { name: string; url: string; contentType?: s
 
 	if (maybeImage(att) && !notImage) {
 		return (
-			<a href={href} target="_blank" rel="noreferrer" title={att.name}>
-				<img
-					src={href}
-					alt={att.name}
-					loading="lazy"
-					onError={() => setNotImage(true)}
-					style={{
-						maxHeight: 180,
-						maxWidth: 260,
-						objectFit: 'cover',
-						borderRadius: 'var(--radius-sm)',
-						border: '1px solid var(--border)',
-						display: 'block',
-					}}
-				/>
-			</a>
+			<>
+				<button
+					type="button"
+					onClick={() => setPreview(true)}
+					title={`${att.name} — click to enlarge`}
+					style={{ padding: 0, border: 'none', background: 'transparent', cursor: 'zoom-in', display: 'block' }}
+				>
+					<img
+						src={href}
+						alt={att.name}
+						loading="lazy"
+						onError={() => setNotImage(true)}
+						style={{
+							maxHeight: 180,
+							maxWidth: 260,
+							objectFit: 'cover',
+							borderRadius: 'var(--radius-sm)',
+							border: '1px solid var(--border)',
+							display: 'block',
+						}}
+					/>
+				</button>
+				{preview && <Lightbox src={href} alt={att.name} onClose={closePreview} />}
+			</>
 		)
 	}
 
