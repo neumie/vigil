@@ -20,7 +20,34 @@ export interface EnsuredOkenaWorktree {
 export class OkenaWorktreeManager {
 	constructor(private readonly client: OkenaClient) {}
 
+	/**
+	 * Add a terminal to a worktree window that already has one (e.g. starting a
+	 * solve on a worktree whose plan/run terminal is still open).
+	 *
+	 * We split the layout STACKED (new pane below the existing one) instead of
+	 * okena's default. okena's `create_terminal` action hardcodes a side-by-side
+	 * split (its `SplitDirection::Vertical`, which divides WIDTH → left/right);
+	 * we want the panes stacked top/bottom, which is okena's `Horizontal`
+	 * (divides HEIGHT). So we drive `split_terminal` at the root path (`[]`) with
+	 * `direction: 'horizontal'` — it wraps the current layout and adds the new
+	 * terminal beneath it. Both actions return `{ terminal_ids: [...] }`.
+	 *
+	 * Falls back to `create_terminal` when the split is a no-op — an empty
+	 * project (no layout) has nothing to split, so `split_terminal` returns no id.
+	 */
 	async createTerminal(projectId: string): Promise<string | null> {
+		try {
+			const split = await this.client.action<{ terminal_ids?: string[] }>({
+				action: 'split_terminal',
+				project_id: projectId,
+				path: [],
+				direction: 'horizontal',
+			})
+			const id = split.terminal_ids?.[0]
+			if (id) return id
+		} catch {
+			// Fall through to create_terminal (e.g. nothing to split yet).
+		}
 		try {
 			const result = await this.client.action<{ terminal_ids?: string[] }>({
 				action: 'create_terminal',
