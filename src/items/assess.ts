@@ -2,7 +2,7 @@ import type { VigilConfig } from '../config.js'
 import type { TaskContext } from '../providers/provider.js'
 import type { SolverAgent } from '../solver/agent.js'
 import { runOneShot } from '../solver/one-shot.js'
-import type { OneShotOptions } from '../solver/one-shot.js'
+import type { OneShotImage, OneShotOptions } from '../solver/one-shot.js'
 import { isCancellation } from '../util/errors.js'
 import { log } from '../util/logger.js'
 import type { ItemCommands } from './commands.js'
@@ -118,6 +118,61 @@ export function itemWantsAssessment(item: ItemRecord, config: VigilConfig): bool
 export interface EnsureItemAssessmentDeps {
 	runOneShot?: (opts: OneShotOptions) => Promise<string | null>
 	now?: () => string
+	/** Injectable image fetch for tests (default fetches over the network). */
+	fetchImages?: (ctx: TaskContext, signal?: AbortSignal) => Promise<OneShotImage[]>
+}
+
+// Anthropic vision accepts these; anything else we skip (send text-only).
+const VISION_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+const MAX_ASSESSMENT_IMAGES = 3
+const MAX_IMAGE_BYTES = 4_500_000 // under Anthropic's ~5MB base64 cap, keeps latency sane
+const IMAGE_FETCH_TIMEOUT_MS = 10_000
+
+function visionMediaType(url: string, contentType: string | null): string | null {
+	const declared = contentType?.split(';')[0].trim().toLowerCase()
+	if (declared && VISION_MEDIA_TYPES.has(declared)) return declared
+	const u = url.toLowerCase()
+	if (/\.png(\?|#|$)/.test(u)) return 'image/png'
+	if (/\.jpe?g(\?|#|$)/.test(u)) return 'image/jpeg'
+	if (/\.gif(\?|#|$)/.test(u)) return 'image/gif'
+	if (/\.webp(\?|#|$)/.test(u)) return 'image/webp'
+	return null
+}
+
+async function fetchOneImage(url: string, signal?: AbortSignal): Promise<OneShotImage | null> {
+	const timeout = AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS)
+	const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+	try {
+		const res = await fetch(url, { signal: fetchSignal })
+		if (!res.ok) return null
+		const mediaType = visionMediaType(url, res.headers.get('content-type'))
+		if (!mediaType) return null
+		const buf = Buffer.from(await res.arrayBuffer())
+		if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) return null
+		return { data: buf.toString('base64'), mediaType }
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Collect the task's screenshots (attachments + inline image blocks) and fetch a
+ * few as base64 so the triage model can actually SEE them. Only absolute http(s)
+ * URLs are fetched (provider-hosted screenshots); relative/local ones are skipped.
+ * Fully best-effort: any failure yields fewer/no images and triage degrades to
+ * text-only.
+ */
+async function fetchAssessmentImages(ctx: TaskContext, signal?: AbortSignal): Promise<OneShotImage[]> {
+	const urls: string[] = []
+	const add = (url: string | undefined) => {
+		if (url && /^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url)
+	}
+	for (const a of ctx.attachments ?? []) add(a.url)
+	for (const b of ctx.descriptionBlocks ?? []) if (b.type === 'image') add(b.url)
+	const picked = urls.slice(0, MAX_ASSESSMENT_IMAGES)
+	if (picked.length === 0) return []
+	const fetched = await Promise.all(picked.map(u => fetchOneImage(u, signal)))
+	return fetched.filter((x): x is OneShotImage => x !== null)
 }
 
 export interface EnsureItemAssessmentParams {
@@ -156,10 +211,15 @@ export async function ensureItemAssessment(params: EnsureItemAssessmentParams): 
 	try {
 		const model = feature.model ?? defaultTriageModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
+		// Let the model actually SEE attached screenshots (vision is claude-only).
+		// Best-effort — a fetch failure just degrades this call to text-only.
+		const images = agent === 'claude' ? await (deps?.fetchImages ?? fetchAssessmentImages)(taskContext, signal) : []
+		if (images.length > 0) log.info('triage', `Assessing Item ${item.id} with ${images.length} image(s)`)
 		const raw = await run({
 			agent,
 			model,
 			prompt: buildAssessmentPrompt(taskContext, feature.prompt, item.projectSlug),
+			images,
 			signal,
 		})
 		if (!raw) {

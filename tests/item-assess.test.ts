@@ -9,6 +9,7 @@ import { DB } from '../src/db/client.js'
 import { ensureItemAssessment, parseAssessment } from '../src/items/assess.js'
 import { ItemCommands } from '../src/items/commands.js'
 import type { TaskContext } from '../src/providers/provider.js'
+import type { OneShotImage } from '../src/solver/one-shot.js'
 import { taskCancelled } from '../src/util/errors.js'
 
 function makeConfig(triage?: Partial<VigilConfig['solver']['triage']>): VigilConfig {
@@ -80,6 +81,66 @@ test('ensureItemAssessment persists a parsed assessment with a stamped assessedA
 		assert.equal(result.assessment?.verdict, 'clear')
 		assert.equal(result.assessment?.assessedAt, '2026-06-30T00:00:00.000Z')
 		assert.equal(commands.getItem(item.id)?.assessment?.intent, 'Unify the invoice recipient')
+	}))
+
+test('ensureItemAssessment sends fetched screenshots to the model for the claude agent', () =>
+	withTempDb(async db => {
+		const config = makeConfig()
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'x',
+			projectSlug: 'vigil',
+			prompt: 'x',
+			source: { provider: 'contember', externalId: 'e1' },
+		})
+		let seen: OneShotImage[] | undefined
+		await ensureItemAssessment({
+			commands,
+			item,
+			taskContext: ctx,
+			config,
+			deps: {
+				fetchImages: async () => [{ data: 'AAAA', mediaType: 'image/png' }],
+				runOneShot: async opts => {
+					seen = opts.images
+					return VALID
+				},
+			},
+		})
+		assert.equal(seen?.length, 1)
+		assert.equal(seen?.[0].mediaType, 'image/png')
+	}))
+
+test('ensureItemAssessment does not fetch or send images for the codex agent', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ agent: 'codex' })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'x',
+			projectSlug: 'vigil',
+			prompt: 'x',
+			source: { provider: 'contember', externalId: 'e1' },
+		})
+		let fetched = false
+		let seen: OneShotImage[] | undefined = undefined
+		await ensureItemAssessment({
+			commands,
+			item,
+			taskContext: ctx,
+			config,
+			deps: {
+				fetchImages: async () => {
+					fetched = true
+					return [{ data: 'AAAA', mediaType: 'image/png' }]
+				},
+				runOneShot: async opts => {
+					seen = opts.images
+					return VALID
+				},
+			},
+		})
+		assert.equal(fetched, false)
+		assert.deepEqual(seen, [])
 	}))
 
 test('ensureItemAssessment is a no-op when triage is disabled', () =>

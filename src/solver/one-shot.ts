@@ -5,18 +5,35 @@ import { isCancellation } from '../util/errors.js'
 import type { SolverAgent } from './agent.js'
 import { spawnClaude } from './spawn-claude.js'
 
+/** A base64-encoded image to attach to a (claude-only) one-shot vision call. */
+export interface OneShotImage {
+	/** base64 (no data: prefix). */
+	data: string
+	/** e.g. "image/png", "image/jpeg". */
+	mediaType: string
+}
+
 export interface OneShotOptions {
 	agent: SolverAgent
 	model: string
 	prompt: string
 	timeoutMs?: number
 	signal?: AbortSignal
+	/**
+	 * Optional images for a multimodal completion (e.g. reading a screenshot
+	 * during triage). Only honoured for the `claude` agent — it switches the
+	 * invocation to the streaming-JSON input format so the image rides along with
+	 * the prompt. Ignored for `codex` (falls back to text-only).
+	 */
+	images?: OneShotImage[]
 }
 
 // Generous enough to absorb agent-CLI cold start (auth + config/MCP load) plus a
 // short completion; naming is best-effort, so a slow host should still get a name
 // rather than silently falling back.
 const DEFAULT_ONE_SHOT_TIMEOUT_MS = 30_000
+// Vision calls ship a base64 image and take longer (upload + multimodal decode).
+const VISION_ONE_SHOT_TIMEOUT_MS = 60_000
 
 /**
  * Run the agent CLI once for a short, non-agentic completion (e.g. deriving a
@@ -32,23 +49,32 @@ const DEFAULT_ONE_SHOT_TIMEOUT_MS = 30_000
  * re-thrown, not swallowed, so callers can abort the pipeline promptly.
  */
 export async function runOneShot(opts: OneShotOptions): Promise<string | null> {
-	const { agent, model, prompt, timeoutMs = DEFAULT_ONE_SHOT_TIMEOUT_MS, signal } = opts
-	const { command, args } = buildOneShotInvocation(agent, model)
+	const { agent, model, prompt, signal } = opts
+	// A claude call with images goes multimodal via the streaming-JSON input
+	// format; images are heavier, so allow a longer default timeout.
+	const vision = agent === 'claude' && (opts.images?.length ?? 0) > 0
+	const timeoutMs = opts.timeoutMs ?? (vision ? VISION_ONE_SHOT_TIMEOUT_MS : DEFAULT_ONE_SHOT_TIMEOUT_MS)
+	const { command, args } = vision ? buildVisionInvocation(model) : buildOneShotInvocation(agent, model)
+	// For vision the stdin is a streaming-JSON user message carrying text + image
+	// blocks; for text it's the raw prompt. spawnClaude writes stdin verbatim.
+	const stdin = vision ? buildStreamJsonInput(prompt, opts.images ?? []) : prompt
 	const cwd = mkdtempSync(join(tmpdir(), 'vigil-naming-'))
 	try {
 		const result = await spawnClaude({
 			command,
 			args,
 			cwd,
-			prompt,
+			prompt: stdin,
 			timeoutMs,
 			signal,
 			label: `${command}-oneshot`,
-			displayName: `${command} (one-shot)`,
+			displayName: `${command} (one-shot${vision ? ', vision' : ''})`,
 		})
 		if (result.exitCode !== 0) return null
-		const stdout = result.stdout.trim()
-		return stdout.length > 0 ? stdout : null
+		// Vision uses stream-json output — the answer is the final `result` event;
+		// text output is the raw stdout.
+		const text = vision ? parseStreamJsonResult(result.stdout) : result.stdout.trim()
+		return text && text.length > 0 ? text : null
 	} catch (err) {
 		if (isCancellation(err, signal)) throw err
 		return null
@@ -86,4 +112,55 @@ function buildOneShotInvocation(agent: SolverAgent, model: string): { command: s
 		command: 'claude',
 		args: ['-p', '--model', model, '--output-format', 'text', '--dangerously-skip-permissions'],
 	}
+}
+
+// Attaching an image to `claude -p` requires the streaming-JSON input format,
+// which in turn REQUIRES streaming-JSON output (+ `--verbose`). The answer is
+// then the final `result` event rather than raw stdout.
+function buildVisionInvocation(model: string): { command: string; args: string[] } {
+	return {
+		command: 'claude',
+		args: [
+			'-p',
+			'--model',
+			model,
+			'--input-format',
+			'stream-json',
+			'--output-format',
+			'stream-json',
+			'--verbose',
+			'--dangerously-skip-permissions',
+		],
+	}
+}
+
+/** One streaming-JSON user message carrying the prompt text plus image blocks. */
+function buildStreamJsonInput(prompt: string, images: OneShotImage[]): string {
+	const content: unknown[] = [{ type: 'text', text: prompt }]
+	for (const img of images) {
+		content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })
+	}
+	return `${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`
+}
+
+/**
+ * Pull the assistant's answer out of `--output-format stream-json` stdout: it's a
+ * stream of newline-delimited JSON events; the final `{ type: 'result' }` event
+ * carries the text in `result`. Returns null on error or if none is found.
+ */
+function parseStreamJsonResult(stdout: string): string | null {
+	for (const line of stdout.split('\n')) {
+		const trimmed = line.trim()
+		if (!trimmed) continue
+		let ev: { type?: string; is_error?: boolean; result?: unknown }
+		try {
+			ev = JSON.parse(trimmed)
+		} catch {
+			continue
+		}
+		if (ev.type === 'result' && !ev.is_error && typeof ev.result === 'string') {
+			return ev.result.trim()
+		}
+	}
+	return null
 }
