@@ -3908,7 +3908,6 @@ test('POST /items/:id/ai/assess force-runs triage and stores the assessment', ()
 		})
 		const assessmentJson = JSON.stringify({
 			intent: 'Fix the export 500',
-			acceptanceCriteria: ['Export returns 200'],
 			verdict: 'clear',
 			clarifyingQuestions: [],
 			securityNote: null,

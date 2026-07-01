@@ -523,7 +523,7 @@ function PlanPreview({ item }: { item: DashboardItem }) {
 }
 
 /** Pre-solve intent triage — the "approve the intent, not the output" surface:
- *  restated intent, acceptance criteria, clarifying questions, security note. */
+ *  restated intent, verdict, clarifying questions, security note. */
 function AssessmentPanel({ assessment }: { assessment: Assessment }) {
 	const m = VERDICT_META[assessment.verdict]
 	const labelStyle = {
@@ -572,25 +572,11 @@ function AssessmentPanel({ assessment }: { assessment: Assessment }) {
 					color: 'var(--text-0)',
 					lineHeight: 1.5,
 					overflowWrap: 'break-word',
-					marginBottom: assessment.acceptanceCriteria.length ? 12 : 0,
+					marginBottom: assessment.clarifyingQuestions.length || assessment.securityNote ? 12 : 0,
 				}}
 			>
 				{assessment.intent}
 			</p>
-
-			{assessment.acceptanceCriteria.length > 0 && (
-				<div style={{ marginBottom: assessment.clarifyingQuestions.length || assessment.securityNote ? 12 : 0 }}>
-					<div style={{ ...labelStyle, color: 'var(--text-4)' }}>Done when</div>
-					<ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
-						{assessment.acceptanceCriteria.map(c => (
-							<li key={c} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-								<span style={{ color: 'var(--text-4)', flexShrink: 0 }}>○</span>
-								<span style={{ overflowWrap: 'break-word', minWidth: 0 }}>{c}</span>
-							</li>
-						))}
-					</ul>
-				</div>
-			)}
 
 			{assessment.clarifyingQuestions.length > 0 && (
 				<div style={{ marginBottom: assessment.securityNote ? 12 : 0 }}>

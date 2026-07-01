@@ -662,8 +662,8 @@ export class ItemCommands {
 	}
 
 	/**
-	 * Persist the pre-solve intent triage (restated intent, acceptance criteria,
-	 * verdict, clarifying questions, security note). Advisory only — routed through
+	 * Persist the pre-solve intent triage (restated intent, verdict, clarifying
+	 * questions, security note). Advisory only — routed through
 	 * commands for a single write path, but records NO event and guards NO status;
 	 * the user still approves/rejects. Applies to an Item in any state.
 	 */

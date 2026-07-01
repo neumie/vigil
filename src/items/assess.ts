@@ -42,7 +42,6 @@ export const DEFAULT_ASSESSMENT_INSTRUCTIONS = [
 	'',
 	'Return ONLY a JSON object (no prose, no markdown fences) with exactly these keys:',
 	'- "intent": one sentence restating what the user actually wants, in the task\'s original language.',
-	'- "acceptanceCriteria": array of 1-4 short, concrete, checkable conditions that would prove the task is done. Empty array if not a code task.',
 	'- "verdict": one of:',
 	'    "clear"               — the desired end state is understandable and a coding agent can go implement it. Pick this even if you don\'t personally know the exact file, current label, or component — the agent will find those by reading the code.',
 	'    "needs_clarification" — genuinely ambiguous: a value or choice ONLY the user knows is missing and it changes the outcome (e.g. contradictory requirements, or a target that could mean two unrelated things). NOT for "which project / which file / where in the code / which screen / page / feature / API endpoint / what the current text or layout is" — the agent discovers all of those itself.',

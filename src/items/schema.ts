@@ -30,18 +30,19 @@ export const assessmentVerdictSchema = z.enum([
 ])
 
 // What the model returns for an assessment (we stamp `assessedAt` ourselves).
-export const assessmentInputSchema = z
-	.object({
-		intent: z.string(),
-		acceptanceCriteria: z.array(z.string()),
-		verdict: assessmentVerdictSchema,
-		clarifyingQuestions: z.array(z.string()),
-		securityNote: z.string().nullable(),
-	})
-	.strict()
+// NOT strict: triage classifies the INTENT only, so unknown keys (e.g. a stray
+// `acceptanceCriteria` from an older assessment or a model that adds fields) are
+// stripped rather than rejected — keeps old stored rows loadable after a field
+// is dropped, and tolerant of extra model output.
+export const assessmentInputSchema = z.object({
+	intent: z.string(),
+	verdict: assessmentVerdictSchema,
+	clarifyingQuestions: z.array(z.string()),
+	securityNote: z.string().nullable(),
+})
 
 // Stored pre-solve intent triage (advisory; never changes status).
-export const assessmentSchema = assessmentInputSchema.extend({ assessedAt: z.string() }).strict()
+export const assessmentSchema = assessmentInputSchema.extend({ assessedAt: z.string() })
 
 export const itemSourceSchema = z
 	.object({

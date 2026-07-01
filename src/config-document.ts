@@ -253,7 +253,7 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 		{
 			id: 'ai-triage',
 			title: 'AI · Intent triage',
-			description: 'Pre-solve pass: restates intent, drafts acceptance criteria, assigns a verdict',
+			description: 'Pre-solve pass: restates the intent and assigns a verdict',
 			controls: aiHelperControls(['solver', 'triage'], DEFAULT_ASSESSMENT_INSTRUCTIONS),
 		},
 		{

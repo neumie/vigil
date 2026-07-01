@@ -45,7 +45,6 @@ export type DashboardActionTone = 'primary' | 'muted' | 'danger'
 export type AssessmentVerdict = 'clear' | 'needs_clarification' | 'human_decision' | 'not_code' | 'security'
 export interface Assessment {
 	intent: string
-	acceptanceCriteria: string[]
 	verdict: AssessmentVerdict
 	clarifyingQuestions: string[]
 	securityNote: string | null

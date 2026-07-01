@@ -33,7 +33,6 @@ const ctx: TaskContext = { title: 'Invoice recipient', description: 'The invoice
 
 const VALID = JSON.stringify({
 	intent: 'Unify the invoice recipient',
-	acceptanceCriteria: ['Recipient is consistent across views'],
 	verdict: 'clear',
 	clarifyingQuestions: [],
 	securityNote: null,
@@ -174,7 +173,6 @@ test('ensureItemAssessment does not re-assess an already-assessed Item', () =>
 		const item = commands.createSolveItem({ title: 'x', projectSlug: 'vigil', prompt: 'x' })
 		commands.recordAssessment(item.id, {
 			intent: 'preset',
-			acceptanceCriteria: [],
 			verdict: 'clear',
 			clarifyingQuestions: [],
 			securityNote: null,
@@ -254,7 +252,6 @@ test('ensureItemAssessment force re-assesses when disabled and already assessed'
 		const item = commands.createSolveItem({ title: 'x', projectSlug: 'vigil', prompt: 'x' })
 		commands.recordAssessment(item.id, {
 			intent: 'preset',
-			acceptanceCriteria: [],
 			verdict: 'clear',
 			clarifyingQuestions: [],
 			securityNote: null,
@@ -265,7 +262,6 @@ test('ensureItemAssessment force re-assesses when disabled and already assessed'
 
 		const fresh = JSON.stringify({
 			intent: 'Touches CI secrets',
-			acceptanceCriteria: [],
 			verdict: 'security',
 			clarifyingQuestions: [],
 			securityNote: 'Asks to modify a workflow file',

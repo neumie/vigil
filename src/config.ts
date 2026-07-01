@@ -71,7 +71,7 @@ export const configSchema = z.object({
 			// Display name: compress each source title into a short dashboard label;
 			// failure → the raw title. Default on.
 			displayName: aiHelperSchema(true),
-			// Intent triage: restate intent + acceptance criteria + a verdict (clear /
+			// Intent triage: restate intent + a verdict (clear /
 			// needs_clarification / human_decision / not_code / security) so the human
 			// checkpoint is "approve the intent" not "test the PR". Advisory; never
 			// changes status. Default on.

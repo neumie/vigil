@@ -71,7 +71,6 @@ function fakeItem(over: Partial<ItemRecord>): ItemRecord {
 const LONG_TITLE = 'Assign customers to projects from the attached Excel by their IČO number'
 const VALID_ASSESSMENT = JSON.stringify({
 	intent: 'Assign customers to projects',
-	acceptanceCriteria: ['Companies filled by IČO'],
 	verdict: 'clear',
 	clarifyingQuestions: [],
 	securityNote: null,

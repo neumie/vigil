@@ -227,7 +227,7 @@ ALTER TABLE items ADD COLUMN display_name TEXT;
 	},
 	{
 		// assessment (JSON) is the pre-solve intent triage of a source task: restated
-		// intent, acceptance criteria, a verdict (clear / needs_clarification /
+		// intent, a verdict (clear / needs_clarification /
 		// human_decision / not_code / security), clarifying questions, and a security
 		// note. It moves the human checkpoint from "test the finished PR" to "approve
 		// the intent". Advisory only — it does NOT change status; the user still
