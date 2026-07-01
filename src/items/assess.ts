@@ -5,6 +5,7 @@ import { runOneShot } from '../solver/one-shot.js'
 import type { OneShotImage, OneShotOptions } from '../solver/one-shot.js'
 import { isCancellation } from '../util/errors.js'
 import { log } from '../util/logger.js'
+import { isSafePublicHttpUrl } from '../util/ssrf.js'
 import type { ItemCommands } from './commands.js'
 import { assessmentInputSchema } from './schema.js'
 import type { Assessment, ItemRecord } from './schema.js'
@@ -127,6 +128,7 @@ const VISION_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'ima
 const MAX_ASSESSMENT_IMAGES = 3
 const MAX_IMAGE_BYTES = 4_500_000 // under Anthropic's ~5MB base64 cap, keeps latency sane
 const IMAGE_FETCH_TIMEOUT_MS = 10_000
+const MAX_IMAGE_REDIRECTS = 3
 
 function visionMediaType(url: string, contentType: string | null): string | null {
 	const declared = contentType?.split(';')[0].trim().toLowerCase()
@@ -139,17 +141,34 @@ function visionMediaType(url: string, contentType: string | null): string | null
 	return null
 }
 
+/**
+ * Fetch an image from an ATTACKER-INFLUENCED task URL. SSRF-guarded: the host
+ * must resolve to a public address (`isSafePublicHttpUrl`), redirects are
+ * followed MANUALLY so each hop is re-validated (a redirect can aim back at an
+ * internal address), and the response must be a small image. Any failure → null.
+ */
 async function fetchOneImage(url: string, signal?: AbortSignal): Promise<OneShotImage | null> {
 	const timeout = AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS)
 	const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+	let current = url
 	try {
-		const res = await fetch(url, { signal: fetchSignal })
-		if (!res.ok) return null
-		const mediaType = visionMediaType(url, res.headers.get('content-type'))
-		if (!mediaType) return null
-		const buf = Buffer.from(await res.arrayBuffer())
-		if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) return null
-		return { data: buf.toString('base64'), mediaType }
+		for (let hop = 0; hop <= MAX_IMAGE_REDIRECTS; hop++) {
+			if (!(await isSafePublicHttpUrl(current))) return null
+			const res = await fetch(current, { signal: fetchSignal, redirect: 'manual' })
+			if (res.status >= 300 && res.status < 400) {
+				const loc = res.headers.get('location')
+				if (!loc) return null
+				current = new URL(loc, current).href // re-validated at the top of the next hop
+				continue
+			}
+			if (!res.ok) return null
+			const mediaType = visionMediaType(current, res.headers.get('content-type'))
+			if (!mediaType) return null
+			const buf = Buffer.from(await res.arrayBuffer())
+			if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) return null
+			return { data: buf.toString('base64'), mediaType }
+		}
+		return null // too many redirects
 	} catch {
 		return null
 	}
