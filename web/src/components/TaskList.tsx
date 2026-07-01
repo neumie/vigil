@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AssessmentVerdict, DaemonStatus, DashboardItem } from '../api'
 import { useRelativeTime } from '../hooks'
 import { TONE_COLOR, TONE_DIM, VERDICT_META } from '../verdict'
 import { Select } from './Select'
 
 type Tab = 'needs' | 'running' | 'ready' | 'triage' | 'archived'
+
+// The sidebar tab is persisted across reloads (like the project filter). Guard
+// the stored value so a stale/garbage key can't select a non-existent tab.
+const TAB_STORAGE_KEY = 'vigil.tab'
+function isTab(v: string | null): v is Tab {
+	return v === 'needs' || v === 'running' || v === 'ready' || v === 'triage' || v === 'archived'
+}
 
 interface Props {
 	items: DashboardItem[]
@@ -107,7 +114,14 @@ export function TaskList({
 	projectColors,
 }: Props) {
 	const { needs, running, ready, triage, archived } = partitionWorkEntries(items)
-	const [tab, setTab] = useState<Tab>('needs')
+	const [tab, setTab] = useState<Tab>(() => {
+		const saved = localStorage.getItem(TAB_STORAGE_KEY)
+		return isTab(saved) ? saved : 'needs'
+	})
+	// Persist the selected tab so a reload keeps the user where they were.
+	useEffect(() => {
+		localStorage.setItem(TAB_STORAGE_KEY, tab)
+	}, [tab])
 
 	// Four primary tabs share the width; Archived is demoted to a compact icon
 	// toggle at the row's end so the bar isn't cramped (it's the rarely-used pile).
