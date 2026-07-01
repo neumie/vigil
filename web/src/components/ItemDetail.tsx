@@ -324,7 +324,16 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 							borderTop: '1px solid var(--border)',
 						}}
 					>
-						<LinkRow label="Task" url={item.links.source?.url ?? null} fallback="no source" />
+						<LinkRow
+							label="Task"
+							url={item.links.source?.url ?? null}
+							fallback="no source"
+							linkText={
+								(item.links.source?.url ? hostLabel(item.links.source.url) : null) ??
+								item.source?.provider ??
+								'open'
+							}
+						/>
 						<LinkRow label="GitHub" url={item.links.pr?.url ?? null} fallback="no PR yet" />
 					</div>
 				</Section>
@@ -1214,18 +1223,48 @@ function formatTime(value: string): string {
 // A labeled link row for the sidebar Links card — always renders its label,
 // showing a muted placeholder (e.g. "no PR yet") when the link is absent so a
 // missing link reads as "not available" rather than vanishing.
-function LinkRow({ label, url, fallback }: { label: string; url: string | null; fallback: string }) {
+/** The leftmost host label as a short source name — e.g.
+ *  `clientcare.eu.contember.cloud` → "clientcare", `github.com` → "github".
+ *  Falls back to null so callers can use their default link text. */
+function hostLabel(url: string): string | null {
+	try {
+		return new URL(url).hostname.split('.')[0] || null
+	} catch {
+		return null
+	}
+}
+
+function LinkRow({
+	label,
+	url,
+	fallback,
+	linkText = 'open',
+}: {
+	label: string
+	url: string | null
+	fallback: string
+	linkText?: string
+}) {
 	return (
-		<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-			<span style={{ color: 'var(--text-4)' }}>{label}</span>
+		<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12 }}>
+			<span style={{ color: 'var(--text-4)', flexShrink: 0 }}>{label}</span>
 			{url ? (
 				<a
 					href={url}
 					target="_blank"
 					rel="noreferrer"
-					style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}
+					title={url}
+					style={{
+						color: 'var(--accent)',
+						textDecoration: 'none',
+						fontWeight: 500,
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
+						whiteSpace: 'nowrap',
+						minWidth: 0,
+					}}
 				>
-					open ↗
+					{linkText} ↗
 				</a>
 			) : (
 				<span style={{ color: 'var(--text-4)' }}>{fallback}</span>
