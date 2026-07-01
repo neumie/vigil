@@ -411,7 +411,10 @@ export function apiRoutes(
 			try {
 				planArtifacts = new PlanWorkspace(item.worktreePath, item.planDirName).listArtifacts()
 			} catch (err) {
-				log.warn('api', `Failed to read plan artifacts for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
+				log.warn(
+					'api',
+					`Failed to read plan artifacts for Item ${item.id}: ${err instanceof Error ? err.message : err}`,
+				)
 			}
 		}
 		return c.json({ data: { ...dashboardItem(item), sourceTask, planArtifacts } })
