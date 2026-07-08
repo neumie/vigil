@@ -6,7 +6,7 @@ import extensionApiModule from '../extension/src/api.ts'
 const originalFetch = globalThis.fetch
 const { api } = extensionApiModule as typeof import('../extension/src/api.ts')
 type ExtensionWidgetModule = typeof import('../extension/src/Widget.tsx')
-const { itemRunNotices, planLeadText } = extensionWidgetModule as ExtensionWidgetModule
+const { itemRunNotices } = extensionWidgetModule as ExtensionWidgetModule
 
 type ChromeStorageStub = {
 	storage: {
@@ -15,21 +15,6 @@ type ChromeStorageStub = {
 		}
 	}
 }
-
-test('extension planning lead names the Spawner for Item planning results', () => {
-	assert.equal(
-		planLeadText({
-			worktreePath: '/tmp/worktree',
-			branchName: 'vigil/item/demo',
-			planDirName: 'demo-plan',
-			readmePath: '/tmp/worktree/docs/plans/demo-plan/README.md',
-			spawner: 'okena',
-			solverAgent: 'claude',
-			hint: 'planned',
-		}),
-		'okena planning started for demo-plan.',
-	)
-})
 
 test('extension Item notices show almanac failure reasons as failures', () => {
 	assert.deepEqual(

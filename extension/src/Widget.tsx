@@ -3,7 +3,6 @@ import {
 	type DashboardActionId,
 	type DashboardItem,
 	type DashboardLink,
-	type DashboardPlan,
 	type DashboardTone,
 	type ModelOption,
 	type PlanInfo,
@@ -25,17 +24,6 @@ type View =
 	| { kind: 'error' }
 	| { kind: 'untracked'; solvable: boolean }
 	| { kind: 'item'; item: DashboardItem }
-
-type DisplayPlan = PlanInfo | DashboardPlan
-
-function planLeadPrefix(plan: DisplayPlan): string {
-	if ('spawner' in plan) return `${plan.spawner} planning started for`
-	return 'Plan prepared for'
-}
-
-export function planLeadText(plan: DisplayPlan): string {
-	return `${planLeadPrefix(plan)} ${plan.planDirName}.`
-}
 
 export interface ItemRunNotice {
 	kind: 'summary' | 'failure'
@@ -328,33 +316,6 @@ function ModelSelect(props: {
 	)
 }
 
-function PlanInfoBlock(props: { planInfo: Accessor<PlanInfo | null>; plan?: Accessor<DashboardPlan | null> }) {
-	const info = () => props.planInfo() ?? props.plan?.() ?? null
-	return (
-		<Show when={info()}>
-			{plan => (
-				<div class="vg-plan">
-					<span>
-						<PlanLead plan={plan()} />
-					</span>
-					<span>
-						Tell it what you want, or run <code>/grill-me {plan().planDirName}</code> /{' '}
-						<code>/grill-plan {plan().planDirName}</code>.
-					</span>
-				</div>
-			)}
-		</Show>
-	)
-}
-
-function PlanLead(props: { plan: DisplayPlan }) {
-	return (
-		<>
-			{planLeadPrefix(props.plan)} <code>{props.plan.planDirName}</code>.
-		</>
-	)
-}
-
 function Pill(props: { view: Accessor<View>; onExpand: () => void; onSolve: () => void }) {
 	const v = props.view
 	return (
@@ -525,7 +486,6 @@ function Card(props: {
 										)}
 									</Show>
 									<Show when={item().errorMessage}>{message => <div class="vg-error">{message()}</div>}</Show>
-									<PlanInfoBlock planInfo={props.planInfo} plan={() => item().plan} />
 								</div>
 
 								<div class="vg-card__actions">

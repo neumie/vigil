@@ -289,26 +289,6 @@ export const WIDGET_STYLES = `
 	}
 	.vg-error__dismiss:hover { opacity: 1; }
 
-	.vg-plan {
-		font-size: 12px;
-		line-height: 1.55;
-		color: var(--vg-text-dim);
-		background: var(--vg-accent-soft);
-		border-left: 2px solid var(--vg-accent);
-		border-radius: 0 var(--vg-radius-ctl) var(--vg-radius-ctl) 0;
-		padding: 10px 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 5px;
-	}
-	.vg-plan code, .vg-summary code {
-		background: rgba(255, 255, 255, 0.08);
-		padding: 1px 5px;
-		border-radius: 4px;
-		font-family: var(--vg-mono);
-		font-size: 11px;
-		color: var(--vg-text);
-	}
 
 	.vg-card__actions { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--vg-border); }
 
