@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import type { VigilConfig } from '../config.js'
 import type { DB } from '../db/client.js'
@@ -116,10 +117,30 @@ async function discoverPrUrlByBranch(repoPath: string, branchName: string): Prom
 	}
 }
 
-/** Injectable seams so tests can run the watcher without a real `gh`. */
+/**
+ * The branch the worktree is ACTUALLY on. Old runs (and rogue agents) renamed
+ * the branch mid-run, so the stored `branchName` can be stale while the PR
+ * lives on the worktree's current branch. Best-effort: null when the worktree
+ * is gone or git fails.
+ */
+async function readWorktreeBranch(worktreePath: string): Promise<string | null> {
+	if (!existsSync(worktreePath)) return null
+	try {
+		const { stdout } = await execFileAsync('git', ['branch', '--show-current'], {
+			cwd: worktreePath,
+			timeout: 10_000,
+		})
+		return stdout.trim() || null
+	} catch {
+		return null
+	}
+}
+
+/** Injectable seams so tests can run the watcher without a real `gh`/`git`. */
 export interface DeployWatcherDeps {
 	fetchDeployState?: typeof fetchDeployState
 	discoverPrUrl?: typeof discoverPrUrlByBranch
+	readWorktreeBranch?: typeof readWorktreeBranch
 }
 
 /**
@@ -142,6 +163,7 @@ export class DeployWatcher {
 	private readonly intervalSeconds: number
 	private readonly fetchState: typeof fetchDeployState
 	private readonly discoverPr: typeof discoverPrUrlByBranch
+	private readonly readBranch: typeof readWorktreeBranch
 
 	constructor(
 		private config: VigilConfig,
@@ -152,6 +174,7 @@ export class DeployWatcher {
 		this.intervalSeconds = config.github.deployPollSeconds
 		this.fetchState = deps.fetchDeployState ?? fetchDeployState
 		this.discoverPr = deps.discoverPrUrl ?? discoverPrUrlByBranch
+		this.readBranch = deps.readWorktreeBranch ?? readWorktreeBranch
 	}
 
 	start() {
@@ -197,7 +220,15 @@ export class DeployWatcher {
 			const project = this.config.projects.find(p => p.slug === item.projectSlug)
 			if (!project || !item.branchName) continue
 			try {
-				const prUrl = await this.discoverPr(project.repoPath, item.branchName)
+				let prUrl = await this.discoverPr(project.repoPath, item.branchName)
+				if (!prUrl && item.worktreePath) {
+					// The agent may have renamed the branch mid-run — the PR then lives
+					// on the worktree's CURRENT branch, not the stored one.
+					const liveBranch = await this.readBranch(item.worktreePath)
+					if (liveBranch && liveBranch !== item.branchName) {
+						prUrl = await this.discoverPr(project.repoPath, liveBranch)
+					}
+				}
 				if (!prUrl) continue
 				this.commands.recordDispatchPr(item.id, { prUrl, shippedByAgent: true })
 				log.info('deploy', `Backfilled late PR for Item ${item.id}: ${prUrl}`)

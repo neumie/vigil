@@ -4116,3 +4116,30 @@ test('Item action routes set, reject, and clear the per-item solver model', () =
 		const clearedPayload = db.items.get(clearTarget.id)?.payload
 		assert.equal(clearedPayload?.kind === 'solve' ? clearedPayload.solverModel : 'set', undefined)
 	}))
+
+test('late-PR backfill falls back to the worktree branch when the agent renamed it', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'renamed', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(item.id)
+		commands.recordExecutionWorkspaceIdentity(item.id, {
+			worktreePath: '/tmp/wt-renamed',
+			branchName: 'fix/stored-name',
+			planDirName: 'p',
+		})
+		commands.reconcileFailedSolve(item.id, { message: 'idle timeout', phase: 'solve' })
+
+		const lookups: string[] = []
+		const watcher = new DeployWatcher(config, db, {
+			discoverPrUrl: async (_repoPath, branch) => {
+				lookups.push(branch)
+				return branch === 'fix/live-name' ? 'https://github.com/neumie/vigil/pull/12' : null
+			},
+			readWorktreeBranch: async () => 'fix/live-name',
+			fetchDeployState: async () => null,
+		})
+		await watcher.pollOnce()
+
+		assert.deepEqual(lookups, ['fix/stored-name', 'fix/live-name'])
+		assert.equal(db.items.get(item.id)?.prUrl, 'https://github.com/neumie/vigil/pull/12')
+	}))
