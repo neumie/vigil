@@ -499,7 +499,9 @@ function Card(props: {
 								</div>
 
 								<div class="vg-card__body">
-									<div class="vg-text vg-text--primary">{item().title}</div>
+									<div class="vg-text vg-text--primary vg-text--oneline" title={item().title}>
+										{item().title}
+									</div>
 									<LinkLine label="Branch" link={item().links.branch} />
 									<LinkLine label="PR" link={item().links.pr} />
 									<AgentSelect

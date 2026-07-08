@@ -146,6 +146,11 @@ export const WIDGET_STYLES = `
 	.vg-card__body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 	.vg-text { font-size: 13px; line-height: 1.5; color: var(--vg-text-dim); }
 	.vg-text--primary { color: var(--vg-text); }
+	.vg-text--oneline {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	.vg-summary { font-size: 13px; line-height: 1.55; color: var(--vg-text-dim); }
 	.vg-link-line {
 		display: flex;
@@ -199,12 +204,16 @@ export const WIDGET_STYLES = `
 	}
 	.vg-agent__seg--flow {
 		display: flex;
-		flex-wrap: wrap;
-		height: auto;
-		min-height: 30px;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		max-width: 236px;
+		scrollbar-width: none;
 	}
+	.vg-agent__seg--flow::-webkit-scrollbar { display: none; }
 	.vg-agent__seg--flow .vg-agent__option {
-		padding: 0 10px;
+		padding: 0 9px;
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 	.vg-agent__option {
 		height: 24px;
