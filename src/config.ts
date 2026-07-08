@@ -61,6 +61,10 @@ export const configSchema = z.object({
 			concurrency: z.number().min(1).max(10).default(2),
 			model: z.string().optional(),
 			maxBudgetUsd: z.number().optional(),
+			// Okena solver: IDLE timeout — fail only after this long with no
+			// terminal-screen activity (long ACTIVE runs are legitimate; a 6h hard cap
+			// in the okena solver backstops). Default solver: wall-clock cap on the
+			// spawned agent CLI (src/solver/invoker.ts).
 			timeoutMinutes: z.number().min(1).default(30),
 			// AI helpers (cheap one-shot model calls), each independently configurable
 			// in Settings (on/off, provider, model, prompt). Defaults: model per-agent

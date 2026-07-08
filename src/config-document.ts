@@ -228,7 +228,13 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 					input: 'text',
 					placeholder: 'Agent model override (optional)',
 				},
-				{ type: 'field', path: ['solver', 'timeoutMinutes'], label: 'Timeout (min)', input: 'number' },
+				{
+					type: 'field',
+					path: ['solver', 'timeoutMinutes'],
+					label: 'Idle timeout (min)',
+					input: 'number',
+					placeholder: 'Fail after this long with no agent activity',
+				},
 				{
 					type: 'field',
 					path: ['solver', 'maxBudgetUsd'],

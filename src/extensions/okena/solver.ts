@@ -10,6 +10,11 @@ import { log } from '../../util/logger.js'
 import { OkenaClient } from './client.js'
 import { OkenaWorktreeManager } from './worktree.js'
 
+/** Absolute ceiling on a single okena solve, however lively the terminal looks. */
+const HARD_TIMEOUT_MS = 6 * 60 * 60 * 1000
+/** Screen-sample cadence in units of the 2s poll tick (5 → every ~10s). */
+const SCREEN_SAMPLE_EVERY = 5
+
 export class OkenaSolver implements Solver {
 	private client: OkenaClient
 	private worktrees: OkenaWorktreeManager
@@ -85,10 +90,22 @@ export class OkenaSolver implements Solver {
 		}
 
 		// Poll for solver-result.json — the agent writes this when done solving.
-		const timeoutMs = solverConfig.timeoutMinutes * 60 * 1000
+		//
+		// The timeout is IDLE-based, not wall-clock: real runs regularly exceed any
+		// fixed budget (a 30m wall-clock cap once "timed out" an agent that shipped
+		// a PR 80 minutes later), and vigil can't kill the agent anyway — it runs in
+		// okena's terminal. `timeoutMinutes` means "no terminal activity for this
+		// long": the screen is sampled via okena's `read_content` and any repaint
+		// (Claude Code's spinner/output) counts as life. A dead agent leaves a
+		// static prompt and still trips it. A generous hard cap bounds pathological
+		// screens that never settle.
+		const idleTimeoutMs = solverConfig.timeoutMinutes * 60 * 1000
 		const startTime = Date.now()
+		let lastActivity = startTime
+		let lastScreen: string | null = null
+		let poll = 0
 
-		log.info('okena', `Waiting for solver-result.json (timeout: ${solverConfig.timeoutMinutes}m)`)
+		log.info('okena', `Waiting for solver-result.json (idle timeout: ${solverConfig.timeoutMinutes}m)`)
 		while (!workspace.resultExists()) {
 			if (signal?.aborted) {
 				try {
@@ -98,9 +115,34 @@ export class OkenaSolver implements Solver {
 				}
 				throw taskCancelled()
 			}
-			if (Date.now() - startTime > timeoutMs) {
-				throw phaseError('solve', `${agentLabel} timed out in Okena terminal`)
+			const now = Date.now()
+			if (now - startTime > HARD_TIMEOUT_MS) {
+				throw phaseError('solve', `${agentLabel} exceeded the ${HARD_TIMEOUT_MS / 3_600_000}h hard cap in Okena terminal`)
 			}
+			if (now - lastActivity > idleTimeoutMs) {
+				throw phaseError(
+					'solve',
+					`${agentLabel} idle in Okena terminal for ${solverConfig.timeoutMinutes}m (no screen activity) — assuming it stalled`,
+				)
+			}
+			// Sample the screen every ~10s; a failed read (terminal closed) earns no
+			// activity credit, so a vanished terminal still idles out.
+			if (poll % SCREEN_SAMPLE_EVERY === 0) {
+				try {
+					const res = await this.client.action<{ content?: string }>({
+						action: 'read_content',
+						terminal_id: terminalId,
+					})
+					const screen = res?.content ?? ''
+					if (screen !== lastScreen) {
+						lastScreen = screen
+						lastActivity = Date.now()
+					}
+				} catch {
+					/* no activity credit */
+				}
+			}
+			poll++
 			await sleep(2000)
 		}
 
