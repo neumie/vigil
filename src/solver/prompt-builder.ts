@@ -34,10 +34,16 @@ After shipping, write a \`solver-result.json\` file at \`${planPaths(planDirName
 If you created a PR via /almanac:ship, include the PR URL in \`prUrl\`.
 Use /almanac:commit for all commits.
 
+After writing \`solver-result.json\`, COMMIT it to the branch and push, so the PR carries the run record:
+
+\`\`\`bash
+git add "${planPaths(planDirName).result}" && git commit -m "chore: record solver result" && git push
+\`\`\`
+
 ### Critical rules:
 - NEVER change code that works correctly unless the task specifically asks for it
 - NEVER add features, refactor, or "improve" beyond what was requested
-- NEVER commit files you didn't intentionally change
+- NEVER commit files you didn't intentionally change (the solver-result.json commit above is intentional)
 - If you cannot verify the described issue exists, say so in the summary rather than guessing
 
 ---
