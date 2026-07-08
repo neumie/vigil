@@ -5,7 +5,9 @@ import {
 	type DashboardLink,
 	type DashboardPlan,
 	type DashboardTone,
+	type ModelOption,
 	type PlanInfo,
+	type SolveSelection,
 	type SolverAgent,
 	api,
 	getServerUrl,
@@ -70,6 +72,12 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [planPending, setPlanPending] = createSignal(false)
 	const [solverAgent, setSolverAgent] = createSignal<SolverAgent>('claude')
 	const [agentTouched, setAgentTouched] = createSignal(false)
+	// '' = no per-item override — the daemon's configured model. Persisted like
+	// the agent choice so the quick-switch survives popup/tab reloads.
+	const [solverModel, setSolverModel] = createSignal<string>('')
+	const [modelTouched, setModelTouched] = createSignal(false)
+	const [modelCatalog, setModelCatalog] = createSignal<Record<SolverAgent, ModelOption[]>>({ claude: [], codex: [] })
+	const [favoriteModels, setFavoriteModels] = createSignal<string[]>([])
 
 	getServerUrl().then(setServerUrl)
 
@@ -78,10 +86,15 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		.config()
 		.then(c => {
 			setProjects(c.projects.map(p => p.slug))
+			if (c.modelCatalog) setModelCatalog(c.modelCatalog)
 			const configAgent = c.solver?.agent ?? 'claude'
-			getSync({ solverAgent: configAgent })
+			getSync({ solverAgent: configAgent, solverModel: '', favoriteModels: [] as string[] })
 				.then(items => {
 					if (!agentTouched() && isSolverAgent(items.solverAgent)) setSolverAgent(items.solverAgent)
+					if (!modelTouched() && typeof items.solverModel === 'string') setSolverModel(items.solverModel)
+					if (Array.isArray(items.favoriteModels)) {
+						setFavoriteModels(items.favoriteModels.filter((m): m is string => typeof m === 'string'))
+					}
 				})
 				.catch(err => console.warn('[vigil]', err))
 		})
@@ -148,13 +161,36 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		await doAction(() => api.createItemFromSource(id))
 	}
 
+	// Favorite models for the current agent — quick-switch chips. An empty
+	// favorites list falls back to the whole catalog so the switch works before
+	// any favorites are picked in the extension popup.
+	const modelOptions = (): ModelOption[] => {
+		const all = modelCatalog()[solverAgent()] ?? []
+		const picked = all.filter(m => favoriteModels().includes(m.id))
+		return picked.length > 0 ? picked : all
+	}
+
+	// The model actually SENT must be a chip the user can see — a persisted pick
+	// that fell out of the rendered options (favorites changed, agent switched,
+	// catalog updated) degrades to Auto instead of silently riding along.
+	const effectiveModel = (): string => {
+		const m = solverModel()
+		return m && modelOptions().some(o => o.id === m) ? m : ''
+	}
+
+	const selection = (): SolveSelection => ({
+		solverAgent: solverAgent(),
+		// null = explicitly clear any stored per-item override ("Auto").
+		solverModel: effectiveModel() || null,
+	})
+
 	async function handlePlan() {
 		const i = item()
 		if (!i) return
 		setActionError(null)
 		setPlanPending(true)
 		try {
-			setPlanInfo(await api.planItem(i.id, solverAgent()))
+			setPlanInfo(await api.planItem(i.id, selection()))
 		} catch (err) {
 			setActionError(err instanceof Error ? err.message : 'Plan failed')
 		} finally {
@@ -166,6 +202,17 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		setAgentTouched(true)
 		setSolverAgent(agent)
 		void setSync({ solverAgent: agent })
+		// A model id belongs to one agent's CLI — switching agents drops a
+		// now-foreign override back to the daemon default.
+		if (solverModel() && !(modelCatalog()[agent] ?? []).some(m => m.id === solverModel())) {
+			chooseSolverModel('')
+		}
+	}
+
+	function chooseSolverModel(model: string) {
+		setModelTouched(true)
+		setSolverModel(model)
+		void setSync({ solverModel: model })
 	}
 
 	const view = (): View => {
@@ -184,14 +231,17 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 				planInfo={planInfo}
 				planPending={planPending}
 				solverAgent={solverAgent}
+				solverModel={effectiveModel}
+				modelOptions={modelOptions}
 				actionError={actionError}
 				onSolverAgentChange={chooseSolverAgent}
+				onSolverModelChange={chooseSolverModel}
 				onDismissError={() => setActionError(null)}
 				onCollapse={() => setExpanded(false)}
 				onSolve={solve}
 				onItemAction={action => {
 					const i = item()
-					if (i) doAction(() => api.itemAction(i.id, action, solverAgent()))
+					if (i) doAction(() => api.itemAction(i.id, action, selection()))
 				}}
 				onPlan={handlePlan}
 			/>
@@ -242,6 +292,51 @@ function AgentSelect(props: {
 				</For>
 			</div>
 		</div>
+	)
+}
+
+/**
+ * Quick-switch between favorite models for the selected agent. "Auto" = no
+ * per-item override (the daemon's configured model). Hidden when the daemon
+ * didn't provide a catalog (older server).
+ */
+function ModelSelect(props: {
+	value: Accessor<string>
+	options: Accessor<ModelOption[]>
+	onChange: (model: string) => void
+	disabled?: boolean
+}) {
+	return (
+		<Show when={props.options().length > 0}>
+			<div class="vg-agent">
+				<span class="vg-agent__label">Model</span>
+				<div class="vg-agent__seg vg-agent__seg--flow" aria-label="Solver model">
+					<button
+						type="button"
+						class={`vg-agent__option${props.value() === '' ? ' is-active' : ''}`}
+						aria-pressed={props.value() === ''}
+						disabled={props.disabled}
+						on:click={() => props.onChange('')}
+					>
+						Auto
+					</button>
+					<For each={props.options()}>
+						{model => (
+							<button
+								type="button"
+								class={`vg-agent__option${props.value() === model.id ? ' is-active' : ''}`}
+								aria-pressed={props.value() === model.id}
+								disabled={props.disabled}
+								title={model.id}
+								on:click={() => props.onChange(model.id)}
+							>
+								{model.label}
+							</button>
+						)}
+					</For>
+				</div>
+			</div>
+		</Show>
 	)
 }
 
@@ -322,8 +417,11 @@ function Card(props: {
 	planInfo: Accessor<PlanInfo | null>
 	planPending: Accessor<boolean>
 	solverAgent: Accessor<SolverAgent>
+	solverModel: Accessor<string>
+	modelOptions: Accessor<ModelOption[]>
 	actionError: Accessor<string | null>
 	onSolverAgentChange: (agent: SolverAgent) => void
+	onSolverModelChange: (model: string) => void
 	onDismissError: () => void
 	onCollapse: () => void
 	onSolve: () => void
@@ -421,6 +519,12 @@ function Card(props: {
 									<AgentSelect
 										value={props.solverAgent}
 										onChange={props.onSolverAgentChange}
+										disabled={isProcessing()}
+									/>
+									<ModelSelect
+										value={props.solverModel}
+										options={props.modelOptions}
+										onChange={props.onSolverModelChange}
 										disabled={isProcessing()}
 									/>
 									<For each={itemRunNotices(item())}>

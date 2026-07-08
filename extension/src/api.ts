@@ -181,14 +181,35 @@ export interface PlanInfo {
 	hint: string
 }
 
+export interface ModelOption {
+	id: string
+	label: string
+}
+
+export interface SolveSelection {
+	solverAgent?: SolverAgent
+	/**
+	 * Per-item model override. A model id sets it; null explicitly CLEARS a
+	 * previously stored override (the "Auto" chip); undefined leaves it alone.
+	 */
+	solverModel?: string | null
+}
+
+function selectionBody(selection?: SolveSelection): Record<string, unknown> | undefined {
+	if (!selection) return undefined
+	const body: Record<string, unknown> = {}
+	if (selection.solverAgent) body.solverAgent = selection.solverAgent
+	if (selection.solverModel !== undefined) body.solverModel = selection.solverModel
+	return Object.keys(body).length > 0 ? body : undefined
+}
+
 export const api = {
 	findItemBySource: (externalId: string) => fetchAPI<DashboardItem | null>(`/items/by-source/${externalId}`),
 
 	createItemFromSource: (externalId: string) => postAPI<DashboardItem>('/items/source', { externalId }),
 
-	itemAction: (id: string, action: DashboardActionId, solverAgent?: SolverAgent) => {
-		const body =
-			solverAgent && (action === 'approve' || action === 'start' || action === 'retry') ? { solverAgent } : undefined
+	itemAction: (id: string, action: DashboardActionId, selection?: SolveSelection) => {
+		const body = action === 'approve' || action === 'start' || action === 'retry' ? selectionBody(selection) : undefined
 		switch (action) {
 			case 'approve':
 			case 'reject':
@@ -199,9 +220,12 @@ export const api = {
 				return postAPI<DashboardItem>(`/items/${id}/${action}`, body)
 		}
 	},
-	planItem: (id: string, solverAgent?: SolverAgent) => postAPI<PlanInfo>(`/items/${id}/plan`, { solverAgent }),
+	planItem: (id: string, selection?: SolveSelection) =>
+		postAPI<PlanInfo>(`/items/${id}/plan`, selectionBody(selection) ?? {}),
 	config: () =>
-		fetchAPI<{ projects: Array<{ slug: string }>; solver?: { agent?: SolverAgent; type?: 'default' | 'okena' } }>(
-			'/config',
-		),
+		fetchAPI<{
+			projects: Array<{ slug: string }>
+			solver?: { agent?: SolverAgent; model?: string; type?: 'default' | 'okena' }
+			modelCatalog?: Record<SolverAgent, ModelOption[]>
+		}>('/config'),
 }

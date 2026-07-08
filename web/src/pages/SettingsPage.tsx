@@ -255,7 +255,12 @@ function ConfigInput({
 }) {
 	if (field.input === 'select') {
 		return (
-			<SelectField label={field.label} value={String(value ?? '')} onChange={onChange} options={field.options ?? []} />
+			<SelectField
+				label={field.label}
+				value={String(value ?? '')}
+				onChange={next => onChange(normalizeTextValue(String(next), field))}
+				options={field.options ?? []}
+			/>
 		)
 	}
 

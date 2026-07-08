@@ -1,6 +1,7 @@
 import type { VigilConfig } from '../config.js'
 import type { TaskContext } from '../providers/provider.js'
 import type { SolverAgent } from '../solver/agent.js'
+import { defaultHelperModel } from '../solver/models.js'
 import { runOneShot } from '../solver/one-shot.js'
 import type { OneShotImage, OneShotOptions } from '../solver/one-shot.js'
 import { isCancellation } from '../util/errors.js'
@@ -9,11 +10,6 @@ import { isSafePublicHttpUrl } from '../util/ssrf.js'
 import type { ItemCommands } from './commands.js'
 import { assessmentInputSchema } from './schema.js'
 import type { Assessment, ItemRecord } from './schema.js'
-
-/** Cheap per-agent default when `solver.triage.model` is unset. */
-function defaultTriageModel(agent: SolverAgent): string {
-	return agent === 'codex' ? 'gpt-5-mini' : 'claude-haiku-4-5'
-}
 
 /**
  * Default instruction block for intent triage (the editable `solver.triage.prompt`).
@@ -227,7 +223,7 @@ export async function ensureItemAssessment(params: EnsureItemAssessmentParams): 
 
 	const agent = feature.agent ?? params.agent ?? config.solver.agent
 	try {
-		const model = feature.model ?? defaultTriageModel(agent)
+		const model = feature.model ?? defaultHelperModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		// Let the model actually SEE attached screenshots (vision is claude-only).
 		// Best-effort — a fetch failure just degrades this call to text-only.

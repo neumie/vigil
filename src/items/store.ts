@@ -334,6 +334,34 @@ export class ItemStore {
 		return rows.map(row => this.rowToItem(row))
 	}
 
+	// Review solve Items that have a branch but no recorded PR and where a PR may
+	// genuinely exist unrecorded: the run errored/produced no result (agent may
+	// have shipped AFTER vigil stopped watching, e.g. a timeout later reconciled
+	// to review) OR the run completed but dispatch FAILED (classic case: `gh pr
+	// create` dies client-side after GitHub created the PR). The DeployWatcher
+	// backfills these by asking gh for a PR on the branch. Deliberately excludes
+	// clean runs with dispatch merely SKIPPED (createPrs off) — those are
+	// unshipped on purpose and would be polled forever.
+	listPrBackfillable(limit = 50): ItemRecord[] {
+		const rows = this.db
+			.prepare(
+				`SELECT * FROM items
+				 WHERE kind = 'solve' AND status = 'review' AND pr_url IS NULL
+				   AND branch_name IS NOT NULL
+				   AND (
+				     run_outcome IN ('errored', 'no_result')
+				     OR EXISTS (
+				       SELECT 1 FROM item_events e
+				        WHERE e.item_id = items.id AND e.event_type = 'dispatch_failed'
+				     )
+				   )
+				 ORDER BY updated_at DESC
+				 LIMIT ?`,
+			)
+			.all(limit) as Record<string, unknown>[]
+		return rows.map(row => this.rowToItem(row))
+	}
+
 	branchNameExists(branchName: string, exceptId?: string): boolean {
 		const row = exceptId
 			? this.db

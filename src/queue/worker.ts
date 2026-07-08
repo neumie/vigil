@@ -166,6 +166,7 @@ export async function processSolveItem(
 		const taskContext = await buildSolveItemTaskContext(item, provider)
 
 		const selectedAgent = item.payload.kind === 'solve' ? item.payload.solverAgent : undefined
+		const selectedModel = item.payload.kind === 'solve' ? item.payload.solverModel : undefined
 		const named = await ensureItemWorkspaceName({
 			commands,
 			item,
@@ -178,7 +179,11 @@ export async function processSolveItem(
 
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(named)
 		commands.recordExecutionWorkspaceIdentity(itemId, { planDirName, branchName })
-		const solverConfig = { ...config.solver, agent: selectedAgent ?? config.solver.agent }
+		const solverConfig = {
+			...config.solver,
+			agent: selectedAgent ?? config.solver.agent,
+			model: selectedModel ?? config.solver.model,
+		}
 
 		const { worktreePath, outcome } = await solver.solve({
 			projectConfig: { ...projectConfig, baseBranch: baseRef },

@@ -201,6 +201,16 @@ export class ItemCommands {
 		return this.store.updatePayload(id, { ...item.payload, solverAgent })
 	}
 
+	/** Per-item model override for the next solve run; null clears it. */
+	setSolveItemModel(id: string, solverModel: string | null): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items can store a selected solver model')
+		}
+		const { solverModel: _prev, ...payload } = item.payload
+		return this.store.updatePayload(id, solverModel ? { ...payload, solverModel } : payload)
+	}
+
 	createRalphItem(input: CreateRalphItemInput): ItemRecord {
 		return this.createRalphItems({ ...input, parallelism: 1 })[0]
 	}

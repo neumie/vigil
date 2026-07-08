@@ -20,7 +20,7 @@ import {
 import { configSchema } from '../src/config.js'
 import type { VigilConfig } from '../src/config.js'
 import { DB } from '../src/db/client.js'
-import { httpUrlOrNull, parsePrUrl } from '../src/github/deploy-watcher.js'
+import { DeployWatcher, httpUrlOrNull, parsePrUrl } from '../src/github/deploy-watcher.js'
 import { ItemCommands } from '../src/items/commands.js'
 import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
 import { resolveItemWorkspace } from '../src/items/identity.js'
@@ -3986,4 +3986,133 @@ test('POST /items/:id/ai/:pass guards unknown pass, missing item, and unsafe bra
 		assert.equal((await post(`/items/${ralph.id}/ai/branch-name`)).status, 400) // loop kind
 		assert.equal((await post(`/items/${solve.id}/ai/branch-name`)).status, 400) // worktree exists
 		assert.equal(modelCalled, false) // every guard short-circuits before the model
+	}))
+
+test('DeployWatcher backfills a late PR onto an errored review Item and stops once recorded', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'late pr', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(item.id)
+		commands.recordExecutionWorkspaceIdentity(item.id, {
+			worktreePath: '/tmp/wt',
+			branchName: 'fix/late',
+			planDirName: 'p',
+		})
+		// Errored run reconciled to review with no PR yet — the backfill target.
+		commands.reconcileFailedSolve(item.id, { message: 'idle timeout', phase: 'solve' })
+		assert.deepEqual(
+			db.items.listPrBackfillable().map(i => i.id),
+			[item.id],
+		)
+
+		const discovered: Array<{ repoPath: string; branch: string }> = []
+		const watcher = new DeployWatcher(config, db, {
+			discoverPrUrl: async (repoPath, branch) => {
+				discovered.push({ repoPath, branch })
+				return discovered.length === 1 ? null : 'https://github.com/neumie/vigil/pull/9'
+			},
+			fetchDeployState: async () => null,
+		})
+
+		// First poll: no PR yet — Item stays on the work-list, nothing written.
+		await watcher.pollOnce()
+		assert.equal(db.items.get(item.id)?.prUrl, null)
+		assert.equal(db.items.listPrBackfillable().length, 1)
+
+		// Second poll: PR appeared — recorded via recordDispatchPr, drops off the list.
+		await watcher.pollOnce()
+		assert.deepEqual(discovered, [
+			{ repoPath: '/repo', branch: 'fix/late' },
+			{ repoPath: '/repo', branch: 'fix/late' },
+		])
+		const updated = db.items.get(item.id)
+		assert.equal(updated?.prUrl, 'https://github.com/neumie/vigil/pull/9')
+		assert.equal(updated?.status, 'review')
+		assert.equal(db.items.countEvents(item.id, 'pr_created'), 1)
+		assert.equal(db.items.listPrBackfillable().length, 0)
+	}))
+
+test('listPrBackfillable excludes ok runs, missing branches, and non-review statuses', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		// Clean completed run (runOutcome ok) — dispatch owns its PR story, not the backfill.
+		const ok = commands.createSolveItem({ title: 'ok', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(ok.id)
+		commands.completeSolveItem(ok.id, { worktreePath: '/t', branchName: 'b1', planDirName: 'p', resultSummary: 's' })
+		// Errored review Item without a branch — nothing to look up.
+		const noBranch = commands.createSolveItem({ title: 'nb', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(noBranch.id)
+		commands.recordExecutionWorkspaceIdentity(noBranch.id, { worktreePath: '/t2', planDirName: 'p2' })
+		// Failed (not review) Item.
+		const failed = commands.createSolveItem({ title: 'f', projectSlug: 'vigil', prompt: 'x' })
+		commands.startItem(failed.id)
+		commands.failItem(failed.id, 'boom', 'solve')
+
+		// reconcileFailedSolve needs shippable work context; noBranch lacks branchName so
+		// it lands in review via reconcile only when branch exists — emulate by failing it.
+		commands.failItem(noBranch.id, 'boom', 'solve')
+
+		assert.equal(db.items.listPrBackfillable().length, 0)
+	}))
+
+test('setSolveItemModel stores and clears the per-item model override', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'model pick', projectSlug: 'vigil', prompt: 'x' })
+
+		const withModel = commands.setSolveItemModel(item.id, 'claude-fable-5')
+		assert.equal(withModel.payload.kind === 'solve' ? withModel.payload.solverModel : null, 'claude-fable-5')
+
+		const cleared = commands.setSolveItemModel(item.id, null)
+		assert.equal(cleared.payload.kind === 'solve' ? cleared.payload.solverModel : 'set', undefined)
+
+		const ralph = commands.createRalphItem({ title: 'r', projectSlug: 'vigil', prdPath: 'docs/prd.md' })
+		assert.throws(() => commands.setSolveItemModel(ralph.id, 'claude-fable-5'))
+	}))
+
+test('Item action routes set, reject, and clear the per-item solver model', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const setTarget = commands.createSolveItem({ title: 'set model', projectSlug: 'vigil', prompt: 'x' })
+		const clearTarget = commands.createSolveItem({ title: 'clear model', projectSlug: 'vigil', prompt: 'x' })
+		commands.setSolveItemModel(clearTarget.id, 'claude-opus-4-8')
+
+		const routeQueue = {
+			...queue,
+			processOneItem: (id: string) => {
+				commands.startItem(id)
+				return true
+			},
+		}
+		const api = apiRoutes(
+			config,
+			'vigil.config.json',
+			db,
+			routeQueue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+		)
+		const post = (body: unknown) => ({
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		})
+
+		// Invalid model → 400, nothing persisted.
+		const bad = await api.request(`/items/${setTarget.id}/start`, post({ solverModel: '' }))
+		assert.equal(bad.status, 400)
+
+		// Model set on start.
+		const setRes = await api.request(`/items/${setTarget.id}/start`, post({ solverModel: 'claude-fable-5' }))
+		assert.equal(setRes.status, 200)
+		const setPayload = db.items.get(setTarget.id)?.payload
+		assert.equal(setPayload?.kind === 'solve' ? setPayload.solverModel : null, 'claude-fable-5')
+
+		// Explicit null clears a previously stored override (the "Auto" chip).
+		const clearRes = await api.request(`/items/${clearTarget.id}/start`, post({ solverModel: null }))
+		assert.equal(clearRes.status, 200)
+		const clearedPayload = db.items.get(clearTarget.id)?.payload
+		assert.equal(clearedPayload?.kind === 'solve' ? clearedPayload.solverModel : 'set', undefined)
 	}))

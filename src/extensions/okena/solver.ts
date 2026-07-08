@@ -117,7 +117,10 @@ export class OkenaSolver implements Solver {
 			}
 			const now = Date.now()
 			if (now - startTime > HARD_TIMEOUT_MS) {
-				throw phaseError('solve', `${agentLabel} exceeded the ${HARD_TIMEOUT_MS / 3_600_000}h hard cap in Okena terminal`)
+				throw phaseError(
+					'solve',
+					`${agentLabel} exceeded the ${HARD_TIMEOUT_MS / 3_600_000}h hard cap in Okena terminal`,
+				)
 			}
 			if (now - lastActivity > idleTimeoutMs) {
 				throw phaseError(

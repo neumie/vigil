@@ -3,6 +3,8 @@ import { configSchema } from './config.js'
 import type { VigilConfig } from './config.js'
 import { DEFAULT_ASSESSMENT_INSTRUCTIONS } from './items/assess.js'
 import { DEFAULT_DISPLAY_INSTRUCTIONS, DEFAULT_NAMING_INSTRUCTIONS } from './items/naming.js'
+import { MODEL_CATALOG, defaultHelperModel, modelSelectOptions } from './solver/models.js'
+import type { ModelOption } from './solver/models.js'
 import { listSpawnerAdapters } from './spawner/registry.js'
 import type { SpawnerAdapterInfo } from './spawner/registry.js'
 
@@ -31,8 +33,8 @@ function aiHelperControls(base: string[], promptDefault: string): ConfigEditFiel
 			type: 'field',
 			path: [...base, 'model'],
 			label: 'Model',
-			input: 'text',
-			placeholder: 'claude-haiku-4-5 / gpt-5-mini (optional)',
+			input: 'select',
+			options: modelSelectOptions(),
 		},
 		{ type: 'field', path: [...base, 'prompt'], label: 'Prompt', input: 'textarea', placeholder: promptDefault },
 	]
@@ -95,6 +97,8 @@ export interface DashboardSafeConfig {
 	github: VigilConfig['github']
 	provider: Omit<VigilConfig['provider'], 'apiToken'>
 	spawnerAdapters: SpawnerAdapterInfo[]
+	/** Curated per-agent model options for model pickers (dashboard + extension). */
+	modelCatalog: Record<'claude' | 'codex', ModelOption[]>
 	taskBaseUrl?: string
 }
 
@@ -225,8 +229,8 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 					type: 'field',
 					path: ['solver', 'model'],
 					label: 'Model',
-					input: 'text',
-					placeholder: 'Agent model override (optional)',
+					input: 'select',
+					options: [{ value: '', label: 'Agent default' }, ...modelSelectOptions()],
 				},
 				{
 					type: 'field',
@@ -311,10 +315,6 @@ const HELPER_DEFAULT_PROMPTS = {
 	triage: DEFAULT_ASSESSMENT_INSTRUCTIONS,
 } as const
 
-function defaultHelperModel(agent: VigilConfig['solver']['agent']): string {
-	return agent === 'codex' ? 'gpt-5-mini' : 'claude-haiku-4-5'
-}
-
 /**
  * Fill each AI helper's `model` + `prompt` with its resolved default so the Settings
  * view shows them as real, editable values (not placeholders/previews). The model
@@ -362,11 +362,38 @@ function stripAiHelperDefaults(config: VigilConfig): VigilConfig {
 
 export function buildConfigDocument(raw: unknown, fallback: VigilConfig): ConfigDocument {
 	const config = parseConfigWithFallback(raw, fallback)
+	const hydrated = hydrateAiDefaults(config)
 	return {
-		config: redactEditableConfig(hydrateAiDefaults(config)),
+		config: redactEditableConfig(hydrated),
 		dashboard: toDashboardSafeConfig(config),
-		edit: editMetadata,
+		edit: withCurrentSelectValues(editMetadata, hydrated),
 		secretRedaction: CONFIG_SECRET_REDACTION,
+	}
+}
+
+/**
+ * A select whose current config value isn't among its options would render
+ * blank and silently rewrite the value on save. Surface such a value (a
+ * hand-edited model id, a catalog entry removed later) as an extra
+ * "(custom)" option instead of losing it.
+ */
+function withCurrentSelectValues(edit: ConfigEditMetadata, config: VigilConfig): ConfigEditMetadata {
+	const valueAt = (path: string[]): unknown =>
+		path.reduce<unknown>(
+			(node, key) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined),
+			config,
+		)
+	return {
+		sections: edit.sections.map(section => ({
+			...section,
+			controls: section.controls.map(control => {
+				if (control.type !== 'field' || control.input !== 'select' || !control.options) return control
+				const value = valueAt(control.path)
+				if (typeof value !== 'string' || value === '') return control
+				if (control.options.some(option => option.value === value)) return control
+				return { ...control, options: [...control.options, { value, label: `${value} (custom)` }] }
+			}),
+		})),
 	}
 }
 
@@ -387,6 +414,7 @@ export function toDashboardSafeConfig(config: VigilConfig): DashboardSafeConfig 
 		github: config.github,
 		provider,
 		spawnerAdapters: listSpawnerAdapters(),
+		modelCatalog: MODEL_CATALOG,
 		taskBaseUrl: provider.taskBaseUrl,
 	}
 }

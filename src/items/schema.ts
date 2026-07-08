@@ -80,6 +80,9 @@ export const solveItemPayloadSchema = z
 		kind: z.literal('solve'),
 		prompt: z.string().min(1),
 		solverAgent: solverAgentSchema.optional(),
+		// Per-item model override (extension quick-switch / action routes); free
+		// string passed to the agent CLI's --model, wins over config.solver.model.
+		solverModel: z.string().min(1).max(100).optional(),
 	})
 	.strict()
 

@@ -137,13 +137,13 @@ test('extension API passes selected solver agent to Item actions that can start 
 	}
 
 	try {
-		await api.itemAction('item-1', 'approve', 'codex')
-		await api.itemAction('item-1', 'start', 'codex')
-		await api.itemAction('item-1', 'retry', 'codex')
+		await api.itemAction('item-1', 'approve', { solverAgent: 'codex' })
+		await api.itemAction('item-1', 'start', { solverAgent: 'codex', solverModel: 'gpt-5.5' })
+		await api.itemAction('item-1', 'retry', { solverAgent: 'codex' })
 
 		assert.deepEqual(
 			calls.map(call => JSON.parse(String(call.init?.body))),
-			[{ solverAgent: 'codex' }, { solverAgent: 'codex' }, { solverAgent: 'codex' }],
+			[{ solverAgent: 'codex' }, { solverAgent: 'codex', solverModel: 'gpt-5.5' }, { solverAgent: 'codex' }],
 		)
 	} finally {
 		globalThis.fetch = originalFetch

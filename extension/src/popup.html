@@ -40,6 +40,20 @@
 			color: #6a9955;
 			min-height: 16px;
 		}
+		.models { margin-top: 12px; }
+		.models .group {
+			font-size: 11px;
+			color: #808080;
+			margin: 8px 0 2px;
+		}
+		.models .row {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			font-size: 12px;
+			padding: 2px 0;
+		}
+		.models .row input { width: auto; }
 	</style>
 </head>
 <body>
@@ -47,6 +61,10 @@
 	<label for="url">Server URL</label>
 	<input type="text" id="url" placeholder="http://localhost:7474" />
 	<div class="status" id="status"></div>
+	<div class="models" id="models" hidden>
+		<label>Favorite models (quick-switch chips)</label>
+		<div id="model-list"></div>
+	</div>
 	<script src="popup.js"></script>
 </body>
 </html>

@@ -205,6 +205,15 @@ export const WIDGET_STYLES = `
 		border: 1px solid var(--vg-border);
 		border-radius: var(--vg-radius-ctl);
 	}
+	.vg-agent__seg--flow {
+		display: flex;
+		flex-wrap: wrap;
+		height: auto;
+		min-height: 30px;
+	}
+	.vg-agent__seg--flow .vg-agent__option {
+		padding: 0 10px;
+	}
 	.vg-agent__option {
 		height: 24px;
 		border: 0;

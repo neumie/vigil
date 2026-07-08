@@ -1,6 +1,7 @@
 import type { VigilConfig } from '../config.js'
 import type { TaskContext } from '../providers/provider.js'
 import type { SolverAgent } from '../solver/agent.js'
+import { defaultHelperModel } from '../solver/models.js'
 import { runOneShot } from '../solver/one-shot.js'
 import type { OneShotOptions } from '../solver/one-shot.js'
 import { isCancellation } from '../util/errors.js'
@@ -24,11 +25,6 @@ const ALLOWED_TYPES = new Set([
 	'style',
 	'revert',
 ])
-
-/** Cheap per-agent default when a helper's `model` override is unset. */
-function defaultNameModel(agent: SolverAgent): string {
-	return agent === 'codex' ? 'gpt-5-mini' : 'claude-haiku-4-5'
-}
 
 // ---------------------------------------------------------------------------
 // Display naming — compress the raw provider title into a short human label for
@@ -145,7 +141,7 @@ export async function ensureItemDisplayName(params: EnsureItemDisplayNameParams)
 
 	const agent = feature.agent ?? params.agent ?? config.solver.agent
 	try {
-		const model = feature.model ?? defaultNameModel(agent)
+		const model = feature.model ?? defaultHelperModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		const raw = await run({ agent, model, prompt: buildDisplayNamePrompt(item.title, feature.prompt), signal })
 		if (!raw) {
@@ -307,7 +303,7 @@ export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Pro
 	// Per-feature provider override wins over the effective solve agent the caller passed.
 	const agent = feature.agent ?? params.agent
 	try {
-		const model = feature.model ?? defaultNameModel(agent)
+		const model = feature.model ?? defaultHelperModel(agent)
 		const run = deps?.runOneShot ?? runOneShot
 		const raw = await run({
 			agent,

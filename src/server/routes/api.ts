@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import {
@@ -173,18 +174,56 @@ export function apiRoutes(
 	// for the single-Item detail route, so the list stays fast as PRs accumulate.
 	const dashboardItems = (items: ItemRecord[]) => toDashboardItems(expandGroupedItems(items))
 
-	async function readSolverAgent(
-		bodyPromise: Promise<{ solverAgent?: unknown }>,
-	): Promise<SolverAgent | null | undefined> {
-		const body = (await bodyPromise.catch(() => ({}))) as { solverAgent?: unknown }
-		if (body.solverAgent === undefined || body.solverAgent === null) return undefined
-		const parsed = solverAgentSchema.safeParse(body.solverAgent)
-		return parsed.success ? parsed.data : null
+	// solverAgent: absent/null → undefined (untouched). solverModel: absent →
+	// undefined (untouched), explicit JSON null → null (CLEAR the stored
+	// override — how the extension's "Auto" chip drops a previously-picked
+	// model), string → set. Invalid values flag a 400 instead.
+	interface SolveSelection {
+		solverAgent: SolverAgent | undefined
+		solverAgentInvalid: boolean
+		solverModel: string | null | undefined
+		solverModelInvalid: boolean
 	}
 
-	function recordSelectedSolveAgent(item: ItemRecord, solverAgent: SolverAgent | undefined): ItemRecord {
-		if (!solverAgent || item.kind !== 'solve') return item
-		return itemCommands.setSolveItemAgent(item.id, solverAgent)
+	async function readSolveSelection(bodyPromise: Promise<unknown>): Promise<SolveSelection> {
+		const body = (await bodyPromise.catch(() => ({}))) as { solverAgent?: unknown; solverModel?: unknown }
+		let solverAgent: SolveSelection['solverAgent']
+		let solverAgentInvalid = false
+		if (body.solverAgent !== undefined && body.solverAgent !== null) {
+			const parsed = solverAgentSchema.safeParse(body.solverAgent)
+			if (parsed.success) solverAgent = parsed.data
+			else solverAgentInvalid = true
+		}
+		let solverModel: SolveSelection['solverModel']
+		let solverModelInvalid = false
+		if (body.solverModel === null) {
+			solverModel = null
+		} else if (body.solverModel !== undefined) {
+			if (typeof body.solverModel === 'string' && body.solverModel.length >= 1 && body.solverModel.length <= 100) {
+				solverModel = body.solverModel
+			} else {
+				solverModelInvalid = true
+			}
+		}
+		return { solverAgent, solverAgentInvalid, solverModel, solverModelInvalid }
+	}
+
+	function invalidSelection(c: Context, selection: SolveSelection) {
+		if (selection.solverAgentInvalid) {
+			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
+		}
+		if (selection.solverModelInvalid) {
+			return c.json({ error: 'Invalid solverModel. Must be a non-empty string (max 100 chars) or null.' }, 400)
+		}
+		return null
+	}
+
+	function recordSolveSelection(item: ItemRecord, selection: SolveSelection): ItemRecord {
+		if (item.kind !== 'solve') return item
+		let updated = item
+		if (selection.solverAgent) updated = itemCommands.setSolveItemAgent(item.id, selection.solverAgent)
+		if (selection.solverModel !== undefined) updated = itemCommands.setSolveItemModel(item.id, selection.solverModel)
+		return updated
 	}
 
 	async function planningSpawnerForItem(item: ItemRecord): Promise<Spawner> {
@@ -531,15 +570,14 @@ export function apiRoutes(
 	})
 
 	api.post('/items/:id/approve', async c => {
-		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
-		if (solverAgent === null) {
-			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
-		}
+		const selection = await readSolveSelection(c.req.json())
+		const invalid = invalidSelection(c, selection)
+		if (invalid) return invalid
 		const current = itemCommands.getItem(c.req.param('id'))
 		if (!current) return c.json({ error: 'Item not found' }, 404)
 		if (current.status !== 'triage') return c.json({ error: 'Only triage Items can be approved' }, 400)
 		try {
-			recordSelectedSolveAgent(current, solverAgent)
+			recordSolveSelection(current, selection)
 			const item = itemCommands.approveItem(current.id)
 			queue.wake()
 			return c.json({ data: await dashboardItem(item) })
@@ -560,31 +598,29 @@ export function apiRoutes(
 	})
 
 	api.post('/items/:id/start', async c => {
-		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
-		if (solverAgent === null) {
-			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
-		}
+		const selection = await readSolveSelection(c.req.json())
+		const invalid = invalidSelection(c, selection)
+		if (invalid) return invalid
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
 		if (item.kind !== 'solve' && item.kind !== 'ralph' && item.kind !== 'harden') {
 			return c.json({ error: 'Only solve, ralph, or harden Items can be started by this drainer' }, 400)
 		}
 		if (item.status !== 'ready' && item.status !== 'triage') return c.json({ error: 'Item is not ready to start' }, 400)
-		recordSelectedSolveAgent(item, solverAgent)
+		recordSolveSelection(item, selection)
 		const started = queue.processOneItem(item.id)
 		if (!started) return c.json({ error: 'Could not start Item' }, 500)
 		return c.json({ data: await dashboardItem(itemCommands.getItem(item.id) ?? item) })
 	})
 
 	api.post('/items/:id/retry', async c => {
-		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
-		if (solverAgent === null) {
-			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
-		}
+		const selection = await readSolveSelection(c.req.json())
+		const invalid = invalidSelection(c, selection)
+		if (invalid) return invalid
 		try {
 			const current = itemCommands.getItem(c.req.param('id'))
 			if (!current) return c.json({ error: 'Item not found' }, 404)
-			recordSelectedSolveAgent(current, solverAgent)
+			recordSolveSelection(current, selection)
 			const item = queue.retryItem(current.id)
 			return c.json({ data: await dashboardItem(item) })
 		} catch (err) {
@@ -638,11 +674,11 @@ export function apiRoutes(
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
 		if (item.status === 'running') return c.json({ error: 'Running Items cannot be planned' }, 400)
-		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
-		if (solverAgent === null) {
-			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
-		}
-		const effectiveSolverAgent = solverAgent ?? config.solver.agent
+		const selection = await readSolveSelection(c.req.json())
+		const invalid = invalidSelection(c, selection)
+		if (invalid) return invalid
+		const effectiveSolverAgent = selection.solverAgent ?? config.solver.agent
+		const effectiveSolverModel = selection.solverModel ?? config.solver.model
 
 		const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
 		if (!projectConfig) return c.json({ error: `Unknown project slug: ${item.projectSlug}` }, 400)
@@ -705,7 +741,7 @@ export function apiRoutes(
 				planDirName,
 				taskTitle: item.title,
 				taskContext,
-				solverConfig: { ...config.solver, agent: effectiveSolverAgent },
+				solverConfig: { ...config.solver, agent: effectiveSolverAgent, model: effectiveSolverModel },
 				existingWorktreePath,
 			})
 			worktreePath = session.worktreePath
@@ -757,11 +793,10 @@ export function apiRoutes(
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
 
-		const solverAgent = await readSolverAgent(c.req.json<{ solverAgent?: unknown }>())
-		if (solverAgent === null) {
-			return c.json({ error: `Invalid solverAgent. Must be one of: ${solverAgentSchema.options.join(', ')}` }, 400)
-		}
-		const agent = solverAgent ?? config.solver.agent
+		const selection = await readSolveSelection(c.req.json())
+		const invalid = invalidSelection(c, selection)
+		if (invalid) return invalid
+		const agent = selection.solverAgent ?? config.solver.agent
 		const signal = c.req.raw.signal
 
 		// branch-name has structural guards: solve-only, not running, and only before

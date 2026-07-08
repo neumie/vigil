@@ -96,24 +96,62 @@ export async function fetchDeployState(prUrl: string, checkedAt: string): Promis
 }
 
 /**
+ * Ask gh whether the branch has an OPEN or MERGED PR in the repo at `repoPath`.
+ * CLOSED (unmerged, abandoned) PRs are deliberately ignored — gh's branch
+ * lookup falls back to the most recent closed PR when no open one exists, and
+ * recording a dead PR would poll it forever and block a real late PR from ever
+ * being recorded. Best-effort: returns null on no PR / gh failure.
+ */
+async function discoverPrUrlByBranch(repoPath: string, branchName: string): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync('gh', ['pr', 'view', branchName, '--json', 'url,state'], {
+			cwd: repoPath,
+			timeout: 10_000,
+		})
+		const parsed = JSON.parse(stdout) as { url?: unknown; state?: unknown }
+		if (parsed.state !== 'OPEN' && parsed.state !== 'MERGED') return null
+		return typeof parsed.url === 'string' && parsed.url ? parsed.url : null
+	} catch {
+		return null
+	}
+}
+
+/** Injectable seams so tests can run the watcher without a real `gh`. */
+export interface DeployWatcherDeps {
+	fetchDeployState?: typeof fetchDeployState
+	discoverPrUrl?: typeof discoverPrUrlByBranch
+}
+
+/**
  * Periodically reconciles each shipped Item's deploy lifecycle from GitHub
  * (PR merge + GitHub Deployments per environment) and persists it through
  * `ItemCommands.recordDeployState`, which records `deploy_merged` /
  * `deploy_succeeded` transition events. Mirrors the provider `Poller`. Read-only
  * w.r.t. GitHub; runs independently of the Drainer (safe while paused).
+ *
+ * Also backfills LATE PRs: a run that errored/timed out but was reconciled to
+ * `review` may have had its agent ship a PR after vigil stopped watching — the
+ * Item then sits in review with a branch but no `prUrl`, invisible to deploy
+ * tracking. Each poll asks gh for a PR on those branches and records a hit
+ * through `recordDispatchPr`, after which normal deploy tracking picks it up.
  */
 export class DeployWatcher {
 	private timer: ReturnType<typeof setTimeout> | null = null
 	private running = false
 	private readonly commands: ItemCommands
 	private readonly intervalSeconds: number
+	private readonly fetchState: typeof fetchDeployState
+	private readonly discoverPr: typeof discoverPrUrlByBranch
 
 	constructor(
 		private config: VigilConfig,
 		private db: DB,
+		deps: DeployWatcherDeps = {},
 	) {
 		this.commands = new ItemCommands(db.items, config)
 		this.intervalSeconds = config.github.deployPollSeconds
+		this.fetchState = deps.fetchDeployState ?? fetchDeployState
+		this.discoverPr = deps.discoverPrUrl ?? discoverPrUrlByBranch
 	}
 
 	start() {
@@ -137,17 +175,35 @@ export class DeployWatcher {
 	}
 
 	async pollOnce() {
+		await this.backfillLatePrs()
 		const items = this.db.items.listDeployWatchable()
 		for (const item of items) {
 			if (!item.prUrl) continue
 			try {
-				const state = await fetchDeployState(item.prUrl, new Date().toISOString())
+				const state = await this.fetchState(item.prUrl, new Date().toISOString())
 				if (!state) continue
 				const updated = this.commands.recordDeployState(item.id, state)
 				// A merged PR means the work landed — drop it out of the review pile.
 				if (state.merged && updated.status === 'review') this.commands.markItemMerged(item.id)
 			} catch (err) {
 				log.error('deploy', `Error checking deploy state for Item ${item.id}`, err)
+			}
+		}
+	}
+
+	/** Record PRs that appeared on an errored-run branch after the run ended. */
+	private async backfillLatePrs() {
+		for (const item of this.db.items.listPrBackfillable()) {
+			const project = this.config.projects.find(p => p.slug === item.projectSlug)
+			if (!project || !item.branchName) continue
+			try {
+				const prUrl = await this.discoverPr(project.repoPath, item.branchName)
+				if (!prUrl) continue
+				this.commands.recordDispatchPr(item.id, { prUrl, shippedByAgent: true })
+				log.info('deploy', `Backfilled late PR for Item ${item.id}: ${prUrl}`)
+			} catch (err) {
+				// Item may have raced out of `review` between list and write — skip.
+				log.warn('deploy', `Late-PR backfill failed for Item ${item.id}: ${err instanceof Error ? err.message : err}`)
 			}
 		}
 	}
