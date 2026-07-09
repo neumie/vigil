@@ -250,6 +250,24 @@ function Dot(props: { tone: Tone; pulse?: boolean }) {
 	return <span class={`vg-dot c-${props.tone} bg-${props.tone}${props.pulse ? ' vg-dot--pulse' : ''}`} />
 }
 
+/**
+ * A run summary/failure notice. Solver summaries can be a full root-cause
+ * paragraph, so it's clamped to a few lines by default and expands on click
+ * (the whole block is the toggle).
+ */
+function NoticeText(props: { kind: 'summary' | 'failure'; text: string }) {
+	const [expanded, setExpanded] = createSignal(false)
+	return (
+		<div
+			class={`${props.kind === 'failure' ? 'vg-error' : 'vg-summary'} vg-notice${expanded() ? ' is-expanded' : ''}`}
+			on:click={() => setExpanded(v => !v)}
+			title={expanded() ? 'Click to collapse' : 'Click to show more'}
+		>
+			{props.kind === 'failure' ? `Failure: ${props.text}` : props.text}
+		</div>
+	)
+}
+
 function Btn(props: {
 	variant: 'primary' | 'muted' | 'danger'
 	onClick: () => void
@@ -481,11 +499,7 @@ function Card(props: {
 										disabled={isProcessing()}
 									/>
 									<For each={itemRunNotices(item())}>
-										{notice => (
-											<div class={notice.kind === 'failure' ? 'vg-error' : 'vg-summary'}>
-												{notice.kind === 'failure' ? `Failure: ${notice.text}` : notice.text}
-											</div>
-										)}
+										{notice => <NoticeText kind={notice.kind} text={notice.text} />}
 									</For>
 									<Show when={props.actionError()}>
 										{msg => (

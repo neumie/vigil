@@ -151,7 +151,22 @@ export const WIDGET_STYLES = `
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.vg-summary { font-size: 13px; line-height: 1.55; color: var(--vg-text-dim); }
+	.vg-summary { font-size: 13px; line-height: 1.55; color: var(--vg-text-dim); overflow-wrap: anywhere; }
+
+	/* Run notices can be a long root-cause paragraph — clamp to a few lines and
+	   expand on click (the block is the toggle). */
+	.vg-notice {
+		cursor: pointer;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 4;
+		overflow: hidden;
+	}
+	.vg-notice.is-expanded {
+		display: block;
+		-webkit-line-clamp: unset;
+		overflow: visible;
+	}
 	.vg-link-line {
 		display: flex;
 		align-items: center;
