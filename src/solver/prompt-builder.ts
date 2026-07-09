@@ -3,8 +3,8 @@ import type { TaskContext } from '../providers/provider.js'
 import { type PlanContext, buildTaskContext } from '../task-context.js'
 import { modelGuidance } from './models.js'
 
-function solverInstructions(planDirName: string, model?: string): string {
-	const guidance = modelGuidance(model)
+function solverInstructions(planDirName: string, model?: string, overrides?: Record<string, string>): string {
+	const guidance = modelGuidance(model, overrides)
 	return `You are solving a task from a project management system. The task may be written in any language — understand it regardless.
 ${guidance ? `\n## How to spend this model\n\n${guidance}\n` : ''}
 Follow the /almanac:task-start skill to begin. This will guide you through exploration, complexity assessment, and execution.
@@ -92,7 +92,11 @@ export function buildPlanningPrompt(planDirName: string): string {
 	].join('\n')
 }
 
-export function buildPrompt(task: TaskContext, ctx: PlanContext, solver?: { model?: string }): string {
+export function buildPrompt(
+	task: TaskContext,
+	ctx: PlanContext,
+	solver?: { model?: string; modelGuidance?: Record<string, string> },
+): string {
 	const taskContextStr = buildTaskContext(task, ctx)
-	return `${solverInstructions(ctx.planDirName, solver?.model)}## Task Context\n\n${taskContextStr}`
+	return `${solverInstructions(ctx.planDirName, solver?.model, solver?.modelGuidance)}## Task Context\n\n${taskContextStr}`
 }

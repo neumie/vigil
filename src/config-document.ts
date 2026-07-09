@@ -3,7 +3,7 @@ import { configSchema } from './config.js'
 import type { VigilConfig } from './config.js'
 import { DEFAULT_ASSESSMENT_INSTRUCTIONS } from './items/assess.js'
 import { DEFAULT_DISPLAY_INSTRUCTIONS, DEFAULT_NAMING_INSTRUCTIONS } from './items/naming.js'
-import { MODEL_CATALOG, defaultHelperModel, modelSelectOptions } from './solver/models.js'
+import { DEFAULT_MODEL_GUIDANCE, MODEL_CATALOG, defaultHelperModel, modelSelectOptions } from './solver/models.js'
 import type { ModelOption } from './solver/models.js'
 import { listSpawnerAdapters } from './spawner/registry.js'
 import type { SpawnerAdapterInfo } from './spawner/registry.js'
@@ -261,6 +261,20 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 			controls: aiHelperControls(['solver', 'displayName'], DEFAULT_DISPLAY_INSTRUCTIONS),
 		},
 		{
+			id: 'ai-model-guidance',
+			title: 'AI · Model guidance',
+			description: 'Per-model "how to spend this model" block injected into the solve prompt (blank = built-in default)',
+			controls: Object.values(MODEL_CATALOG)
+				.flat()
+				.map(m => ({
+					type: 'field' as const,
+					path: ['solver', 'modelGuidance', m.id],
+					label: m.label,
+					input: 'textarea' as const,
+					placeholder: DEFAULT_MODEL_GUIDANCE[m.id] ?? '',
+				})),
+		},
+		{
 			id: 'ai-triage',
 			title: 'AI · Intent triage',
 			description: 'Pre-solve pass: restates the intent and assigns a verdict',
@@ -327,6 +341,10 @@ function hydrateAiDefaults(config: VigilConfig): VigilConfig {
 		model: helper.model ?? defaultHelperModel(helper.agent ?? config.solver.agent),
 		prompt: helper.prompt ?? defaultPrompt,
 	})
+	const guidance = { ...config.solver.modelGuidance }
+	for (const [id, text] of Object.entries(DEFAULT_MODEL_GUIDANCE)) {
+		guidance[id] = guidance[id] || text
+	}
 	return {
 		...config,
 		solver: {
@@ -334,6 +352,7 @@ function hydrateAiDefaults(config: VigilConfig): VigilConfig {
 			branchNaming: fill(config.solver.branchNaming, HELPER_DEFAULT_PROMPTS.branchNaming),
 			displayName: fill(config.solver.displayName, HELPER_DEFAULT_PROMPTS.displayName),
 			triage: fill(config.solver.triage, HELPER_DEFAULT_PROMPTS.triage),
+			modelGuidance: guidance,
 		},
 	}
 }
@@ -349,6 +368,9 @@ function stripAiHelperDefaults(config: VigilConfig): VigilConfig {
 		model: helper.model === defaultHelperModel(helper.agent ?? config.solver.agent) ? undefined : helper.model,
 		prompt: helper.prompt === defaultPrompt ? undefined : helper.prompt,
 	})
+	const guidance = Object.fromEntries(
+		Object.entries(config.solver.modelGuidance).filter(([id, text]) => text && text !== DEFAULT_MODEL_GUIDANCE[id]),
+	)
 	return {
 		...config,
 		solver: {
@@ -356,6 +378,7 @@ function stripAiHelperDefaults(config: VigilConfig): VigilConfig {
 			branchNaming: strip(config.solver.branchNaming, HELPER_DEFAULT_PROMPTS.branchNaming),
 			displayName: strip(config.solver.displayName, HELPER_DEFAULT_PROMPTS.displayName),
 			triage: strip(config.solver.triage, HELPER_DEFAULT_PROMPTS.triage),
+			modelGuidance: guidance,
 		},
 	}
 }
@@ -446,8 +469,13 @@ export function parseConfigWithFallback(raw: unknown, fallback: VigilConfig): Vi
 	return parsed.success ? parsed.data : fallback
 }
 
-export function configSchemaAcceptsPath(path: string): boolean {
-	return schemaAcceptsPath(configSchema, path.split('.'))
+/**
+ * Accepts segment arrays (exact) or dot-joined strings (legacy convenience —
+ * ambiguous for record keys containing dots, e.g. model ids like `gpt-5.5`;
+ * pass an array when a segment may contain a dot).
+ */
+export function configSchemaAcceptsPath(path: string | string[]): boolean {
+	return schemaAcceptsPath(configSchema, Array.isArray(path) ? path : path.split('.'))
 }
 
 /** Config-file keys the schema doesn't recognize (and silently strips on load). */
@@ -492,8 +520,11 @@ function validateEditMetadata(metadata: ConfigEditMetadata): ConfigEditMetadata 
 }
 
 function assertConfigPath(path: string[]): void {
-	const key = path.join('.')
-	if (!configSchemaAcceptsPath(key)) throw new Error(`Config edit field is not accepted by config schema: ${key}`)
+	// Validate on the SEGMENT ARRAY — joining and re-splitting on '.' would
+	// mangle record keys that contain dots (model ids like `gpt-5.5`).
+	if (!schemaAcceptsPath(configSchema, path)) {
+		throw new Error(`Config edit field is not accepted by config schema: ${path.join('.')}`)
+	}
 }
 
 function schemaAcceptsPath(schema: z.ZodTypeAny, path: string[]): boolean {
@@ -510,6 +541,11 @@ function schemaAcceptsPath(schema: z.ZodTypeAny, path: string[]): boolean {
 			const next = shape[part]
 			if (!next) return false
 			current = next
+			continue
+		}
+		if (current instanceof z.ZodRecord) {
+			// Any key is valid for a record; descend into the value schema.
+			current = current.valueSchema
 			continue
 		}
 		return false

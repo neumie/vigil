@@ -80,6 +80,9 @@ export const configSchema = z.object({
 			// checkpoint is "approve the intent" not "test the PR". Advisory; never
 			// changes status. Default on.
 			triage: aiHelperSchema(true),
+			// Per-model "how to spend this model" prompt overrides, keyed by model id.
+			// Blank/missing → the built-in default in src/solver/models.ts.
+			modelGuidance: z.record(z.string()).default({}),
 		})
 		.default({}),
 	spawner: spawnerSchema,

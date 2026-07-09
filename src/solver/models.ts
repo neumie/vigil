@@ -43,7 +43,7 @@ export function agentModelLabel(agent: SolverAgent): string {
  * Keyed by exact model id from {@link MODEL_CATALOG}; an unknown/unset model
  * (agent CLI default) gets no extra guidance.
  */
-const MODEL_GUIDANCE: Record<string, string> = {
+export const DEFAULT_MODEL_GUIDANCE: Record<string, string> = {
 	'claude-fable-5': [
 		'You are running as Fable 5 — the most capable and most EXPENSIVE tier. Spend it like an orchestrator:',
 		'- Fan out subagents (the Task tool) for codebase exploration, broad searches, and mechanical multi-file edits; give them crisp, self-contained briefs.',
@@ -69,10 +69,14 @@ const MODEL_GUIDANCE: Record<string, string> = {
 	].join('\n'),
 }
 
-/** Guidance for the model the run will actually use, or null when unknown/default. */
-export function modelGuidance(model: string | undefined): string | null {
+/**
+ * Guidance for the model the run will actually use, or null when unknown/
+ * default. A Settings override (`solver.modelGuidance[model]`) wins over the
+ * built-in default; a blank override falls back to the default.
+ */
+export function modelGuidance(model: string | undefined, overrides?: Record<string, string>): string | null {
 	if (!model) return null
-	return MODEL_GUIDANCE[model] ?? null
+	return overrides?.[model] || DEFAULT_MODEL_GUIDANCE[model] || null
 }
 
 /**

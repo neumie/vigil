@@ -123,13 +123,17 @@ const spawner = {
 	},
 }
 
-function configEditPaths(document: ReturnType<typeof buildConfigDocument>): string[] {
+function configEditPathArrays(document: ReturnType<typeof buildConfigDocument>): string[][] {
 	return document.edit.sections.flatMap(section =>
 		section.controls.flatMap(control => {
-			if (control.type === 'field') return [control.path.join('.')]
-			return control.fields.map(field => [...control.path, '*', ...field.path].join('.'))
+			if (control.type === 'field') return [control.path]
+			return control.fields.map(field => [...control.path, '*', ...field.path])
 		}),
 	)
+}
+
+function configEditPaths(document: ReturnType<typeof buildConfigDocument>): string[] {
+	return configEditPathArrays(document).map(path => path.join('.'))
 }
 
 test('DB migration drops legacy Task + chat storage, keeps Items and poll_state', () => {
@@ -359,7 +363,10 @@ test('Config Document redacts dashboard config and validates edit metadata again
 	assert.ok(editablePaths.includes('spawner.name'))
 	assert.ok(editablePaths.includes('provider.apiToken'))
 	assert.deepEqual(
-		editablePaths.filter(path => !configSchemaAcceptsPath(path)),
+		// Validate on segment arrays — model ids in record keys contain dots.
+		configEditPathArrays(document)
+			.filter(path => !configSchemaAcceptsPath(path))
+			.map(path => path.join('.')),
 		[],
 	)
 })
@@ -4156,6 +4163,12 @@ test('buildPrompt injects model-tier guidance for known models only', () => {
 		assert.ok(!unknown.includes('## How to spend this model'))
 		const none = buildPrompt(task as never, ctx as never)
 		assert.ok(!none.includes('## How to spend this model'))
+		const overridden = buildPrompt(task as never, ctx as never, {
+			model: 'claude-fable-5',
+			modelGuidance: { 'claude-fable-5': 'Custom marching orders.' },
+		})
+		assert.ok(overridden.includes('Custom marching orders.'))
+		assert.ok(!overridden.includes('orchestrator'))
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}
