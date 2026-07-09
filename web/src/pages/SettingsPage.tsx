@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { type ConfigDocument, type ConfigEditField, type ConfigEditListControl, api } from '../api'
 
 type Config = Record<string, unknown>
@@ -9,6 +9,10 @@ export function SettingsPage() {
 	const [saving, setSaving] = useState(false)
 	const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 	const [dirty, setDirty] = useState(false)
+	const [activeSection, setActiveSection] = useState<string | null>(null)
+	// Suppress scrollspy updates briefly after a nav click so the smooth scroll
+	// doesn't flicker the highlight through every section it passes.
+	const navClickUntil = useRef(0)
 
 	useEffect(() => {
 		api
@@ -73,12 +77,40 @@ export function SettingsPage() {
 		})
 	}, [])
 
+	const sections = document?.edit.sections ?? []
+	const firstSectionId = sections[0]?.id ?? null
+	const hasSections = sections.length > 0
+
+	useEffect(() => {
+		if (!hasSections) return
+		setActiveSection(prev => prev ?? firstSectionId)
+		const observer = new IntersectionObserver(
+			entries => {
+				if (Date.now() < navClickUntil.current) return
+				const visible = entries
+					.filter(entry => entry.isIntersecting)
+					.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+				const id = visible[0]?.target.getAttribute('data-settings-section')
+				if (id) setActiveSection(id)
+			},
+			{ rootMargin: '-10% 0px -70% 0px' },
+		)
+		for (const el of window.document.querySelectorAll('[data-settings-section]')) observer.observe(el)
+		return () => observer.disconnect()
+	}, [hasSections, firstSectionId])
+
+	const jumpTo = useCallback((id: string) => {
+		setActiveSection(id)
+		navClickUntil.current = Date.now() + 800
+		window.document.querySelector(`[data-settings-section="${id}"]`)?.scrollIntoView({ behavior: 'smooth' })
+	}, [])
+
 	if (!config || !document) {
 		return <div style={{ padding: 40, color: 'var(--text-3)' }}>{message ? message.text : 'Loading config...'}</div>
 	}
 
 	return (
-		<div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px' }}>
+		<div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px' }}>
 			<div
 				style={{
 					display: 'flex',
@@ -144,38 +176,78 @@ export function SettingsPage() {
 				</div>
 			)}
 
-			{document.edit.sections.map(section => (
-				<Card
-					key={section.id}
-					title={section.title}
-					description={section.description}
-					action={sectionAction(section.controls, addListItem)}
+			<div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+				<nav
+					style={{
+						position: 'sticky',
+						top: 24,
+						width: 172,
+						flexShrink: 0,
+						display: 'flex',
+						flexDirection: 'column',
+						gap: 2,
+					}}
 				>
-					{section.controls.map(control => {
-						if (control.type === 'list') {
-							return (
-								<ConfigList
-									key={control.path.join('.')}
-									control={control}
-									config={config}
-									update={update}
-									removeItem={removeListItem}
-								/>
-							)
-						}
-						return (
-							<ConfigInput
-								key={control.path.join('.')}
-								field={control}
-								value={getAtPath(config, control.path)}
-								onChange={value => update(control.path, value)}
-							/>
-						)
-					})}
-				</Card>
-			))}
+					{sections.map(section => (
+						<button
+							key={section.id}
+							type="button"
+							onClick={() => jumpTo(section.id)}
+							style={{
+								textAlign: 'left',
+								padding: '7px 12px',
+								border: 'none',
+								borderRadius: 'var(--radius-sm)',
+								background: activeSection === section.id ? 'var(--bg-3)' : 'transparent',
+								color: activeSection === section.id ? 'var(--text-0)' : 'var(--text-3)',
+								fontSize: 13,
+								fontFamily: 'var(--font-sans)',
+								fontWeight: activeSection === section.id ? 600 : 400,
+								cursor: 'pointer',
+								transition: 'all 120ms',
+							}}
+						>
+							{section.title}
+						</button>
+					))}
+				</nav>
 
-			<div style={{ height: 40 }} />
+				<div style={{ flex: 1, minWidth: 0 }}>
+					{sections.map(section => (
+						<div key={section.id} data-settings-section={section.id} style={{ scrollMarginTop: 24 }}>
+							<Card
+								title={section.title}
+								description={section.description}
+								action={sectionAction(section.controls, addListItem)}
+							>
+								{section.controls.map(control => {
+									if (control.type === 'list') {
+										return (
+											<ConfigList
+												key={control.path.join('.')}
+												control={control}
+												config={config}
+												update={update}
+												removeItem={removeListItem}
+											/>
+										)
+									}
+									return (
+										<ConfigInput
+											key={control.path.join('.')}
+											field={control}
+											value={getAtPath(config, control.path)}
+											onChange={value => update(control.path, value)}
+										/>
+									)
+								})}
+							</Card>
+						</div>
+					))}
+
+					<div style={{ height: 40 }} />
+				</div>
+			</div>
 		</div>
 	)
 }
