@@ -7,7 +7,7 @@ right pane is a real terminal (xterm.js + node-pty) for claude chats and `vigil 
 ## Install
 
 ```sh
-npm install && npm run rebuild
+bun install && bun run rebuild
 ```
 
 `rebuild` compiles node-pty against Electron's ABI (also runs on postinstall).
@@ -15,7 +15,7 @@ npm install && npm run rebuild
 ## Run
 
 ```sh
-npm start
+bun run start
 ```
 
 Daemon URL comes from `VIGIL_URL` (default `http://localhost:7474`). If the daemon is

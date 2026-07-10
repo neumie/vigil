@@ -74,6 +74,21 @@ interface SpawnArgs {
 	rows: number
 }
 
+// Helm is usually launched via `bun run start` / `npm start`, and those
+// launchers inject npm_config_*/npm_lifecycle_*/BUN_* vars into our process.
+// Passing them into the interactive shell breaks tooling in the user's rc
+// files (nvm hard-errors on npm_config_prefix). Spawn shells with a scrubbed
+// environment instead.
+function shellEnv(): Record<string, string> {
+	const env: Record<string, string> = {}
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value === undefined) continue
+		if (key.startsWith('npm_') || key.startsWith('BUN_') || key === 'NODE_ENV' || key === 'INIT_CWD') continue
+		env[key] = value
+	}
+	return env
+}
+
 ipcMain.handle('pty:spawn', (event, args: SpawnArgs) => {
 	const id = nextPtyId++
 	const proc = pty.spawn(defaultShell(), process.platform === 'win32' ? [] : ['-l'], {
@@ -81,7 +96,7 @@ ipcMain.handle('pty:spawn', (event, args: SpawnArgs) => {
 		cols: Math.max(2, Math.floor(args.cols) || 80),
 		rows: Math.max(2, Math.floor(args.rows) || 24),
 		cwd: os.homedir(),
-		env: process.env as Record<string, string>,
+		env: shellEnv(),
 	})
 	ptys.set(id, proc)
 	const contents = event.sender
