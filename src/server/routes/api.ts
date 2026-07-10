@@ -22,7 +22,7 @@ import type { DB } from '../../db/client.js'
 import { ensureItemAssessment } from '../../items/assess.js'
 import { ItemCommands } from '../../items/commands.js'
 import { buildItemTaskContext, localizeCapturedAttachments, resolveItemSourceContext } from '../../items/context.js'
-import { toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
+import { canCreateSourceTask, toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
 import type { ItemEnricher } from '../../items/enricher.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../../items/naming.js'
@@ -140,12 +140,14 @@ export function apiRoutes(
 	const api = new Hono()
 	const itemCommands = new ItemCommands(db.items, config)
 	const aiDeps = aiOneShot ? { runOneShot: aiOneShot } : undefined
-	const dashboardItem = async (item: ItemRecord) =>
-		toDashboardItemWithSiblings(
+	const dashboardItem = async (item: ItemRecord) => ({
+		...toDashboardItemWithSiblings(
 			item,
 			item.groupId ? itemCommands.listGroupItems(item.groupId) : [],
 			await observeItemRun(item, { store: db.items }),
-		)
+		),
+		canCreateSourceTask: canCreateSourceTask(item, provider),
+	})
 	const expandGroupedItems = (items: ItemRecord[]) => {
 		const expanded: ItemRecord[] = []
 		const seenItems = new Set<string>()
@@ -584,6 +586,43 @@ export function apiRoutes(
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err)
 			return c.json({ error: msg }, msg.startsWith('Item not found') ? 404 : 400)
+		}
+	})
+
+	// Promote a captured (ingested) Item — e.g. an email — into a real task in
+	// the source system: the provider creates the task, and the Item's `source`
+	// is re-pointed at it (so the poller's externalId dedup will skip it and the
+	// dashboard links to the live task). The frozen capturedContext stays — it
+	// carries the email body + local attachments the solve runs against.
+	api.post('/items/:id/source-task', async c => {
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Item not found' }, 404)
+		if (!item.capturedContext) {
+			return c.json({ error: 'Only captured (ingested) Items can create a source task' }, 400)
+		}
+		if (item.source?.provider === provider.name) {
+			return c.json({ error: `Item is already linked to a ${provider.name} task` }, 400)
+		}
+		if (typeof provider.createTask !== 'function') {
+			return c.json({ error: `The ${provider.name} provider does not support task creation` }, 400)
+		}
+		try {
+			const created = await provider.createTask({
+				projectSlug: item.projectSlug,
+				title: item.title,
+				description: item.capturedContext.description,
+			})
+			const linked = itemCommands.linkSourceTask(item.id, {
+				provider: provider.name,
+				externalId: created.externalId,
+				...(created.url ? { url: created.url } : {}),
+			})
+			log.success('items', `Created source task ${created.externalId} for Item ${item.id}`)
+			return c.json({ data: await dashboardItem(linked) })
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err)
+			log.error('items', `Source-task creation failed for Item ${item.id}`, err)
+			return c.json({ error: `Source task creation failed: ${msg}` }, 502)
 		}
 	})
 

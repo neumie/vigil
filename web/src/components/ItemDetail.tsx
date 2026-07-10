@@ -26,6 +26,7 @@ interface ItemDetailProps {
 	onSetStatus?: (id: string, status: ItemStatus) => Promise<void>
 	onPlan?: (id: string) => Promise<PlanInfo>
 	onAiPass?: (id: string, pass: AiPass) => Promise<void>
+	onCreateSourceTask?: (id: string) => Promise<void>
 	onFork?: (item: DashboardItem) => void
 	/** True while the full detail (with provider `sourceTask`) is still being
 	 *  fetched and we're rendering from the cheap list row. Lets the description
@@ -64,9 +65,10 @@ export function runObservationDetails(observation: DashboardItem['runObservation
 	return details
 }
 
-export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFork, sourceLoading }: ItemDetailProps) {
+export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onCreateSourceTask, onFork, sourceLoading }: ItemDetailProps) {
 	const [pendingAction, setPendingAction] = useState<DashboardActionId | null>(null)
 	const [pendingPlan, setPendingPlan] = useState(false)
+	const [pendingSourceTask, setPendingSourceTask] = useState(false)
 	const [pendingStatus, setPendingStatus] = useState(false)
 	// A set, not a single value — the cheap AI passes are independent, so several
 	// (e.g. branch name + re-assess) can run at once; each button reflects only
@@ -81,6 +83,7 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 	useEffect(() => {
 		setPendingAction(null)
 		setPendingPlan(false)
+		setPendingSourceTask(false)
 		setPendingAi(new Set())
 		setPlanInfo(null)
 		setActionError(null)
@@ -91,7 +94,10 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 	// Actions (approve/reject/plan/fork) and the cheap AI passes (display name /
 	// branch name / re-assess) are independent server ops — running a re-assess
 	// must NOT lock the action bar. Gate them on separate pending flags.
-	const actionPending = pendingAction !== null || pendingPlan
+	const actionPending = pendingAction !== null || pendingPlan || pendingSourceTask
+	// Server-owned: captured (ingested) Item not yet linked to the provider, and
+	// the provider can create tasks. Only single-item responses populate it.
+	const showCreateSourceTask = Boolean(item.canCreateSourceTask && onCreateSourceTask)
 	// Branch renaming is only safe before a worktree exists (renaming after would
 	// orphan it), and only for solve Items not yet running — mirrors the server gate.
 	const canBranchName = item.kind === 'solve' && !item.plan && (item.status === 'triage' || item.status === 'ready')
@@ -131,6 +137,19 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 			setActionError(err instanceof Error ? err.message : String(err))
 		} finally {
 			setPendingPlan(false)
+		}
+	}
+
+	const runCreateSourceTask = async () => {
+		if (!onCreateSourceTask) return
+		setPendingSourceTask(true)
+		setActionError(null)
+		try {
+			await onCreateSourceTask(item.id)
+		} catch (err) {
+			setActionError(err instanceof Error ? err.message : String(err))
+		} finally {
+			setPendingSourceTask(false)
 		}
 	}
 
@@ -360,7 +379,17 @@ export function ItemDetail({ item, onAction, onSetStatus, onPlan, onAiPass, onFo
 									onClick={runPlan}
 								/>
 							)}
-							{canFork && onFork && (
+							{showCreateSourceTask && (
+							<ActionButton
+								label="Create source task"
+								tone="muted"
+								disabled={actionPending}
+								loading={pendingSourceTask}
+								fullWidth
+								onClick={runCreateSourceTask}
+							/>
+						)}
+						{canFork && onFork && (
 								<ActionButton
 									label="Fork"
 									tone="muted"

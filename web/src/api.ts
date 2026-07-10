@@ -172,6 +172,10 @@ export interface DashboardItem {
 	displayName: string | null
 	assessment: Assessment | null
 	source: { provider: string; externalId: string; url?: string } | null
+	/** True for ingested (captured-context) Items — e.g. an email. */
+	captured: boolean
+	/** Single-item routes only: the "create source task" action applies. */
+	canCreateSourceTask?: boolean
 	baseRef: string
 	spawner: string | null
 	groupId: string | null
@@ -350,6 +354,9 @@ export const api = {
 	// Force-(re)run a cheap agent pass on demand — display name, branch name, or
 	// intent assessment. Returns the updated item with the new field.
 	runAiPass: (id: string, pass: AiPass) => postJSON<DashboardItem>(`/items/${id}/ai/${pass}`),
+
+	/** Promote a captured (ingested) Item into a real task in the source system. */
+	createSourceTask: (id: string) => postJSON<DashboardItem>(`/items/${id}/source-task`),
 	itemAction: (id: string, action: DashboardActionId) => {
 		switch (action) {
 			case 'approve':

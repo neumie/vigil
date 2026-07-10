@@ -58,6 +58,15 @@ export interface DashboardItem {
 	/** Pre-solve intent triage (advisory); null until assessed. */
 	assessment: ItemRecord['assessment']
 	source: ItemRecord['source']
+	/** True for ingested (captured-context) Items — e.g. an email filed via /api/items/ingest. */
+	captured: boolean
+	/**
+	 * True when the "create a task in the source system from this captured Item"
+	 * action applies (captured, not yet linked to the active provider, and the
+	 * provider supports task creation). Populated by single-Item routes — list
+	 * rows leave it undefined (the button lives in the detail pane).
+	 */
+	canCreateSourceTask?: boolean
 	baseRef: string
 	spawner: string | null
 	groupId: string | null
@@ -145,6 +154,22 @@ function actionsForStatus(
 	}
 }
 
+/**
+ * Whether the "create source task" action applies. Route-layer helper: needs
+ * provider facts (name + createTask capability) the contract itself doesn't have.
+ */
+export function canCreateSourceTask(
+	item: ItemRecord,
+	provider: { name: string; createTask?: unknown },
+): boolean {
+	return (
+		item.kind === 'solve' &&
+		item.capturedContext != null &&
+		item.source?.provider !== provider.name &&
+		typeof provider.createTask === 'function'
+	)
+}
+
 function formatPrLabel(url: string): string {
 	const match = url.match(/\/pull\/(\d+)/)
 	return match ? `PR #${match[1]}` : 'Pull Request'
@@ -228,6 +253,7 @@ export function toDashboardItem(
 		displayName: item.displayName,
 		assessment: item.assessment,
 		source: item.source,
+		captured: item.capturedContext != null,
 		baseRef: item.baseRef,
 		spawner: item.spawner,
 		groupId: item.groupId,

@@ -1,5 +1,5 @@
 import { log } from '../util/logger.js'
-import type { DescriptionBlock, DiscoveredTask, TaskContext, TaskProvider, TaskSummary } from './provider.js'
+import type { CreatedSourceTask, DescriptionBlock, DiscoveredTask, TaskContext, TaskProvider, TaskSummary } from './provider.js'
 
 // -- GraphQL queries/mutations --
 
@@ -84,6 +84,15 @@ mutation CreateComment($taskId: UUID!, $contentData: Json!, $isPublic: Boolean!)
 }
 `
 
+const CREATE_TASK = `
+mutation CreateTask($data: TaskCreateInput!) {
+  createTask(data: $data) {
+    ok
+    node { id }
+  }
+}
+`
+
 // -- Config --
 
 export interface ContemberProviderConfig {
@@ -102,11 +111,13 @@ export class ContemberProvider implements TaskProvider {
 	private url: string
 	private token: string
 	private statuses: string[]
+	private taskBaseUrl?: string
 
 	constructor(config: ContemberProviderConfig) {
 		this.url = `${config.apiBaseUrl}/content/${config.projectSlug}/live`
 		this.token = config.apiToken
 		this.statuses = config.statuses
+		this.taskBaseUrl = config.taskBaseUrl
 	}
 
 	async pollNewTasks(projectSlug: string, since: string): Promise<DiscoveredTask[]> {
@@ -226,6 +237,38 @@ export class ContemberProvider implements TaskProvider {
 
 		log.error('contember', `Failed to post comment on task ${externalId}`)
 		return null
+	}
+
+	/**
+	 * Create a task in ClientCare (promoting a captured Item — e.g. an ingested
+	 * email — into a real tracked task). Only `title` + `project` are required by
+	 * the schema; the description reuses the comment pipeline's Slate conversion
+	 * so it renders in the admin's block editor. `sourceType: email_import`
+	 * matches how ClientCare's own email worker labels such tasks.
+	 */
+	async createTask(input: { projectSlug: string; title: string; description?: string }): Promise<CreatedSourceTask> {
+		const data: Record<string, unknown> = {
+			title: input.title,
+			project: { connect: { slug: input.projectSlug } },
+			sourceType: 'email_import',
+		}
+		if (input.description?.trim()) {
+			data.description = { create: { data: markdownToSlateJS(input.description) } }
+		}
+
+		const result = await this.query<{
+			createTask: { ok: boolean; node?: { id: string } }
+		}>(CREATE_TASK, { data })
+
+		const taskId = result.createTask.node?.id
+		if (!result.createTask.ok || !taskId) {
+			throw new Error(`Contember createTask failed for project ${input.projectSlug}`)
+		}
+		log.success('contember', `Created task ${taskId} in project ${input.projectSlug}`)
+		return {
+			externalId: taskId,
+			...(this.taskBaseUrl ? { url: `${this.taskBaseUrl}${taskId}` } : {}),
+		}
 	}
 
 	// -- Internal GraphQL --

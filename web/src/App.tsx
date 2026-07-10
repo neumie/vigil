@@ -141,6 +141,18 @@ export function App() {
 		loadDetail(id)
 	}
 
+	const handleCreateSourceTask = async (id: string) => {
+		try {
+			const updated = await api.createSourceTask(id)
+			if (updated) applyUpdated(updated)
+		} catch (err) {
+			console.error('Source task creation failed:', err)
+			throw err // surfaced by ItemDetail
+		}
+		refresh()
+		loadDetail(id)
+	}
+
 	const handleCreatedItem = async (created: DashboardItem | DashboardItem[]) => {
 		const first = Array.isArray(created) ? created[0] : created
 		setCreateDraft(null)
@@ -210,6 +222,7 @@ export function App() {
 							onSetStatus={handleSetStatus}
 							onPlan={handlePlanItem}
 							onAiPass={handleAiPass}
+							onCreateSourceTask={handleCreateSourceTask}
 							onFork={item => {
 								setCreateDraft({ forkFrom: item })
 								selectItem(null)

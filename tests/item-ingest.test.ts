@@ -293,3 +293,81 @@ test('localizeCapturedAttachments rewrites served URLs to worktree-relative path
 	assert.equal(out.attachments?.[0].contentType, 'image/png')
 	assert.deepEqual(localizeCapturedAttachments({ title: 't' }), { title: 't' })
 })
+
+test('source-task route promotes a captured Item into a provider task and links it', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			projectSlug: 'vigil',
+			title: 'Customer email: invoice recipient wrong',
+			prompt: 'Customer email: invoice recipient wrong',
+			source: { provider: 'Email', externalId: 'email:abc' },
+			capturedContext: { title: 'Customer email: invoice recipient wrong', description: 'Body of the email.' },
+		})
+
+		const createCalls: Array<{ projectSlug: string; title: string; description?: string }> = []
+		const creatingProvider = {
+			name: 'Contember',
+			pollNewTasks: async () => [],
+			getTaskContext: async () => null,
+			resolveTaskSummary: async () => null,
+			postComment: async () => null,
+			createTask: async (input: { projectSlug: string; title: string; description?: string }) => {
+				createCalls.push(input)
+				return { externalId: 'task-123', url: 'https://clientcare.test/task?id=task-123' }
+			},
+		} as never
+		const { enricher } = makeRecordingEnricher()
+		const api = apiRoutes(config, 'vigil.config.json', db, queue, poller, creatingProvider, spawner, enricher as never)
+
+		const res = await api.request(`/items/${item.id}/source-task`, { method: 'POST' })
+		assert.equal(res.status, 200)
+		const body = (await res.json()) as { data: Record<string, unknown> }
+		assert.deepEqual(createCalls, [
+			{ projectSlug: 'vigil', title: 'Customer email: invoice recipient wrong', description: 'Body of the email.' },
+		])
+		assert.deepEqual(body.data.source, {
+			provider: 'Contember',
+			externalId: 'task-123',
+			url: 'https://clientcare.test/task?id=task-123',
+		})
+		assert.equal(body.data.captured, true)
+		assert.equal(body.data.canCreateSourceTask, false) // linked now — action gone
+
+		// The frozen email context survives the promotion (attachments/body still local).
+		const stored = db.items.get(item.id)
+		assert.equal(stored?.capturedContext?.description, 'Body of the email.')
+		assert.equal(db.items.countEvents(item.id, 'source_task_created'), 1)
+		// Poller dedup now keys on the new task id — no duplicate Item on next poll.
+		assert.equal(db.items.findBySourceExternalId('task-123')?.id, item.id)
+
+		// Second promotion refuses — already linked.
+		const again = await api.request(`/items/${item.id}/source-task`, { method: 'POST' })
+		assert.equal(again.status, 400)
+	}))
+
+test('source-task route refuses non-captured Items and providers without createTask', () =>
+	withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const plain = commands.createSolveItem({ projectSlug: 'vigil', title: 'plain', prompt: 'plain' })
+		const captured = commands.createSolveItem({
+			projectSlug: 'vigil',
+			title: 'email',
+			prompt: 'email',
+			source: { provider: 'Email', externalId: 'email:x' },
+			capturedContext: { title: 'email' },
+		})
+		const { enricher } = makeRecordingEnricher()
+		// explodingProvider has no createTask
+		const api = apiRoutes(config, 'vigil.config.json', db, queue, poller, explodingProvider, spawner, enricher as never)
+
+		const nonCaptured = await api.request(`/items/${plain.id}/source-task`, { method: 'POST' })
+		assert.equal(nonCaptured.status, 400)
+
+		const noCapability = await api.request(`/items/${captured.id}/source-task`, { method: 'POST' })
+		assert.equal(noCapability.status, 400)
+		assert.match(((await noCapability.json()) as { error: string }).error, /does not support task creation/)
+
+		const missing = await api.request('/items/nope/source-task', { method: 'POST' })
+		assert.equal(missing.status, 404)
+	}))

@@ -54,6 +54,12 @@ export interface TaskSummary {
 	title: string
 }
 
+/** Result of creating a task in the source system. */
+export interface CreatedSourceTask {
+	externalId: string
+	url?: string
+}
+
 /**
  * Abstract interface that all task sources must implement.
  */
@@ -63,4 +69,11 @@ export interface TaskProvider {
 	getTaskContext(externalId: string): Promise<TaskContext | null>
 	resolveTaskSummary(externalId: string): Promise<TaskSummary | null>
 	postComment(externalId: string, markdown: string): Promise<string | null>
+	/**
+	 * Optional capability: create a task in the source system (used to promote a
+	 * captured/ingested Item — e.g. an email — into a real tracked task). The
+	 * projectSlug is the vigil project slug, which by convention matches the
+	 * provider's project identifier. Throws on failure.
+	 */
+	createTask?(input: { projectSlug: string; title: string; description?: string }): Promise<CreatedSourceTask>
 }

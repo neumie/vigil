@@ -211,6 +211,31 @@ export class ItemCommands {
 		return this.store.updatePayload(id, solverModel ? { ...payload, solverModel } : payload)
 	}
 
+	/**
+	 * Promote a captured (ingested) Item into a real provider task: re-point its
+	 * `source` at the task the provider just created and record
+	 * `source_task_created`. Captured-only — a provider-discovered Item's
+	 * provenance must never be rewritten — and refuses a second promotion to the
+	 * same provider. The frozen `capturedContext` is deliberately KEPT: it still
+	 * carries the email body + local attachments the solve should run against.
+	 */
+	linkSourceTask(id: string, source: ItemSource): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve') throw new Error('Only solve Items can be linked to a source task')
+		if (!item.capturedContext) throw new Error('Only captured (ingested) Items can be linked to a source task')
+		if (item.source?.provider === source.provider) {
+			throw new Error(`Item is already linked to a ${source.provider} task`)
+		}
+		const updated = this.store.updateSource(id, source)
+		this.store.insertEvent(id, 'source_task_created', {
+			provider: source.provider,
+			externalId: source.externalId,
+			url: source.url ?? null,
+			previousExternalId: item.source?.externalId ?? null,
+		})
+		return updated
+	}
+
 	createRalphItem(input: CreateRalphItemInput): ItemRecord {
 		return this.createRalphItems({ ...input, parallelism: 1 })[0]
 	}

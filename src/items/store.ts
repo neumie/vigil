@@ -226,6 +226,23 @@ export class ItemStore {
 		return updated
 	}
 
+	// Re-points a captured Item at a real provider task (source-task promotion).
+	// Dedicated JSON writer (like deploy_state) — `source` is deliberately absent
+	// from ITEM_UPDATE_COLUMNS so nothing else can rewrite an Item's provenance.
+	updateSource(id: string, source: ItemSource): ItemRecord {
+		const current = this.get(id)
+		if (!current) throw new Error(`Item not found: ${id}`)
+		const updatedAt = new Date().toISOString()
+		validateItem({ ...current, source, updatedAt })
+		const result = this.db
+			.prepare('UPDATE items SET source = ?, updated_at = ? WHERE id = ?')
+			.run(JSON.stringify(source), updatedAt, id)
+		if (result.changes === 0) throw new Error(`Item not found: ${id}`)
+		const updated = this.get(id)
+		if (!updated) throw new Error(`Item not found: ${id}`)
+		return updated
+	}
+
 	// Advisory pre-solve triage; dedicated JSON writer (like deploy_state).
 	updateAssessment(id: string, assessment: Assessment | null): ItemRecord {
 		const current = this.get(id)
