@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { VigilConfig } from '../config.js'
@@ -10,16 +8,6 @@ import type { TaskProvider } from '../providers/provider.js'
 import type { Drainer } from '../queue/drainer.js'
 import type { Spawner } from '../spawner/spawner.js'
 import { apiRoutes } from './routes/api.js'
-
-const MIME: Record<string, string> = {
-	'.html': 'text/html',
-	'.js': 'application/javascript',
-	'.css': 'text/css',
-	'.json': 'application/json',
-	'.svg': 'image/svg+xml',
-	'.png': 'image/png',
-	'.ico': 'image/x-icon',
-}
 
 export function createApp(
 	config: VigilConfig,
@@ -32,30 +20,21 @@ export function createApp(
 	enricher: ItemEnricher,
 ) {
 	const app = new Hono()
-	const webDir = resolve(import.meta.dirname, '../web')
 
 	app.use('*', cors())
 
 	app.route('/api', apiRoutes(config, configPath, db, queue, poller, provider, spawner, enricher))
 
-	// Any unmatched /api/* request returns JSON, never the SPA HTML below —
-	// otherwise a stale/mismatched client gets `index.html` and dies with
-	// "Unexpected token '<'" trying to parse it as JSON.
+	// Any unmatched /api/* request returns JSON, never HTML — a stale/mismatched
+	// client must get a parseable error, not markup.
 	app.all('/api/*', c => c.json({ error: 'Not found' }, 404))
 
-	// Serve static frontend assets
-	app.get('*', c => {
-		const urlPath = c.req.path === '/' ? '/index.html' : c.req.path
-		const ext = urlPath.substring(urlPath.lastIndexOf('.'))
-		try {
-			const content = readFileSync(join(webDir, urlPath))
-			return c.body(content, 200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' })
-		} catch {
-			// SPA fallback — serve index.html for client-side routing
-			const html = readFileSync(join(webDir, 'index.html'))
-			return c.body(html, 200, { 'Content-Type': 'text/html' })
-		}
-	})
+	// The daemon is API-only: the browser dashboard (web/) is gone — helm (the
+	// native Electron sidebar) and the Chrome extension are the clients, both
+	// speaking /api. `/` stays as a tiny liveness/identity probe so a human (or
+	// `curl`) hitting the port sees what owns it; everything else is a JSON 404.
+	app.get('/', c => c.json({ name: 'vigil', api: '/api' }))
+	app.all('*', c => c.json({ error: 'Not found' }, 404))
 
 	return app
 }

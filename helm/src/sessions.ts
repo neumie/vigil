@@ -20,12 +20,7 @@ import * as path from 'node:path'
 // okena resolves tools through get_extended_path (session_backend.rs:751-793)
 // because app bundles inherit a minimal PATH missing /opt/homebrew/bin etc.
 // Same problem under Electron: check well-known locations first, then PATH.
-const DTACH_CANDIDATES = [
-	'/opt/homebrew/bin/dtach',
-	'/usr/local/bin/dtach',
-	'/opt/local/bin/dtach',
-	'/usr/bin/dtach',
-]
+const DTACH_CANDIDATES = ['/opt/homebrew/bin/dtach', '/usr/local/bin/dtach', '/opt/local/bin/dtach', '/usr/bin/dtach']
 
 export function resolveDtachBinary(): string | null {
 	const executable = (p: string): boolean => {
@@ -114,7 +109,7 @@ export function buildSessionArgs(sessionId: string, shell: string): string[] {
  * connect + EOF and drops it.
  */
 export function isSocketLive(sockPath: string, timeoutMs = 700): Promise<boolean> {
-	return new Promise((resolve) => {
+	return new Promise(resolve => {
 		let settled = false
 		const conn = net.createConnection(sockPath)
 		const done = (alive: boolean) => {
@@ -144,13 +139,13 @@ export interface LiveSession {
 export async function listLiveSessions(): Promise<LiveSession[]> {
 	let names: string[]
 	try {
-		names = fs.readdirSync(socketDir()).filter((n) => n.endsWith('.sock'))
+		names = fs.readdirSync(socketDir()).filter(n => n.endsWith('.sock'))
 	} catch {
 		return [] // dir doesn't exist yet — nothing persisted
 	}
 	const live: LiveSession[] = []
 	await Promise.all(
-		names.map(async (name) => {
+		names.map(async name => {
 			const sessionId = name.slice(0, -'.sock'.length)
 			if (!isValidSessionId(sessionId)) return
 			const sock = path.join(socketDir(), name)
@@ -177,14 +172,14 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
 }
 
 function runLines(cmd: string, args: string[]): Promise<number[]> {
-	return new Promise((resolve) => {
+	return new Promise(resolve => {
 		execFile(cmd, args, { timeout: 5000 }, (_error, stdout) => {
 			// lsof/pgrep exit non-zero on "no match"; treat output as the answer.
 			resolve(
 				stdout
 					.split('\n')
-					.map((line) => Number.parseInt(line.trim(), 10))
-					.filter((pid) => Number.isFinite(pid) && pid > 0),
+					.map(line => Number.parseInt(line.trim(), 10))
+					.filter(pid => Number.isFinite(pid) && pid > 0),
 			)
 		})
 	})

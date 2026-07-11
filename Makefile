@@ -1,8 +1,7 @@
 .PHONY: install uninstall restart status logs build test check
 
-build: node_modules web/node_modules
+build: node_modules
 	npm run build
-	npm run build:web
 
 test: node_modules
 	npm run test
@@ -12,7 +11,7 @@ check: build
 install: build
 	npm link
 	vigil start
-	@echo "\n✓ Vigil installed and running. Dashboard: http://localhost:7474"
+	@echo "\n✓ Vigil installed and running. API: http://localhost:7474/api (clients: helm + extension)"
 	@echo "  Use: vigil start | stop | status | logs"
 
 uninstall:
@@ -34,7 +33,3 @@ logs:
 node_modules: package.json
 	npm install
 	@touch node_modules
-
-web/node_modules: web/package.json
-	cd web && npm install
-	@touch web/node_modules

@@ -21,8 +21,8 @@ const INGEST_HELP = `Usage: vigil ingest --project <slug> --title <title> [optio
 File a self-contained task — an email, an Obsidian note, anything tied to a
 project — into Vigil. Posts to the RUNNING daemon's /api/items/ingest, so it
 works from ANY directory (no vigil.config.json needed) and any agent can use it.
-The task lands in triage with a security-aware assessment; you approve it in the
-dashboard, then it solves with its attachments available to the agent.
+The task lands in triage with a security-aware assessment; you approve it in
+helm, then it solves with its attachments available to the agent.
 
 Required:
   --project <slug>        Vigil project slug

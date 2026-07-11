@@ -1,7 +1,5 @@
 node_modules/
 dist/
-web/dist/
-web/node_modules/
 *.db
 *.db-journal
 *.db-shm

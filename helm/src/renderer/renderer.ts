@@ -1,10 +1,11 @@
-import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
-import { showToast } from './toast'
 import type { HelmApi, RestoredSession } from '../shared'
+import { mountSidebar } from './sidebar/SidebarRoot'
+import { showToast } from './toast'
 
 declare global {
 	interface Window {
@@ -20,9 +21,7 @@ function el<T extends HTMLElement>(id: string): T {
 	return node as T
 }
 
-const dashFrame = el<HTMLIFrameElement>('dash')
-const dashOffline = el<HTMLDivElement>('dash-offline')
-const daemonUrlLabel = el<HTMLElement>('daemon-url')
+const leftPane = el<HTMLElement>('left')
 const connDot = el<HTMLSpanElement>('conn-dot')
 const divider = el<HTMLDivElement>('divider')
 const tabsEl = el<HTMLDivElement>('tabs')
@@ -32,25 +31,22 @@ const termsEl = el<HTMLDivElement>('terms')
 // ---------- split divider ----------
 
 const LEFT_WIDTH_KEY = 'helm.leftWidth'
-const MIN_LEFT = 320
-// 52% of the default 1400px window gives the dashboard iframe ≥720px — the
-// width where vigil comfortably renders list + detail side by side. Narrower
-// panes are fine: the embed CSS injected from main collapses vigil to one
-// column below 720px (see src/dash-embed.ts).
-const DEFAULT_LEFT_FRACTION = 0.52
-const maxLeft = () => Math.floor(window.innerWidth * 0.6)
+// The native sidebar is designed FOR 340px (docs/design-system.md §1 principle
+// 4): default 340, draggable between 300 and 420 — never a desktop layout.
+const MIN_LEFT = 300
+const MAX_LEFT = 420
+const DEFAULT_LEFT = 340
+const maxLeft = () => Math.min(MAX_LEFT, Math.floor(window.innerWidth * 0.6))
 const clampLeft = (width: number) => Math.min(Math.max(width, MIN_LEFT), maxLeft())
 
-let leftWidth = clampLeft(
-	Number(localStorage.getItem(LEFT_WIDTH_KEY)) || Math.round(window.innerWidth * DEFAULT_LEFT_FRACTION),
-)
+let leftWidth = clampLeft(Number(localStorage.getItem(LEFT_WIDTH_KEY)) || DEFAULT_LEFT)
 
 function applyLeftWidth(): void {
 	document.documentElement.style.setProperty('--left-width', `${leftWidth}px`)
 }
 applyLeftWidth()
 
-divider.addEventListener('pointerdown', (down) => {
+divider.addEventListener('pointerdown', down => {
 	divider.setPointerCapture(down.pointerId)
 	document.body.classList.add('dragging')
 	const onMove = (move: PointerEvent) => {
@@ -75,40 +71,19 @@ window.addEventListener('resize', () => {
 	}
 })
 
-// ---------- daemon connection (dot + dashboard iframe) ----------
+// ---------- daemon connection (topbar dot) + native sidebar ----------
 
-const daemonUrl = helm.config.getDaemonUrl()
-daemonUrlLabel.textContent = (() => {
-	try {
-		return new URL(daemonUrl).host
-	} catch {
-		return daemonUrl
-	}
-})()
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-// Never point the iframe at a dead daemon — a broken frame is uglier than the
-// waiting card. Once loaded, the dashboard polls and recovers on its own, so
-// later outages surface through the amber dot only (no card flicker over live UI).
-let dashLoaded = false
-
+// Reachability comes from the VigilBridge poller in main — the old renderer
+// ping loop (daemon:ping) is gone. Snapshots are pushed only on change, so the
+// initial subscribe() seeds the dot before the first change lands.
 function reflectDaemonState(reachable: boolean): void {
 	connDot.classList.toggle('offline', !reachable)
-	if (reachable && !dashLoaded) {
-		dashLoaded = true
-		dashFrame.src = daemonUrl
-		dashOffline.classList.add('hidden')
-	}
 }
 
-async function pingLoop(): Promise<void> {
-	for (;;) {
-		reflectDaemonState(await helm.config.pingDaemon())
-		await sleep(2000)
-	}
-}
-void pingLoop()
+helm.vigil.onSnapshot(snapshot => reflectDaemonState(snapshot.reachable))
+void helm.vigil.subscribe().then(snapshot => reflectDaemonState(snapshot.reachable))
+
+mountSidebar(leftPane)
 
 // ---------- terminal tabs ----------
 
@@ -185,7 +160,7 @@ function closeTab(tab: Tab): void {
 	// grace timer — the dtach session dies when it fires. The toast's Undo
 	// cancels the timer and reattaches the same session as a new tab.
 	if (tab.ptyId !== null) {
-		void helm.sessions.closeWithGrace(tab.ptyId).then((grace) => {
+		void helm.sessions.closeWithGrace(tab.ptyId).then(grace => {
 			if (!grace) return // non-persistent pty — already fully killed, nothing to undo
 			const toast = showToast({
 				message: 'Terminal closed',
@@ -196,7 +171,7 @@ function closeTab(tab: Tab): void {
 					label: 'Undo',
 					onClick: () => {
 						toast.dismiss()
-						void helm.sessions.undoClose(grace.sessionId).then((alive) => {
+						void helm.sessions.undoClose(grace.sessionId).then(alive => {
 							if (alive) void createTab({ sessionId: grace.sessionId, title })
 						})
 					},
@@ -256,7 +231,7 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	// reattached shell emits a fresh OSC title.
 	label.textContent = restore?.title || 'zsh'
 	// Shell title arrives via OSC title events; empty titles fall back to "zsh".
-	term.onTitleChange((title) => {
+	term.onTitleChange(title => {
 		const text = title.trim() || 'zsh'
 		label.textContent = text
 		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, text)
@@ -273,13 +248,13 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	tabs.push(tab)
 
 	tabButton.addEventListener('click', () => activate(tab))
-	tabButton.addEventListener('keydown', (event) => {
+	tabButton.addEventListener('keydown', event => {
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault()
 			activate(tab)
 		}
 	})
-	close.addEventListener('click', (event) => {
+	close.addEventListener('click', event => {
 		event.stopPropagation()
 		closeTab(tab)
 	})
@@ -294,16 +269,16 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	}
 	tab.ptyId = spawned.id
 	tab.sessionId = spawned.sessionId
-	term.onData((data) => helm.pty.write(spawned.id, data))
+	term.onData(data => helm.pty.write(spawned.id, data))
 	term.onResize(({ cols, rows }) => helm.pty.resize(spawned.id, cols, rows))
 }
 
 helm.pty.onData((id, data) => {
-	tabs.find((t) => t.ptyId === id)?.term.write(data)
+	tabs.find(t => t.ptyId === id)?.term.write(data)
 })
 
-helm.pty.onExit((id) => {
-	const tab = tabs.find((t) => t.ptyId === id)
+helm.pty.onExit(id => {
+	const tab = tabs.find(t => t.ptyId === id)
 	if (tab) {
 		tab.ptyId = null // pty is gone; don't kill it again on close
 		closeTab(tab)
@@ -330,7 +305,7 @@ helm.tabs.onClose(() => {
 // win over xterm's own key handling when a terminal has focus.
 window.addEventListener(
 	'keydown',
-	(event) => {
+	event => {
 		if (!event.metaKey || event.ctrlKey || event.altKey) return
 		if (!event.shiftKey && /^[1-9]$/.test(event.key)) {
 			const target = tabs[Number(event.key) - 1]

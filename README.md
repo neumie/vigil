@@ -34,7 +34,9 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
    lifecycle events, solve logs, PR status, and almanac status files are
    normalized before clients render them.
 
-Dashboard: **http://localhost:7474**
+API: **http://localhost:7474/api** — the daemon is API-only. The UI is **helm**
+(`helm/`, native Electron sidebar + terminal) plus the Chrome extension; both
+speak `/api`.
 
 ## Prerequisites
 
@@ -72,14 +74,17 @@ cp vigil.config.example.json vigil.config.json
 | `github.postComments` | Enable provider comments for Source-backed solve Items (default: true) |
 | `github.prPrefix` | PR title prefix (default: `[Vigil]`) |
 
-Settings in the dashboard use the same Config Document shape as the API. Secret
+Settings in helm use the same Config Document shape as the API. Secret
 fields are redacted and preserved on save.
 
 ## Running
 
 ```bash
-# Development (backend + dashboard)
+# Development (backend API)
 npm run dev
+
+# Helm (native UI): see helm/README.md
+cd helm && bun install && bun run start
 
 # Production daemon (macOS launchd)
 make install
@@ -91,8 +96,7 @@ make restart
 make uninstall
 ```
 
-The backend listens on `:7474`. The frontend dev server uses `:7475` and proxies
-`/api` to the backend.
+The backend listens on `:7474` (API-only; `GET /` is a tiny identity probe).
 
 ## Creating And Running Items
 

@@ -10,9 +10,8 @@ import {
 	type SolveSelection,
 	type SolverAgent,
 	api,
-	getServerUrl,
 } from './api'
-import { DEFAULT_SERVER_URL, getSync, setSync } from './storage'
+import { getSync, setSync } from './storage'
 
 type Tone = DashboardTone
 
@@ -63,7 +62,6 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [connError, setConnError] = createSignal<string | null>(null)
 	const [actionError, setActionError] = createSignal<string | null>(null)
 	const [projects, setProjects] = createSignal<string[]>([])
-	const [serverUrl, setServerUrl] = createSignal<string>(DEFAULT_SERVER_URL)
 	const [planInfo, setPlanInfo] = createSignal<PlanInfo | null>(null)
 	const [planPending, setPlanPending] = createSignal(false)
 	const [solverAgent, setSolverAgent] = createSignal<SolverAgent>('claude')
@@ -74,8 +72,6 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 	const [modelTouched, setModelTouched] = createSignal(false)
 	const [modelCatalog, setModelCatalog] = createSignal<Record<SolverAgent, ModelOption[]>>({ claude: [], codex: [] })
 	const [favoriteModels, setFavoriteModels] = createSignal<string[]>([])
-
-	getServerUrl().then(setServerUrl)
 
 	// Load projects on mount
 	api
@@ -99,9 +95,12 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 			setConnError('Cannot connect to Vigil')
 		})
 
-	const dashboardUrl = () => {
+	// Deep link into helm (the native cockpit) — the browser dashboard is gone.
+	// helm registers the vigil:// scheme (helm/src/main.ts) and navigates its
+	// sidebar to the item.
+	const helmUrl = () => {
 		const i = item()
-		return i ? `${serverUrl()}/#item/${i.id}` : null
+		return i ? `vigil://item/${i.id}` : null
 	}
 
 	// Poll for the Item backing this source task
@@ -223,7 +222,7 @@ export function Widget(props: { taskId: Accessor<string | null> }) {
 		<Show when={expanded()} fallback={<Pill view={view} onExpand={() => setExpanded(true)} onSolve={solve} />}>
 			<Card
 				view={view}
-				dashboardUrl={dashboardUrl}
+				helmUrl={helmUrl}
 				planInfo={planInfo}
 				planPending={planPending}
 				solverAgent={solverAgent}
@@ -392,7 +391,7 @@ function Pill(props: { view: Accessor<View>; onExpand: () => void; onSolve: () =
 
 function Card(props: {
 	view: Accessor<View>
-	dashboardUrl: Accessor<string | null>
+	helmUrl: Accessor<string | null>
 	planInfo: Accessor<PlanInfo | null>
 	planPending: Accessor<boolean>
 	solverAgent: Accessor<SolverAgent>
@@ -468,10 +467,12 @@ function Card(props: {
 										<span class="vg-card__status">{item().card.statusLabel}</span>
 									</div>
 									<div class="vg-card__hactions">
-										<Show when={props.dashboardUrl()}>
+										{/* vigil:// = external protocol launch (helm), not a navigation —
+										    no target: the page stays put while the OS opens Helm. */}
+										<Show when={props.helmUrl()}>
 											{url => (
-												<a class="vg-link-open" href={url()} target="_blank" rel="noreferrer">
-													Open ↗
+												<a class="vg-link-open" href={url()}>
+													Helm ↗
 												</a>
 											)}
 										</Show>

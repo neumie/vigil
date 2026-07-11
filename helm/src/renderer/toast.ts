@@ -29,7 +29,7 @@ const EXIT_MS = 160 // must cover the leave transition (120ms) plus slack
 let container: HTMLDivElement | null = null
 
 function ensureContainer(): HTMLDivElement {
-	if (container && container.isConnected) return container
+	if (container?.isConnected) return container
 	container = document.createElement('div')
 	container.id = 'toasts'
 	container.setAttribute('role', 'status')
@@ -63,7 +63,7 @@ export function showToast(options: ToastOptions): ToastHandle {
 		const button = document.createElement('button')
 		button.className = 'toast-action'
 		button.textContent = options.action.label
-		button.addEventListener('click', (event) => {
+		button.addEventListener('click', event => {
 			event.stopPropagation()
 			options.action?.onClick()
 		})

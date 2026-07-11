@@ -1,19 +1,23 @@
 /* Helm design tokens — one machined instrument panel, macOS dark. */
 :root {
+	color-scheme: dark;
 	--chrome: #1a1c1f;
 	--pane: #141517;
 	--well: #0f1113;
 	--hairline: rgba(255, 255, 255, 0.07);
-	--subtle: rgba(255, 255, 255, 0.05);
-	--raised: rgba(255, 255, 255, 0.09);
+	--hairline-strong: rgba(255, 255, 255, 0.16);
+	--fill-subtle: rgba(255, 255, 255, 0.05);
+	--fill-raised: rgba(255, 255, 255, 0.09);
 	--text-0: #ececee;
 	--text-1: #9a9ea6;
 	--text-2: #62666e;
 	--accent: #4c9aff;
+	--accent-fill: #3b82f6;
 	--success: #4ec98a;
 	--warn: #e0b341;
 	--danger: #f2585b;
-	--left-width: 480px;
+	--neutral: #8a8f98;
+	--left-width: 340px;
 }
 
 *,
@@ -33,7 +37,7 @@ body {
 body {
 	background: var(--pane);
 	color: var(--text-0);
-	font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+	font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 	font-size: 13px;
 	letter-spacing: -0.01em;
 	-webkit-font-smoothing: antialiased;
@@ -149,12 +153,12 @@ button:focus-visible,
 }
 
 .tab:hover {
-	background: var(--subtle);
+	background: var(--fill-subtle);
 	color: var(--text-1);
 }
 
 .tab.active {
-	background: var(--raised);
+	background: var(--fill-raised);
 	color: var(--text-0);
 }
 
@@ -189,7 +193,7 @@ button:focus-visible,
 
 .tab-close:hover {
 	opacity: 1;
-	background: var(--raised);
+	background: var(--fill-raised);
 }
 
 #new-tab {
@@ -211,7 +215,7 @@ button:focus-visible,
 }
 
 #new-tab:hover {
-	background: var(--subtle);
+	background: var(--fill-subtle);
 	color: var(--text-0);
 }
 
@@ -229,50 +233,7 @@ button:focus-visible,
 	background: var(--pane);
 }
 
-#dash {
-	width: 100%;
-	height: 100%;
-	border: none;
-	display: block;
-	background: var(--pane);
-}
-
-#dash-offline {
-	position: absolute;
-	inset: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: var(--pane);
-}
-
-#dash-offline.hidden {
-	display: none;
-}
-
-.offline-card {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 10px;
-	max-width: 300px;
-	padding: 22px 26px;
-	border: 1px solid var(--hairline);
-	border-radius: 8px;
-	background: var(--chrome);
-	text-align: center;
-}
-
-.offline-title {
-	color: var(--text-0);
-	font-weight: 600;
-}
-
-.offline-detail {
-	color: var(--text-1);
-	font-size: 12px;
-	letter-spacing: 0;
-}
+/* Native sidebar styles live in sidebar/sidebar.css (bundled together). */
 
 /* ---------- divider ---------- */
 
@@ -284,7 +245,7 @@ button:focus-visible,
 
 /* 8px hit-area straddling the 1px hairline */
 #divider::before {
-	content: '';
+	content: "";
 	position: absolute;
 	top: 0;
 	bottom: 0;
@@ -295,17 +256,12 @@ button:focus-visible,
 
 #divider:hover,
 body.dragging #divider {
-	background: rgba(255, 255, 255, 0.18);
+	background: var(--hairline-strong);
 }
 
 body.dragging {
 	cursor: col-resize;
 	user-select: none;
-}
-
-/* iframe swallows pointermove during drag without this */
-body.dragging #dash {
-	pointer-events: none;
 }
 
 /* ---------- terminal well ---------- */
@@ -411,7 +367,7 @@ body.dragging #dash {
 }
 
 .toast-action:hover {
-	background: var(--subtle);
+	background: var(--fill-subtle);
 }
 
 /* Quiet countdown affordance: hairline bar draining left-to-right over the ttl. */
@@ -443,8 +399,12 @@ body.dragging #dash {
 	align-items: center;
 	justify-content: center;
 }
-#no-terms[hidden] { display: none; }
-.no-terms-card { text-align: center; }
+#no-terms[hidden] {
+	display: none;
+}
+.no-terms-card {
+	text-align: center;
+}
 .no-terms-title {
 	font-size: 13px;
 	font-weight: 600;
@@ -456,11 +416,11 @@ body.dragging #dash {
 	color: #62666e;
 }
 .no-terms-detail kbd {
-	font-family: 'SF Mono', Menlo, ui-monospace, monospace;
+	font-family: "SF Mono", Menlo, ui-monospace, monospace;
 	font-size: 11px;
 	padding: 1px 5px;
 	border: 1px solid rgba(255, 255, 255, 0.09);
 	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--fill-subtle);
 	color: #9a9ea6;
 }

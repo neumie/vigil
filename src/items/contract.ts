@@ -158,10 +158,7 @@ function actionsForStatus(
  * Whether the "create source task" action applies. Route-layer helper: needs
  * provider facts (name + createTask capability) the contract itself doesn't have.
  */
-export function canCreateSourceTask(
-	item: ItemRecord,
-	provider: { name: string; createTask?: unknown },
-): boolean {
+export function canCreateSourceTask(item: ItemRecord, provider: { name: string; createTask?: unknown }): boolean {
 	return (
 		item.kind === 'solve' &&
 		item.capturedContext != null &&

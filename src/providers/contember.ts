@@ -1,5 +1,12 @@
 import { log } from '../util/logger.js'
-import type { CreatedSourceTask, DescriptionBlock, DiscoveredTask, TaskContext, TaskProvider, TaskSummary } from './provider.js'
+import type {
+	CreatedSourceTask,
+	DescriptionBlock,
+	DiscoveredTask,
+	TaskContext,
+	TaskProvider,
+	TaskSummary,
+} from './provider.js'
 
 // -- GraphQL queries/mutations --
 

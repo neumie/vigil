@@ -1,5 +1,5 @@
-import { build } from 'esbuild'
 import { cpSync } from 'node:fs'
+import { build } from 'esbuild'
 
 const common = { bundle: true, sourcemap: 'inline', logLevel: 'warning' }
 
@@ -23,11 +23,13 @@ await build({
 })
 
 // CSS imports (xterm.css + styles.css) bundle into dist/renderer.css alongside renderer.js.
+// jsx 'automatic' matches tsconfig "jsx": "react-jsx" (sidebar .tsx files).
 await build({
 	...common,
 	entryPoints: ['src/renderer/renderer.ts'],
 	platform: 'browser',
 	format: 'iife',
+	jsx: 'automatic',
 	outdir: 'dist',
 })
 

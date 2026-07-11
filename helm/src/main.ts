@@ -1,26 +1,27 @@
-import { app, BrowserWindow, Menu, ipcMain, screen, shell, webFrameMain } from 'electron'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { BrowserWindow, Menu, app, ipcMain, screen, shell } from 'electron'
 import * as pty from 'node-pty'
-import { dashEmbedScript } from './dash-embed'
+import { parseVigilItemUrl } from './protocol'
 import * as sessions from './sessions'
+import { VigilBridge } from './vigil-bridge'
 
 const daemonUrl = process.env.VIGIL_URL ?? 'http://localhost:7474'
-const daemonOrigin = (() => {
-	try {
-		return new URL(daemonUrl).origin
-	} catch {
-		return null
-	}
-})()
+
+// Single owner of daemon HTTP: one poller + command proxy, pushed to the
+// renderer over IPC (the file:// renderer can't fetch :7474 itself).
+const vigilBridge = new VigilBridge(daemonUrl)
 
 // --- CLI modes ---------------------------------------------------------------
 // `electron . --screenshot=<path> [--user-data-dir-tmp]` renders the window
-// without focusing it, waits for the dashboard iframe + shell prompt to paint,
+// without focusing it, waits for the sidebar + shell prompt to paint,
 // writes a full-window PNG, and exits 0.
-const screenshotPath =
-	process.argv.find((a) => a.startsWith('--screenshot='))?.slice('--screenshot='.length) || null
+const screenshotPath = process.argv.find(a => a.startsWith('--screenshot='))?.slice('--screenshot='.length) || null
+
+// `--ui-preview=<list|detail|settings>` forwards to the renderer (via preload
+// additionalArguments) so screenshot runs can capture a specific sidebar page.
+const uiPreviewArg = process.argv.find(a => a.startsWith('--ui-preview=')) || null
 
 app.setName('Helm')
 // Must run before anything touches userData so a screenshot run never fights a
@@ -28,6 +29,49 @@ app.setName('Helm')
 if (process.argv.includes('--user-data-dir-tmp')) {
 	app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'helm-')))
 }
+
+// --- vigil:// deep links -------------------------------------------------------
+// helm owns the `vigil://` scheme (the extension's "Open" link is
+// vigil://item/<id> — the browser dashboard is gone). Skipped for screenshot
+// runs: a throwaway capture must not steal the OS-level handler registration.
+// On macOS an UNPACKAGED run (electron .) can't always claim the scheme —
+// LaunchServices wants CFBundleURLTypes in the bundle's Info.plist — so a
+// failed registration is logged, not fatal; a packaged Helm carries the scheme.
+if (!screenshotPath && !app.setAsDefaultProtocolClient('vigil')) {
+	console.warn('[helm] could not register as vigil:// handler (unpackaged dev run?)')
+}
+
+/** Deep link that arrived before the window/renderer was ready; delivered on load. */
+let pendingOpenItemId: string | null = null
+
+function deliverOpenItem(itemId: string): void {
+	pendingOpenItemId = itemId
+	const win = mainWindow
+	if (!win || win.isDestroyed()) {
+		// Cold start: whenReady's createWindow flushes the pending id on load.
+		if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow()
+		return
+	}
+	if (win.isMinimized()) win.restore()
+	win.show()
+	win.focus()
+	if (!win.webContents.isLoading()) flushPendingOpenItem(win)
+}
+
+function flushPendingOpenItem(win: BrowserWindow): void {
+	if (pendingOpenItemId === null || win.isDestroyed()) return
+	win.webContents.send('nav:open-item', pendingOpenItemId)
+	pendingOpenItemId = null
+}
+
+// macOS delivers protocol launches/activations here (registered before `ready`
+// so a cold-start URL isn't missed). Windows/Linux would need a
+// single-instance lock + `second-instance` argv scan instead — not wired.
+app.on('open-url', (event, url) => {
+	event.preventDefault()
+	const itemId = parseVigilItemUrl(url)
+	if (itemId) deliverOpenItem(itemId)
+})
 
 interface PtyEntry {
 	proc: pty.IPty
@@ -82,7 +126,7 @@ function getSessionSupport(): SessionSupport | null {
 // Soft close: explicit tab close detaches the client and arms this timer; the
 // session dies only when it fires (okena soft_close.rs semantics; 5s default
 // from okena settings.rs:494). Undo cancels the timer and the tab reattaches.
-const graceCloser = new sessions.GraceCloser(sessions.closeGraceMs(), (sessionId) => {
+const graceCloser = new sessions.GraceCloser(sessions.closeGraceMs(), sessionId => {
 	getSessionSupport()?.registry.remove(sessionId)
 })
 
@@ -139,7 +183,7 @@ function restoreWindowState(): WindowState {
 		if (num(x) && num(y)) {
 			// Restore position only while the title bar still lands on a connected
 			// display — a detached monitor must not strand the window off-screen.
-			const visible = screen.getAllDisplays().some((d) => {
+			const visible = screen.getAllDisplays().some(d => {
 				const a = d.workArea
 				return x >= a.x - 100 && x <= a.x + a.width - 100 && y >= a.y && y <= a.y + a.height - 40
 			})
@@ -191,18 +235,15 @@ function captureScreenshot(win: BrowserWindow, outPath: string): void {
 		killAllPtyClients()
 		app.exit(1)
 	}
-	const loadTimeout = setTimeout(
-		() => fail(new Error('window never finished loading')),
-		SCREENSHOT_LOAD_TIMEOUT_MS,
-	)
+	const loadTimeout = setTimeout(() => fail(new Error('window never finished loading')), SCREENSHOT_LOAD_TIMEOUT_MS)
 	// Listener attaches before loadFile is called, so the load event cannot be missed.
 	win.webContents.once('did-finish-load', () => {
 		clearTimeout(loadTimeout)
-		// Settle so the dashboard iframe (or its waiting card) and the shell prompt paint.
+		// Settle so the sidebar (or its waiting state) and the shell prompt paint.
 		setTimeout(() => {
 			win.webContents
 				.capturePage()
-				.then((image) => {
+				.then(image => {
 					fs.mkdirSync(path.dirname(resolved), { recursive: true })
 					fs.writeFileSync(resolved, image.toPNG())
 					console.log(`[helm] screenshot written: ${resolved}`)
@@ -232,25 +273,13 @@ function createWindow(): void {
 			nodeIntegration: false,
 			// A screenshot run captures an unfocused window; keep it painting.
 			backgroundThrottling: !screenshotPath,
+			...(uiPreviewArg ? { additionalArguments: [uiPreviewArg] } : {}),
 		},
 	})
-	// Terminal web-links + dashboard target=_blank links open in the default browser, never a new Electron window.
+	// Terminal web-links + sidebar external links open in the default browser, never a new Electron window.
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		if (/^https?:/.test(url)) void shell.openExternal(url)
 		return { action: 'deny' }
-	})
-	// Re-skin the embedded vigil dashboard on every load of its (cross-origin)
-	// iframe — the renderer can't reach into that document, only main can.
-	win.webContents.on('did-frame-finish-load', (_event, isMainFrame, frameProcessId, frameRoutingId) => {
-		if (isMainFrame || !daemonOrigin) return
-		try {
-			const frame = webFrameMain.fromId(frameProcessId, frameRoutingId)
-			if (!frame || new URL(frame.url).origin !== daemonOrigin) return
-			// Frame may navigate away mid-flight; the next load re-injects.
-			frame.executeJavaScript(dashEmbedScript()).catch(() => {})
-		} catch {
-			// about:blank / destroyed frame — nothing to style
-		}
 	})
 	win.on('closed', () => {
 		if (mainWindow === win) mainWindow = null
@@ -264,6 +293,8 @@ function createWindow(): void {
 		trackWindowState(win)
 		win.once('ready-to-show', () => win.show())
 	}
+	// A vigil:// deep link may land before the renderer is up (cold start).
+	win.webContents.on('did-finish-load', () => flushPendingOpenItem(win))
 	void win.loadFile(path.join(__dirname, 'index.html'))
 	mainWindow = win
 }
@@ -339,7 +370,7 @@ ipcMain.handle('pty:spawn', (event, args: SpawnArgs) => {
 	})
 	ptys.set(id, { proc, sessionId })
 	const contents = event.sender
-	proc.onData((data) => {
+	proc.onData(data => {
 		if (!contents.isDestroyed()) contents.send('pty:data', id, data)
 	})
 	proc.onExit(({ exitCode }) => {
@@ -350,7 +381,7 @@ ipcMain.handle('pty:spawn', (event, args: SpawnArgs) => {
 		// no longer answers, so detached sessions are never dropped.
 		if (sessionId && support) {
 			const sid = sessionId
-			void sessions.reapSessionIfDead(sid).then((dead) => {
+			void sessions.reapSessionIfDead(sid).then(dead => {
 				if (dead) support.registry.remove(sid)
 			})
 		}
@@ -426,9 +457,9 @@ ipcMain.handle('sessions:list', async () => {
 	const support = getSessionSupport()
 	if (!support) return []
 	const live = await sessions.listLiveSessions()
-	support.registry.prune(new Set(live.map((s) => s.sessionId)))
+	support.registry.prune(new Set(live.map(s => s.sessionId)))
 	return live
-		.map((s) => ({
+		.map(s => ({
 			sessionId: s.sessionId,
 			title: support.registry.get(s.sessionId)?.lastTitle ?? null,
 			// Registry createdAt (original spawn) beats socket birthtime for ordering.
@@ -443,22 +474,16 @@ ipcMain.on('session:title', (_event, sessionId: unknown, title: unknown) => {
 	getSessionSupport()?.registry.setTitle(sessionId, title)
 })
 
-ipcMain.on('config:get', (event) => {
+ipcMain.on('config:get', event => {
 	event.returnValue = { daemonUrl }
 })
 
-ipcMain.handle('daemon:ping', async () => {
-	try {
-		const res = await fetch(daemonUrl, { signal: AbortSignal.timeout(2000) })
-		return res.ok
-	} catch {
-		return false
-	}
-})
+vigilBridge.registerIpc()
 
 void app.whenReady().then(() => {
 	app.setAboutPanelOptions({ applicationName: 'Helm', applicationVersion: app.getVersion() })
 	buildMenu()
+	vigilBridge.start()
 	createWindow()
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -473,6 +498,7 @@ app.on('window-all-closed', () => {
 // Quit detaches (clients die, dtach sessions live on for the next launch) —
 // the pre-dtach behavior of killing the shells is gone by design.
 app.on('before-quit', () => {
+	vigilBridge.stop()
 	killAllPtyClients()
 	sessionSupport?.registry.flush()
 })

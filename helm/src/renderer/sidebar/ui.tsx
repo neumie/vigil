@@ -1,0 +1,659 @@
+// Shared sidebar primitives, styled per docs/design-system.md:
+// buttons (§3.1), segmented control (§3.2), chips (§3.4), status dots (§3.5),
+// inputs/selects (§3.7), menus (§3.8), sheets (§3.9), push-nav header (§3.10),
+// banners (§3.12), empty states (§3.13).
+
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { DashboardTone } from '../../shared-vigil'
+import { CHIP_CLASS } from './model'
+import type { StatusTone } from './model'
+
+// ---------------------------------------------------------------------------
+// Buttons
+
+export function Btn({
+	tone = 'quiet',
+	sm,
+	disabled,
+	busy,
+	onClick,
+	children,
+	block,
+	ariaLabel,
+}: {
+	tone?: 'primary' | 'quiet' | 'danger' | 'ghost'
+	sm?: boolean
+	disabled?: boolean
+	/** In-flight: keeps the label, appends an ellipsis, disables the control. */
+	busy?: boolean
+	onClick?: () => void
+	children: ReactNode
+	block?: boolean
+	ariaLabel?: string
+}) {
+	return (
+		<button
+			type="button"
+			className={`btn btn-${tone}${sm ? ' btn-sm' : ''}${block ? ' btn-block' : ''}`}
+			disabled={disabled || busy}
+			aria-label={ariaLabel}
+			onClick={onClick}
+		>
+			{children}
+			{busy ? '…' : null}
+		</button>
+	)
+}
+
+export function IconBtn({
+	label,
+	onClick,
+	children,
+	pressed,
+}: {
+	label: string
+	onClick?: () => void
+	children: ReactNode
+	pressed?: boolean
+}) {
+	return (
+		<button
+			type="button"
+			className="icon-btn"
+			aria-label={label}
+			title={label}
+			aria-pressed={pressed}
+			onClick={onClick}
+		>
+			{children}
+		</button>
+	)
+}
+
+// Inline SVG glyphs — stroke follows currentColor so button tones apply.
+const glyph = (d: string, size = 14) => (
+	<svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+		<path d={d} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+	</svg>
+)
+
+export const GLYPH = {
+	plus: glyph('M8 3v10M3 8h10'),
+	back: glyph('M9.5 3.5 5 8l4.5 4.5'),
+	chevronRight: glyph('M6 3.5 10.5 8 6 12.5', 12),
+	chevronDown: glyph('M3.5 6 8 10.5 12.5 6', 12),
+	ellipsis: (
+		<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+			<circle cx="3" cy="8" r="1.3" />
+			<circle cx="8" cy="8" r="1.3" />
+			<circle cx="13" cy="8" r="1.3" />
+		</svg>
+	),
+	external: glyph('M6.5 4H4v8h8V9.5M9 3h4v4M13 3 7.5 8.5', 12),
+	copy: glyph('M6 6h7v7H6zM10 6V3H3v7h3', 12),
+	close: glyph('M4 4l8 8M12 4l-8 8'),
+}
+
+// ---------------------------------------------------------------------------
+// Chips & dots
+
+export function Chip({ tone, children, title }: { tone: DashboardTone; children: ReactNode; title?: string }) {
+	return (
+		<span className={`chip ${CHIP_CLASS[tone]}`} title={title}>
+			{children}
+		</span>
+	)
+}
+
+export function StatusDot({ tone, pulse }: { tone: StatusTone; pulse?: boolean }) {
+	return <span className={`status-dot dot-${tone}${pulse ? ' dot-pulse' : ''}`} aria-hidden="true" />
+}
+
+// ---------------------------------------------------------------------------
+// Menu (overflow / popover) — §3.8
+
+export interface MenuEntry {
+	label: string
+	onSelect: () => void
+	danger?: boolean
+	disabled?: boolean
+	/** Renders a separator ABOVE this entry. */
+	group?: boolean
+}
+
+export function MenuButton({
+	entries,
+	align = 'end',
+	trigger,
+	triggerLabel,
+	triggerClass,
+}: {
+	entries: MenuEntry[]
+	align?: 'start' | 'end'
+	trigger: ReactNode
+	triggerLabel: string
+	triggerClass?: string
+}) {
+	const [open, setOpen] = useState(false)
+	const [activeIndex, setActiveIndex] = useState(-1)
+	const rootRef = useRef<HTMLDivElement>(null)
+	const triggerRef = useRef<HTMLButtonElement>(null)
+	const menuId = useId()
+
+	const close = useCallback((refocus: boolean) => {
+		setOpen(false)
+		setActiveIndex(-1)
+		if (refocus) triggerRef.current?.focus()
+	}, [])
+
+	// Click-outside closes; Esc is handled on the panel (capture) so it never
+	// bubbles into the push stack's Esc-= -back handler.
+	useEffect(() => {
+		if (!open) return
+		const onPointerDown = (event: PointerEvent) => {
+			if (rootRef.current && !rootRef.current.contains(event.target as Node)) close(false)
+		}
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				event.stopPropagation()
+				close(true)
+			}
+		}
+		document.addEventListener('pointerdown', onPointerDown)
+		window.addEventListener('keydown', onKeyDown, { capture: true })
+		return () => {
+			document.removeEventListener('pointerdown', onPointerDown)
+			window.removeEventListener('keydown', onKeyDown, { capture: true })
+		}
+	}, [open, close])
+
+	const enabled = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !entry.disabled)
+
+	const move = (delta: number) => {
+		if (enabled.length === 0) return
+		const position = enabled.findIndex(({ index }) => index === activeIndex)
+		const next = enabled[(position + delta + enabled.length) % enabled.length]
+		if (next) setActiveIndex(next.index)
+	}
+
+	const onMenuKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key === 'ArrowDown') {
+			event.preventDefault()
+			move(1)
+		} else if (event.key === 'ArrowUp') {
+			event.preventDefault()
+			move(-1)
+		} else if (event.key === 'Home') {
+			event.preventDefault()
+			if (enabled[0]) setActiveIndex(enabled[0].index)
+		} else if (event.key === 'End') {
+			event.preventDefault()
+			const last = enabled[enabled.length - 1]
+			if (last) setActiveIndex(last.index)
+		} else if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault()
+			const entry = entries[activeIndex]
+			if (entry && !entry.disabled) {
+				close(true)
+				entry.onSelect()
+			}
+		}
+	}
+
+	return (
+		<div className="menu-root" ref={rootRef}>
+			<button
+				type="button"
+				ref={triggerRef}
+				className={triggerClass ?? 'icon-btn'}
+				aria-label={triggerLabel}
+				title={triggerLabel}
+				aria-haspopup="menu"
+				aria-expanded={open}
+				aria-controls={open ? menuId : undefined}
+				onClick={() => setOpen(prev => !prev)}
+				onKeyDown={event => {
+					if (event.key === 'ArrowDown' && open) {
+						event.preventDefault()
+						move(1)
+					}
+				}}
+			>
+				{trigger}
+			</button>
+			{open && (
+				// biome/eslint-free zone: the panel is keyboard-driven via the handlers above.
+				<div
+					id={menuId}
+					role="menu"
+					aria-label={triggerLabel}
+					className={`menu-panel menu-${align}`}
+					tabIndex={-1}
+					ref={node => node?.focus()}
+					onKeyDown={onMenuKeyDown}
+				>
+					{entries.map((entry, index) => (
+						<div key={entry.label}>
+							{entry.group && index > 0 && <div className="menu-separator" aria-hidden="true" />}
+							<button
+								type="button"
+								role="menuitem"
+								className={`menu-item${entry.danger ? ' menu-item-danger' : ''}${index === activeIndex ? ' menu-item-active' : ''}`}
+								disabled={entry.disabled}
+								tabIndex={-1}
+								onMouseEnter={() => setActiveIndex(index)}
+								onClick={() => {
+									close(true)
+									entry.onSelect()
+								}}
+							>
+								{entry.label}
+							</button>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Segmented control — §3.2
+
+export interface SegmentOption<T extends string> {
+	value: T
+	label: string
+	count?: number
+}
+
+export function Segmented<T extends string>({
+	options,
+	value,
+	onChange,
+	label,
+	commit,
+}: {
+	options: SegmentOption<T>[]
+	value: T
+	onChange: (value: T) => void
+	label: string
+	/** True either/or commit choice (agent picker) — active segment may use accent fill. */
+	commit?: boolean
+}) {
+	const onKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+		event.preventDefault()
+		const index = options.findIndex(option => option.value === value)
+		const next = options[(index + (event.key === 'ArrowRight' ? 1 : -1) + options.length) % options.length]
+		if (next) onChange(next.value)
+	}
+	return (
+		<div
+			className={`segmented${commit ? ' segmented-commit' : ''}`}
+			role="tablist"
+			aria-label={label}
+			style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
+			onKeyDown={onKeyDown}
+		>
+			{options.map(option => {
+				const active = option.value === value
+				return (
+					<button
+						key={option.value}
+						type="button"
+						role="tab"
+						aria-selected={active}
+						tabIndex={active ? 0 : -1}
+						className={`segment${active ? ' segment-active' : ''}`}
+						onClick={() => onChange(option.value)}
+					>
+						{option.label}
+						{option.count !== undefined && option.count > 0 && <span className="segment-count">{option.count}</span>}
+					</button>
+				)
+			})}
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Push-nav header — §3.10
+
+export function PushHeader({
+	title,
+	onBack,
+	trailing,
+	reveal,
+}: {
+	title: string
+	onBack: () => void
+	trailing?: ReactNode
+	/** Scroll-reveal header title (§3.10): while false the title is a static
+	 *  context label; flipping to true remounts the node so the real title
+	 *  fades in (150ms ease-out, opacity only). Leave undefined for pages
+	 *  whose header title never changes. */
+	reveal?: boolean
+}) {
+	return (
+		<header className="push-header">
+			<IconBtn label="Back" onClick={onBack}>
+				{GLYPH.back}
+			</IconBtn>
+			<div
+				key={reveal === undefined ? 'static' : reveal ? 'revealed' : 'context'}
+				className={`push-title${reveal ? ' push-title-in' : ''}`}
+			>
+				{title}
+			</div>
+			{trailing && <div className="push-trailing">{trailing}</div>}
+		</header>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Empty / waiting state — §3.13 (state first, then direction)
+
+export function EmptyState({ title, detail }: { title: string; detail: string }) {
+	return (
+		<div className="empty-wrap">
+			<div className="empty-card">
+				<div className="empty-title">{title}</div>
+				<div className="empty-detail">{detail}</div>
+			</div>
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Banner — §3.12 (clamped to 4 lines; the block itself toggles expansion)
+
+export function Banner({
+	tone,
+	label,
+	children,
+}: {
+	tone: 'error' | 'warning' | 'info'
+	label?: string
+	children: ReactNode
+}) {
+	const [expanded, setExpanded] = useState(false)
+	return (
+		<button
+			type="button"
+			className={`banner banner-${tone}${expanded ? '' : ' banner-clamped'}`}
+			onClick={() => setExpanded(prev => !prev)}
+			title={expanded ? 'Collapse' : 'Expand'}
+		>
+			{label && <span className="banner-label">{label}</span>}
+			<span className="banner-body">{children}</span>
+		</button>
+	)
+}
+
+/** Clamped body text (run summaries etc.); the block itself is the toggle. */
+export function ClampText({ text, lines = 4 }: { text: string; lines?: number }) {
+	const [expanded, setExpanded] = useState(false)
+	return (
+		<button
+			type="button"
+			className={`clamp-text${expanded ? '' : ' clamped'}`}
+			style={expanded ? undefined : ({ WebkitLineClamp: lines } as React.CSSProperties)}
+			onClick={() => setExpanded(prev => !prev)}
+			title={expanded ? 'Collapse' : 'Expand'}
+		>
+			{text}
+		</button>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Cards & rows
+
+export function Card({
+	label,
+	children,
+	trailing,
+	flush,
+}: {
+	label?: string
+	children: ReactNode
+	trailing?: ReactNode
+	/** Zero row gap — nav rows stack at their exact 36px pitch (§3.15). */
+	flush?: boolean
+}) {
+	return (
+		<section className={`card${flush ? ' card-flush' : ''}`}>
+			{(label || trailing) && (
+				<div className="card-head">
+					{label && <span className="section-label">{label}</span>}
+					{trailing}
+				</div>
+			)}
+			{children}
+		</section>
+	)
+}
+
+/** Static fact row inside a card: label left, value right. */
+export function InfoRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+	return (
+		<div className="info-row">
+			<span className="info-label">{label}</span>
+			<span className={`info-value${mono ? ' mono' : ''}`}>{value}</span>
+		</div>
+	)
+}
+
+/** Tappable row: pushes a sub-page (chevron), opens externally (↗), or copies.
+ *  Only external links read as links (accent); push/copy values stay quiet. */
+export function ActionRow({
+	label,
+	value,
+	glyphKind = 'chevron',
+	mono,
+	nav,
+	onClick,
+	disabled,
+}: {
+	label: string
+	value: string
+	glyphKind?: 'chevron' | 'external' | 'copy'
+	mono?: boolean
+	/** Nav row (§3.15): the title IS the content — 13/400 --text-0 sentence
+	 *  case, value 12 --text-1, 36px pitch. For section lists (settings),
+	 *  not for fact rows inside a detail card. */
+	nav?: boolean
+	onClick: () => void
+	disabled?: boolean
+}) {
+	const glyphNode = glyphKind === 'external' ? GLYPH.external : glyphKind === 'copy' ? GLYPH.copy : GLYPH.chevronRight
+	return (
+		<button type="button" className={`action-row${nav ? ' action-row-nav' : ''}`} onClick={onClick} disabled={disabled}>
+			<span className={nav ? 'action-row-title' : 'info-label'}>{label}</span>
+			<span className={`action-row-value${mono ? ' mono' : ''}${glyphKind === 'external' ? ' action-row-link' : ''}`}>
+				{value}
+			</span>
+			<span className="action-row-glyph">{glyphNode}</span>
+		</button>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Form fields — §3.7
+
+export function FieldLabel({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+	return (
+		<label className="field-label" htmlFor={htmlFor}>
+			{children}
+		</label>
+	)
+}
+
+export function TextInput({
+	id,
+	value,
+	onChange,
+	placeholder,
+	type = 'text',
+	invalid,
+}: {
+	id?: string
+	value: string
+	onChange: (value: string) => void
+	placeholder?: string
+	type?: 'text' | 'password' | 'number'
+	invalid?: boolean
+}) {
+	return (
+		<input
+			id={id}
+			className={`input${invalid ? ' input-invalid' : ''}`}
+			type={type}
+			value={value}
+			placeholder={placeholder}
+			onChange={event => onChange(event.target.value)}
+		/>
+	)
+}
+
+export function TextArea({
+	id,
+	value,
+	onChange,
+	placeholder,
+	rows = 5,
+}: {
+	id?: string
+	value: string
+	onChange: (value: string) => void
+	placeholder?: string
+	rows?: number
+}) {
+	return (
+		<textarea
+			id={id}
+			className="input textarea"
+			value={value}
+			placeholder={placeholder}
+			rows={rows}
+			onChange={event => onChange(event.target.value)}
+		/>
+	)
+}
+
+export function SelectInput({
+	id,
+	value,
+	onChange,
+	options,
+	ariaLabel,
+	disabled,
+}: {
+	id?: string
+	value: string
+	onChange: (value: string) => void
+	options: Array<{ value: string; label: string }>
+	ariaLabel?: string
+	disabled?: boolean
+}) {
+	return (
+		<select
+			id={id}
+			className="input select"
+			value={value}
+			aria-label={ariaLabel}
+			disabled={disabled}
+			onChange={event => onChange(event.target.value)}
+		>
+			{options.map(option => (
+				<option key={option.value} value={option.value}>
+					{option.label}
+				</option>
+			))}
+		</select>
+	)
+}
+
+export function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+	return (
+		<button
+			type="button"
+			className={`toggle${value ? ' toggle-on' : ''}`}
+			role="switch"
+			aria-checked={value}
+			aria-label={label}
+			onClick={() => onChange(!value)}
+		>
+			<span className="toggle-knob" />
+		</button>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Sheet (modal over the pane) — §3.9
+
+export function Sheet({
+	title,
+	onClose,
+	children,
+	footer,
+}: {
+	title: string
+	onClose: () => void
+	children: ReactNode
+	footer: ReactNode
+}) {
+	const sheetRef = useRef<HTMLDivElement>(null)
+
+	// Esc closes (capture, so the push stack never also pops); focus is trapped
+	// inside the sheet; initial focus lands on the first field.
+	useEffect(() => {
+		const node = sheetRef.current
+		if (!node) return
+		const focusables = () =>
+			Array.from(
+				node.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+			).filter(el => !el.hasAttribute('disabled'))
+		const first = focusables().find(el => el.matches('input, select, textarea')) ?? focusables()[0]
+		first?.focus()
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				event.stopPropagation()
+				onClose()
+				return
+			}
+			if (event.key !== 'Tab') return
+			const list = focusables()
+			const firstEl = list[0]
+			const lastEl = list[list.length - 1]
+			if (!firstEl || !lastEl) return
+			if (event.shiftKey && document.activeElement === firstEl) {
+				event.preventDefault()
+				lastEl.focus()
+			} else if (!event.shiftKey && document.activeElement === lastEl) {
+				event.preventDefault()
+				firstEl.focus()
+			}
+		}
+		window.addEventListener('keydown', onKeyDown, { capture: true })
+		return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
+	}, [onClose])
+
+	return (
+		<div className="sheet-layer">
+			<button type="button" className="sheet-scrim" aria-label="Close" onClick={onClose} tabIndex={-1} />
+			{/* biome-ignore lint/a11y/useSemanticElements: native <dialog>.showModal() escapes the pane — this sheet is pane-scoped (§3.9); role+trap+Esc keep it accessible */}
+			<div className="sheet" role="dialog" aria-modal="true" aria-label={title} ref={sheetRef}>
+				<div className="sheet-head">
+					<div className="sheet-title">{title}</div>
+					<IconBtn label="Close" onClick={onClose}>
+						{GLYPH.close}
+					</IconBtn>
+				</div>
+				<div className="sheet-body">{children}</div>
+				<div className="sheet-footer">{footer}</div>
+			</div>
+		</div>
+	)
+}

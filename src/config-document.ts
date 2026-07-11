@@ -263,7 +263,8 @@ const editMetadata: ConfigEditMetadata = validateEditMetadata({
 		{
 			id: 'ai-model-guidance',
 			title: 'AI · Model guidance',
-			description: 'Per-model "how to spend this model" block injected into the solve prompt (blank = built-in default)',
+			description:
+				'Per-model "how to spend this model" block injected into the solve prompt (blank = built-in default)',
 			controls: Object.values(MODEL_CATALOG)
 				.flat()
 				.map(m => ({

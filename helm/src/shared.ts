@@ -1,5 +1,7 @@
 // IPC surface shared by preload (implements) and renderer (consumes as `window.helm`).
 
+import type { VigilApi } from './shared-vigil'
+
 export interface PtySpawnResult {
 	id: number
 	/** dtach session backing this pty; null when persistence is unavailable. */
@@ -46,9 +48,10 @@ export interface SessionsApi {
 
 export interface ConfigApi {
 	getDaemonUrl(): string
-	/** Reachability probe runs in the main process so browser CORS/private-network rules can't get in the way. */
-	pingDaemon(): Promise<boolean>
 }
+
+/** Screenshot-harness hook: `--ui-preview=<page>` auto-navigates the sidebar. */
+export type UiPreview = 'list' | 'detail' | 'settings'
 
 /** Menu accelerators (cmd+t / cmd+w) fire in main; renderer subscribes here. */
 export interface TabsApi {
@@ -56,11 +59,22 @@ export interface TabsApi {
 	onClose(listener: () => void): () => void
 }
 
+/** vigil://item/<id> deep links (main's open-url handler) land here. */
+export interface NavApi {
+	onOpenItem(listener: (itemId: string) => void): () => void
+}
+
 export interface HelmApi {
 	pty: PtyApi
 	sessions: SessionsApi
 	config: ConfigApi
 	tabs: TabsApi
+	/** Deep-link navigation pushed from main (vigil:// protocol). */
+	nav: NavApi
+	/** Daemon data bridge: main-process poller + HTTP command proxy (src/vigil-bridge.ts). */
+	vigil: VigilApi
 	/** Host OS, for platform-specific keybindings/layout ('darwin' on macOS). */
 	platform: NodeJS.Platform
+	/** Set only on `--ui-preview=…` screenshot runs; null in normal use. */
+	uiPreview: UiPreview | null
 }

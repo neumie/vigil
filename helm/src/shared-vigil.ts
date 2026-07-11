@@ -1,43 +1,9 @@
-const BASE = '/api'
-
-async function fetchJSON<T>(path: string): Promise<T> {
-	const res = await fetch(`${BASE}${path}`)
-	if (!res.ok) throw new Error(`API error: ${res.status}`)
-	const json = await res.json()
-	return json.data
-}
-
-async function postJSON<T>(path: string): Promise<T> {
-	const res = await fetch(`${BASE}${path}`, { method: 'POST' })
-	// Parse the body before throwing so the server's `{ error }` message reaches
-	// the UI (e.g. "Cannot rename the branch once a worktree exists"), not a bare
-	// status code — matching postJSONBody/putJSON.
-	const json = await res.json().catch(() => ({}))
-	if (!res.ok) throw new Error(json.error ?? `API error: ${res.status}`)
-	return json.data
-}
-
-async function postJSONBody<T>(path: string, body: unknown): Promise<T> {
-	const res = await fetch(`${BASE}${path}`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	})
-	const json = await res.json()
-	if (!res.ok) throw new Error(json.error ?? `API error: ${res.status}`)
-	return json.data
-}
-
-async function putJSON<T>(path: string, body: unknown): Promise<T> {
-	const res = await fetch(`${BASE}${path}`, {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	})
-	const json = await res.json()
-	if (!res.ok) throw new Error(json.error ?? `API error: ${res.status}`)
-	return json.data
-}
+// Vigil daemon wire types + the VigilBridge IPC surface.
+//
+// The contract types below are COPIED from web/src/api.ts (the web dashboard is
+// scheduled for deletion — helm must not import from it). They mirror the
+// server-owned contract in src/items/contract.ts; when the daemon contract
+// changes, update this copy in the same slice.
 
 export type DashboardTone = 'gray' | 'blue' | 'green' | 'amber' | 'red'
 export type DashboardActionTone = 'primary' | 'muted' | 'danger'
@@ -284,12 +250,20 @@ export interface DaemonStatus {
 	pollInterval: number
 }
 
+/** One curated model choice for an agent CLI (src/solver/models.ts). */
+export interface ModelOption {
+	id: string
+	label: string
+}
+
 export interface AppConfig {
 	projectColors?: Record<string, string>
 	projects?: Array<{ slug: string; repoPath?: string; baseBranch?: string; color?: string }>
 	solver?: { type?: 'default' | 'okena'; agent?: 'claude' | 'codex' }
 	spawner?: { name?: string }
 	spawnerAdapters?: Array<{ name: string; available: boolean }>
+	/** Curated per-agent model options for model pickers (server-owned). */
+	modelCatalog?: Record<'claude' | 'codex', ModelOption[]>
 	provider?: Record<string, unknown>
 	polling?: Record<string, unknown>
 	server?: Record<string, unknown>
@@ -343,44 +317,59 @@ export interface ConfigDocument {
 	secretRedaction: string
 }
 
-export const api = {
-	config: () => fetchJSON<AppConfig>('/config'),
-	status: () => fetchJSON<DaemonStatus>('/status'),
-	items: (params?: string) => fetchJSON<DashboardItem[]>(`/items${params ? `?${params}` : ''}`),
-	item: (id: string) => fetchJSON<DashboardItem>(`/items/${id}`),
-	setItemStatus: (id: string, status: ItemStatus) => postJSONBody<DashboardItem>(`/items/${id}/status`, { status }),
-	createItem: (input: CreateItemInput) => postJSONBody<DashboardItem | DashboardItem[]>('/items', input),
-	planItem: (id: string) => postJSONBody<PlanInfo>(`/items/${id}/plan`, {}),
-	// Force-(re)run a cheap agent pass on demand — display name, branch name, or
-	// intent assessment. Returns the updated item with the new field.
-	runAiPass: (id: string, pass: AiPass) => postJSON<DashboardItem>(`/items/${id}/ai/${pass}`),
+// ---------------------------------------------------------------------------
+// VigilBridge wire shapes (helm-specific, not copied from web/).
 
+/**
+ * Daemon response envelope, passed through verbatim: the daemon answers
+ * `{ data }` on success and `{ error }` on failure; a network-level failure
+ * becomes `{ error: <message> }` in the bridge.
+ */
+export type VigilResult<T> = { data: T; error?: undefined } | { data?: undefined; error: string }
+
+/**
+ * Full state pushed over `vigil:snapshot`. `status`/`items`/`config` are null
+ * until their first successful fetch (`config` is fetched once, then only on
+ * demand after a config save).
+ */
+export interface VigilSnapshot {
+	/** Last poll reached the daemon. The topbar connection dot reads this. */
+	reachable: boolean
+	status: DaemonStatus | null
+	items: DashboardItem[] | null
+	config: AppConfig | null
+}
+
+/**
+ * Optional body for item action / plan routes. approve/start/retry/plan accept
+ * a solver agent and a model override (`null` clears a stored per-item model).
+ */
+export interface SolverAgentBody {
+	solverAgent?: 'claude' | 'codex'
+	solverModel?: string | null
+}
+
+/**
+ * Renderer-facing bridge API (preload implements over ipcRenderer). All
+ * daemon HTTP happens in the main process — the file:// renderer never
+ * fetches :7474 directly (CORS).
+ */
+export interface VigilApi {
+	/** Returns the bridge's current snapshot and starts `onSnapshot` pushes for this window. */
+	subscribe(): Promise<VigilSnapshot>
+	/** Full snapshot pushed whenever polled state actually changed. Returns unsubscribe. */
+	onSnapshot(listener: (snapshot: VigilSnapshot) => void): () => void
+	item(id: string): Promise<VigilResult<DashboardItem>>
+	itemAction(id: string, action: DashboardActionId, body?: SolverAgentBody): Promise<VigilResult<DashboardItem>>
+	plan(id: string, body?: SolverAgentBody): Promise<VigilResult<PlanInfo>>
+	aiPass(id: string, pass: AiPass): Promise<VigilResult<DashboardItem>>
+	createItem(body: CreateItemInput): Promise<VigilResult<DashboardItem | DashboardItem[]>>
 	/** Promote a captured (ingested) Item into a real task in the source system. */
-	createSourceTask: (id: string) => postJSON<DashboardItem>(`/items/${id}/source-task`),
-	itemAction: (id: string, action: DashboardActionId) => {
-		switch (action) {
-			case 'approve':
-			case 'reject':
-			case 'start':
-			case 'cancel':
-			case 'retry':
-			case 'reopen':
-				return postJSON<DashboardItem>(`/items/${id}/${action}`)
-		}
-	},
-	// Open an ingested attachment in the host's native app (the daemon is local).
-	// `attachmentUrl` is the served path on the item (already `/api/...`), so it is
-	// POSTed directly, not through the BASE-prefixed helpers.
-	openAttachment: async (attachmentUrl: string): Promise<void> => {
-		const res = await fetch(`${attachmentUrl}/open`, { method: 'POST' })
-		if (!res.ok) {
-			const json = await res.json().catch(() => ({}))
-			throw new Error(json.error ?? `Open failed: ${res.status}`)
-		}
-	},
-	triggerPoll: () => postJSON<{ message: string }>('/poll/trigger'),
-	pauseQueue: () => postJSON<{ paused: boolean }>('/queue/pause'),
-	resumeQueue: () => postJSON<{ paused: boolean }>('/queue/resume'),
-	configFull: () => fetchJSON<ConfigDocument>('/config/full'),
-	updateConfig: (config: Record<string, unknown>) => putJSON<{ message: string }>('/config', config),
+	sourceTask(id: string): Promise<VigilResult<DashboardItem>>
+	setStatus(id: string, status: ItemStatus): Promise<VigilResult<DashboardItem>>
+	config(): Promise<VigilResult<ConfigDocument>>
+	updateConfig(body: Record<string, unknown>): Promise<VigilResult<{ message: string }>>
+	/** Pause when running, resume when paused (reads the latest snapshot). */
+	pauseToggle(): Promise<VigilResult<{ paused: boolean }>>
+	poll(): Promise<VigilResult<{ message: string }>>
 }

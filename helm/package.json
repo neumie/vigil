@@ -3,7 +3,7 @@
 	"productName": "Helm",
 	"private": true,
 	"version": "0.1.0",
-	"description": "Orchestrator cockpit for the vigil daemon: embedded dashboard + real terminal",
+	"description": "Orchestrator cockpit for the vigil daemon: native sidebar + real terminal",
 	"main": "dist/main.cjs",
 	"scripts": {
 		"build": "tsc --noEmit && node build.mjs",
@@ -15,18 +15,18 @@
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/addon-web-links": "^0.12.0",
 		"@xterm/xterm": "^6.0.0",
-		"node-pty": "^1.1.0"
+		"node-pty": "^1.1.0",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7"
 	},
 	"devDependencies": {
 		"@electron/rebuild": "^4.1.0",
 		"@types/node": "^24.0.0",
+		"@types/react": "^19.2.17",
+		"@types/react-dom": "^19.2.3",
 		"electron": "^43.0.0",
 		"esbuild": "^0.28.1",
 		"typescript": "^5.9.3"
 	},
-	"trustedDependencies": [
-		"electron",
-		"node-pty",
-		"@electron/rebuild"
-	]
+	"trustedDependencies": ["electron", "node-pty", "@electron/rebuild"]
 }
