@@ -20,15 +20,17 @@ export const MODEL_CATALOG: Record<SolverAgent, ModelOption[]> = {
 		{ id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
 	],
 	codex: [
+		// GPT-5.6 family (GA 2026-07-09): Sol > Terra > Luna by capability/price.
+		{ id: 'gpt-5.6-sol', label: 'Sol' },
+		{ id: 'gpt-5.6-terra', label: 'Terra' },
+		{ id: 'gpt-5.6-luna', label: 'Luna' },
 		{ id: 'gpt-5.5', label: 'GPT-5.5' },
-		{ id: 'gpt-5.4', label: 'GPT-5.4' },
-		{ id: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
 	],
 }
 
 /** Default model for the cheap AI-helper one-shots (naming/triage). */
 export function defaultHelperModel(agent: SolverAgent | undefined): string {
-	return agent === 'codex' ? 'gpt-5.4-mini' : 'claude-haiku-4-5'
+	return agent === 'codex' ? 'gpt-5.6-luna' : 'claude-haiku-4-5'
 }
 
 export function agentModelLabel(agent: SolverAgent): string {
@@ -59,14 +61,19 @@ export const DEFAULT_MODEL_GUIDANCE: Record<string, string> = {
 		'You are running as Haiku 4.5 — a fast, budget tier. Keep the change tightly scoped and mechanical.',
 		'If the task turns out to be architectural, ambiguous, or larger than it looked, do NOT guess — say so in the solver-result.json summary and stop.',
 	].join('\n'),
-	'gpt-5.5':
-		'You are running as GPT-5.5 — a strong premium tier. Plan briefly, then make one decisive, well-verified pass; avoid redundant re-reads of files you have already seen.',
-	'gpt-5.4':
-		'You are running as GPT-5.4 — a capable general tier. Work directly and verify with the test suite before shipping.',
-	'gpt-5.4-mini': [
-		'You are running as GPT-5.4 mini — a fast, budget tier. Keep the change tightly scoped and mechanical.',
+	'gpt-5.6-sol': [
+		'You are running as Sol (GPT-5.6) — the most capable and most EXPENSIVE tier. One decisive, deeply verified pass:',
+		'- Plan briefly, then execute without thrash; verify with tools instead of re-deriving from memory.',
+		'- Your output tokens are costly — no padding, no redundant re-reads of files you have already seen.',
+	].join('\n'),
+	'gpt-5.6-terra':
+		'You are running as Terra (GPT-5.6) — a balanced tier. Work directly and verify with the test suite before shipping.',
+	'gpt-5.6-luna': [
+		'You are running as Luna (GPT-5.6) — a fast, budget tier. Keep the change tightly scoped and mechanical.',
 		'If the task turns out to be architectural, ambiguous, or larger than it looked, do NOT guess — say so in the solver-result.json summary and stop.',
 	].join('\n'),
+	'gpt-5.5':
+		'You are running as GPT-5.5 — a strong premium tier. Plan briefly, then make one decisive, well-verified pass; avoid redundant re-reads of files you have already seen.',
 }
 
 /**

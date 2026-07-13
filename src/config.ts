@@ -68,7 +68,7 @@ export const configSchema = z.object({
 			timeoutMinutes: z.number().min(1).default(30),
 			// AI helpers (cheap one-shot model calls), each independently configurable
 			// in Settings (on/off, provider, model, prompt). Defaults: model per-agent
-			// (claude → claude-haiku-4-5, codex → gpt-5.4-mini), provider = `solver.agent`.
+			// (claude → claude-haiku-4-5, codex → gpt-5.6-luna), provider = `solver.agent`.
 			// Branch naming: derive a conventional branch (feat/…, fix/…); failure →
 			// deterministic helm/item/<slug>. Opt-in (default off).
 			branchNaming: aiHelperSchema(false),
