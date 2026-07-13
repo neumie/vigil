@@ -165,20 +165,38 @@ export interface LiveSession {
 	createdAt: string
 }
 
+export interface SessionScan {
+	/** Sessions whose sockets probed live — restorable this launch. */
+	live: LiveSession[]
+	/**
+	 * Sockets that probed 'unknown' (EINVAL/timeout/transient): NOT restorable
+	 * this launch, but possibly alive — registry metadata (title, customName,
+	 * parked) and buffer snapshots MUST be retained for them. Pruning on
+	 * 'unknown' was a real metadata-loss bug: a probe timeout at one startup
+	 * silently dropped a live session's title, so it restored as "zsh" forever
+	 * after (observed in production — a Jul 11 session alive with no registry
+	 * entry two days later). Same asymmetry as reapSessionIfDead: destroying
+	 * metadata on a guess costs more than keeping it for a dead session.
+	 */
+	unknownIds: string[]
+}
+
 /**
- * Scan the socket dir for live sessions; unlink dead socket files. Port of
- * okena's startup GC `cleanup_stale_dtach_sockets` (session_backend.rs:456-490)
- * fused with its restore path (workspace persistence keeps terminal ids and
- * reattaches via `dtach -A`; persistence.rs:157-172).
+ * Scan the socket dir: live sessions to restore, unknown-probe ids to retain,
+ * dead socket files unlinked. Port of okena's startup GC
+ * `cleanup_stale_dtach_sockets` (session_backend.rs:456-490) fused with its
+ * restore path (workspace persistence keeps terminal ids and reattaches via
+ * `dtach -A`; persistence.rs:157-172).
  */
-export async function listLiveSessions(): Promise<LiveSession[]> {
+export async function scanSessions(): Promise<SessionScan> {
 	let names: string[]
 	try {
 		names = fs.readdirSync(socketDir()).filter(n => n.endsWith('.sock'))
 	} catch {
-		return [] // dir doesn't exist yet — nothing persisted
+		return { live: [], unknownIds: [] } // dir doesn't exist yet — nothing persisted
 	}
 	const live: LiveSession[] = []
+	const unknownIds: string[] = []
 	await Promise.all(
 		names.map(async name => {
 			const sessionId = name.slice(0, -'.sock'.length)
@@ -201,12 +219,19 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
 				} catch {
 					// already gone
 				}
+			} else {
+				// 'unknown': never unlink on a guess — a live master may be serving
+				// it — and never let the caller prune its metadata either.
+				unknownIds.push(sessionId)
 			}
-			// 'unknown' (EINVAL/timeout/transient): NOT restorable this launch,
-			// but never unlink on a guess — a live master may be serving it.
 		}),
 	)
-	return live.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+	return { live: live.sort((a, b) => a.createdAt.localeCompare(b.createdAt)), unknownIds }
+}
+
+/** Live sessions only (restore list). See scanSessions for the full scan. */
+export async function listLiveSessions(): Promise<LiveSession[]> {
+	return (await scanSessions()).live
 }
 
 function runLines(cmd: string, args: string[]): Promise<number[]> {
@@ -368,6 +393,13 @@ export class GraceCloser {
 export interface SessionMeta {
 	createdAt: string
 	lastTitle?: string
+	/**
+	 * Manual tab name (double-click rename). PINS the tab: never overwritten by
+	 * OSC titles, survives relaunch and park/restore. Separate field from
+	 * lastTitle so live OSC tracking and the pin can't clobber each other.
+	 * Absent = unpinned (backward compatible with pre-customName registries).
+	 */
+	customName?: string
 	/** Parked in the background list (strip-right popover) instead of the tab strip. */
 	parked?: boolean
 }
@@ -389,10 +421,11 @@ export class SessionRegistry {
 			const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
 			for (const [id, meta] of Object.entries(raw)) {
 				if (!isValidSessionId(id) || typeof meta !== 'object' || meta === null) continue
-				const { createdAt, lastTitle, parked } = meta as Record<string, unknown>
+				const { createdAt, lastTitle, customName, parked } = meta as Record<string, unknown>
 				this.#data[id] = {
 					createdAt: typeof createdAt === 'string' ? createdAt : new Date(0).toISOString(),
 					...(typeof lastTitle === 'string' ? { lastTitle } : {}),
+					...(typeof customName === 'string' && customName !== '' ? { customName } : {}),
 					...(parked === true ? { parked: true } : {}),
 				}
 			}
@@ -419,6 +452,21 @@ export class SessionRegistry {
 		const meta = this.#data[sessionId]
 		if (!meta || meta.lastTitle === title) return
 		meta.lastTitle = title.slice(0, 200)
+		this.#scheduleSave()
+	}
+
+	/**
+	 * Pin/unpin a manual tab name. Empty/null clears the pin (OSC follow
+	 * resumes); `undefined` (not '') so JSON.stringify drops the key when
+	 * cleared — old registries stay readable, new ones stay additive.
+	 */
+	setCustomName(sessionId: string, name: string | null): void {
+		const meta = this.#data[sessionId]
+		if (!meta) return
+		const trimmed = (name ?? '').trim().slice(0, 200)
+		const next = trimmed === '' ? undefined : trimmed
+		if (meta.customName === next) return
+		meta.customName = next
 		this.#scheduleSave()
 	}
 

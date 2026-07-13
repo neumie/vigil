@@ -7,6 +7,7 @@ import './styles.css'
 import type { HelmApi, RestoredSession } from '../shared'
 import { appearance } from './appearance'
 import { mountSidebar } from './sidebar/SidebarRoot'
+import { decideTabTitle, isShellDefaultTitle, normalizeTabTitle } from './tab-title'
 import { showToast } from './toast'
 
 declare global {
@@ -107,8 +108,22 @@ interface Tab {
 	/** Ignore output before this timestamp: a dtach reattach repaints on spawn (-r winch),
 	 *  and that redraw is not "new output since parking". */
 	activityMuteUntil: number
-	/** Current normalized label (popover row title, toast detail). */
+	/** Current APPLIED normalized title (label when unpinned; popover/toast text). */
 	title: string
+	/** Raw form of `title` — the tooltip shows it when normalization changed it. */
+	titleRaw: string
+	/** Last SEEN live OSC title (normalized/raw), applied or not — pinned tabs'
+	 *  tooltip shows it and an unpin falls back to it. Null until OSC arrives. */
+	oscTitle: string | null
+	oscRaw: string | null
+	/** Manual rename pin: label text, OSC-immune, persisted as registry customName. */
+	customName: string | null
+	/** Reattached an existing dtach session — arms restored-title stickiness. */
+	restored: boolean
+	/** A non-default OSC title applied since attach; stickiness is over. */
+	titleSettled: boolean
+	/** performance.now() when pty:spawn resolved; Infinity while spawning. */
+	attachedAt: number
 	/** Output arrived since the last buffer-snapshot save (10s autosave picks it up). */
 	dirty: boolean
 	term: Terminal
@@ -117,6 +132,8 @@ interface Tab {
 	serialize: SerializeAddon
 	holder: HTMLDivElement
 	tabButton: HTMLDivElement
+	/** The tab's label span — renderTabLabel owns its text/tooltip. */
+	labelEl: HTMLSpanElement
 	/** Custom overlay scrollbar (§3.14): full-pane track + pill thumb. */
 	scrollbar: HTMLDivElement
 	thumb: HTMLDivElement
@@ -147,28 +164,78 @@ let activeTab: Tab | null = null
 
 const findByPty = (id: number): Tab | undefined => tabs.find(t => t.ptyId === id) ?? parked.find(t => t.ptyId === id)
 
-// Shell OSC titles usually arrive as "user@host:cwd" — noise at tab width.
-// Normalize to the trailing path segment ("helm"); a bare "user@host" (no
-// path) falls back to "zsh". Anything else (ssh banners, app-set titles)
-// passes through untouched. The raw title survives as the label's tooltip.
-function normalizeTabTitle(raw: string): string {
-	const text = raw.trim()
-	if (!text) return 'zsh'
-	if (!/^\S+@\S+(:.*)?$/.test(text)) return text
-	const colon = text.indexOf(':')
-	const path = colon === -1 ? '' : text.slice(colon + 1).trim()
-	const segment = path.replace(/\/+$/, '').split('/').pop() ?? ''
-	return segment || 'zsh'
+// Title normalization + arbitration (stickiness/pin rules) live in
+// ./tab-title.ts — pure and node-testable (tests/helm-tab-title.test.ts).
+
+/** Displayed tab name: the manual pin wins over the live/restored OSC title. */
+function displayName(tab: Tab): string {
+	return tab.customName ?? tab.title
 }
 
-function applyTabTitle(label: HTMLSpanElement, raw: string): string {
-	const text = normalizeTabTitle(raw)
-	label.textContent = text
-	// Tooltip carries the raw title whenever normalization changed/ellipsized it.
-	const trimmed = raw.trim()
-	if (trimmed && trimmed !== text) label.title = trimmed
-	else label.removeAttribute('title')
-	return text
+/**
+ * Render the label + tooltip from tab state. Unpinned: label = normalized
+ * title, tooltip = raw title when normalization changed it (today's behavior).
+ * Pinned: label = customName, tooltip = the live OSC title (raw preferred) so
+ * the underlying shell/program identity stays one hover away.
+ */
+function renderTabLabel(tab: Tab): void {
+	const text = displayName(tab)
+	tab.labelEl.textContent = text
+	const tip = tab.customName !== null ? (tab.oscRaw ?? tab.oscTitle ?? (tab.titleRaw || tab.title)) : tab.titleRaw
+	if (tip && tip !== text) tab.labelEl.title = tip
+	else tab.labelEl.removeAttribute('title')
+}
+
+// ---------- manual rename (double-click a tab / context-menu "Rename…") ----------
+// A committed name PINS the tab (registry customName): OSC never overwrites
+// it, it survives relaunch and park/restore. An empty commit unpins — OSC
+// title following resumes. Spec: docs/design-system.md §3.14 (tab labels).
+
+function commitCustomName(tab: Tab, name: string | null): void {
+	const trimmed = (name ?? '').trim().slice(0, 200)
+	tab.customName = trimmed === '' ? null : trimmed
+	if (tab.sessionId) helm.sessions.setCustomName(tab.sessionId, tab.customName)
+	if (tab.customName === null && tab.oscTitle !== null) {
+		// Unpin resumes OSC following from the live truth seen while pinned.
+		tab.title = tab.oscTitle
+		tab.titleRaw = tab.oscRaw ?? ''
+		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, tab.title)
+	}
+	renderTabLabel(tab)
+	if (tab.parked) updateBackgroundUi()
+}
+
+function startRename(tab: Tab): void {
+	if (tab.closed || tab.tabButton.querySelector('.tab-rename')) return
+	const input = document.createElement('input')
+	input.className = 'tab-rename'
+	input.type = 'text'
+	input.value = displayName(tab)
+	input.setAttribute('aria-label', 'Rename terminal')
+	tab.labelEl.hidden = true
+	tab.tabButton.insertBefore(input, tab.labelEl)
+	let done = false
+	const finish = (commit: boolean): void => {
+		if (done) return
+		done = true
+		const value = input.value
+		input.remove()
+		tab.labelEl.hidden = false
+		// Unchanged value is a no-op — a stray double-click + click-away must
+		// not silently pin the current OSC title.
+		if (commit && value.trim() !== displayName(tab).trim()) commitCustomName(tab, value)
+		if (tab === activeTab) tab.term.focus()
+	}
+	input.addEventListener('keydown', event => {
+		event.stopPropagation() // keep ⌘1-9/global capture handlers out of the field
+		if (event.key === 'Enter') finish(true)
+		else if (event.key === 'Escape') finish(false)
+	})
+	input.addEventListener('blur', () => finish(true))
+	// Don't let the click that opened the editor re-activate/re-open things.
+	input.addEventListener('pointerdown', event => event.stopPropagation())
+	input.focus()
+	input.select()
 }
 
 // Vertical inset flexes so the grid packs the MAXIMUM rows that fit (§3.14):
@@ -460,7 +527,8 @@ function cycleTab(delta: number): void {
 function closeTab(tab: Tab): void {
 	if (tab.closed) return
 	tab.closed = true
-	const { title } = tab
+	const { title, customName } = tab
+	const shown = customName ?? title
 	// Soft close (okena-style): main only DETACHES the pty client and arms a
 	// grace timer — the dtach session dies when it fires. The toast's Undo
 	// cancels the timer and reattaches the same session as a new tab.
@@ -472,7 +540,7 @@ function closeTab(tab: Tab): void {
 			if (!grace) return // non-persistent pty — already fully killed, nothing to undo
 			const toast = showToast({
 				message: 'Terminal closed',
-				detail: title === 'zsh' ? undefined : title,
+				detail: shown === 'zsh' ? undefined : shown,
 				ttlMs: grace.graceMs,
 				countdown: true,
 				action: {
@@ -480,7 +548,8 @@ function closeTab(tab: Tab): void {
 					onClick: () => {
 						toast.dismiss()
 						void helm.sessions.undoClose(grace.sessionId).then(alive => {
-							if (alive) void createTerminal({ sessionId: grace.sessionId, title })
+							// Undo keeps the rename pin — it reattaches the same session.
+							if (alive) void createTerminal({ sessionId: grace.sessionId, title, customName })
 						})
 					},
 				},
@@ -558,7 +627,8 @@ function killParkedTab(tab: Tab): void {
 	if (index === -1 || tab.closed) return
 	tab.closed = true
 	parked.splice(index, 1)
-	const { title } = tab
+	const { title, customName } = tab
+	const shown = customName ?? title
 	if (tab.ptyId !== null) {
 		// Same snapshot-before-dispose as closeTab: Undo replays this screen.
 		saveSnapshot(tab)
@@ -566,7 +636,7 @@ function killParkedTab(tab: Tab): void {
 			if (!grace) return
 			const toast = showToast({
 				message: 'Background terminal closed',
-				detail: title === 'zsh' ? undefined : title,
+				detail: shown === 'zsh' ? undefined : shown,
 				ttlMs: grace.graceMs,
 				countdown: true,
 				action: {
@@ -574,7 +644,7 @@ function killParkedTab(tab: Tab): void {
 					onClick: () => {
 						toast.dismiss()
 						void helm.sessions.undoClose(grace.sessionId).then(alive => {
-							if (alive) void createTerminal({ sessionId: grace.sessionId, title, parked: true })
+							if (alive) void createTerminal({ sessionId: grace.sessionId, title, customName, parked: true })
 						})
 					},
 				},
@@ -615,7 +685,7 @@ function renderBackgroundRows(): void {
 
 		const title = document.createElement('span')
 		title.className = `bg-title${tab.exitCode !== null ? ' exited' : ''}`
-		title.textContent = tab.title
+		title.textContent = displayName(tab) // rename pin shows here too
 
 		const state = document.createElement('span')
 		state.className = 'bg-state'
@@ -625,14 +695,14 @@ function renderBackgroundRows(): void {
 		kill.className = 'bg-kill'
 		kill.textContent = '×'
 		kill.title = 'Close'
-		kill.setAttribute('aria-label', `Close ${tab.title}`)
+		kill.setAttribute('aria-label', `Close ${displayName(tab)}`)
 		kill.addEventListener('click', event => {
 			event.stopPropagation()
 			killParkedTab(tab)
 		})
 
 		row.append(dot, title, state, kill)
-		row.setAttribute('aria-label', `Restore ${tab.title}`)
+		row.setAttribute('aria-label', `Restore ${displayName(tab)}`)
 		row.addEventListener('click', () => restoreParked(tab))
 		row.addEventListener('keydown', event => {
 			if (event.key === 'Enter' || event.key === ' ') {
@@ -716,6 +786,7 @@ function openTabMenu(tab: Tab, x: number, y: number): void {
 	panel.setAttribute('role', 'menu')
 
 	const items: TabMenuItem[] = [
+		{ label: 'Rename…', onPick: () => startRename(tab) },
 		{ label: 'Move to background', hint: '⇧⌘B', onPick: () => parkTab(tab) },
 		{ label: 'Close', hint: '⌘W', onPick: () => closeTab(tab) },
 	]
@@ -786,6 +857,8 @@ interface TerminalOpts {
 	sessionId?: string
 	/** Persisted label shown until the shell emits a fresh OSC title. */
 	title?: string | null
+	/** Persisted manual rename pin — label text, never overwritten by OSC. */
+	customName?: string | null
 	/** Create straight into the background list (startup parked restore, kill-undo). */
 	parked?: boolean
 }
@@ -853,12 +926,22 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 		// not light the "output since parking" dot.
 		activityMuteUntil: startParked ? performance.now() + REATTACH_MUTE_MS : 0,
 		title: '',
+		titleRaw: '',
+		oscTitle: null,
+		oscRaw: null,
+		customName: opts?.customName ?? null,
+		// Reattaching an existing session arms restored-title stickiness; a
+		// fresh tab keeps today's title behavior exactly.
+		restored: opts?.sessionId !== undefined,
+		titleSettled: false,
+		attachedAt: Number.POSITIVE_INFINITY,
 		dirty: false,
 		term,
 		fit,
 		serialize,
 		holder,
 		tabButton,
+		labelEl: label,
 		scrollbar,
 		thumb,
 		fitRetryPending: false,
@@ -869,12 +952,39 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 	attachScrollbarInput(tab)
 	// Restored tabs keep the label persisted from the previous run until the
 	// reattached shell emits a fresh OSC title (normalized too — older runs
-	// persisted raw "user@host:cwd" titles).
-	tab.title = applyTabTitle(label, opts?.title ?? '')
+	// persisted raw "user@host:cwd" titles). A pinned name wins over both.
+	tab.title = normalizeTabTitle(opts?.title ?? '')
+	tab.titleRaw = (opts?.title ?? '').trim()
+	renderTabLabel(tab)
 	// Shell title arrives via OSC title events; empty titles fall back to "zsh".
+	// Arbitration (pin / restored-title stickiness / live follow) is the pure
+	// decideTabTitle — see ./tab-title.ts for the diagnosis + rules.
 	term.onTitleChange(title => {
-		tab.title = applyTabTitle(label, title)
-		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, tab.title)
+		const normalized = normalizeTabTitle(title)
+		// Track the live OSC title even when it won't apply: a pinned tab's
+		// tooltip shows it, and an unpin falls back to it.
+		tab.oscTitle = normalized
+		tab.oscRaw = title.trim() || null
+		const apply = decideTabTitle({
+			pinned: tab.customName !== null,
+			restored: tab.restored,
+			titleSettled: tab.titleSettled,
+			sinceAttachMs: performance.now() - tab.attachedAt,
+			incoming: normalized,
+			...(helm.titleStickyMs !== null ? { stickyWindowMs: helm.titleStickyMs } : {}),
+		})
+		if (apply) {
+			tab.title = normalized
+			tab.titleRaw = title.trim()
+			if (!isShellDefaultTitle(normalized)) tab.titleSettled = true
+			// Persist only APPLIED titles: a suppressed shell-default title must
+			// not clobber the registry's restored name either. While pinned,
+			// lastTitle stays put — customName owns the restored label.
+			if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, normalized)
+			renderTabLabel(tab)
+		} else if (tab.customName !== null) {
+			renderTabLabel(tab) // label unchanged (pin), tooltip follows live OSC
+		}
 		if (tab.parked) updateBackgroundUi()
 	})
 	term.onScroll(() => scheduleScrollbarSync(tab))
@@ -884,6 +994,11 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 	term.onWriteParsed(() => scheduleScrollbarSync(tab))
 
 	tabButton.addEventListener('click', () => activate(tab))
+	// Double-click the tab = inline rename (pin); the close × keeps its meaning.
+	tabButton.addEventListener('dblclick', event => {
+		if (event.target instanceof Node && close.contains(event.target)) return
+		startRename(tab)
+	})
 	tabButton.addEventListener('keydown', event => {
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault()
@@ -945,9 +1060,13 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 	}
 	tab.ptyId = spawned.id
 	tab.sessionId = spawned.sessionId
+	// The pty is attached NOW — restored-title stickiness counts from here.
+	tab.attachedAt = performance.now()
 	// Re-assert the parked flag under the REAL session id (a fresh spawn mints
-	// one) so a parked terminal relaunches as parked.
+	// one) so a parked terminal relaunches as parked. Same for a rename pin
+	// committed while the spawn was in flight.
 	if (tab.parked && spawned.sessionId) helm.sessions.setParked(spawned.sessionId, true)
+	if (tab.customName !== null && spawned.sessionId) helm.sessions.setCustomName(spawned.sessionId, tab.customName)
 	term.onData(data => helm.pty.write(spawned.id, data))
 	term.onResize(({ cols, rows }) => helm.pty.resize(spawned.id, cols, rows))
 	// spawn → mount → fit → resize pty: re-fit now that layout settled, then
@@ -1092,6 +1211,21 @@ async function runUiPreview(): Promise<void> {
 		if (first) restoreParked(first)
 		return
 	}
+	// rename-edit: open the inline rename editor on the active tab (input
+	// styling + select-all shot). rename: commit the fixed pin "deploy watch"
+	// through the SAME commit path the editor uses, so a relaunch against the
+	// same profile/socket pool verifies pin persistence.
+	if (preview === 'rename-edit') {
+		await new Promise(resolve => setTimeout(resolve, 800)) // let activate()'s rAF focus settle first
+		const tab = activeTab
+		if (tab) startRename(tab)
+		return
+	}
+	if (preview === 'rename') {
+		const tab = activeTab
+		if (tab) commitCustomName(tab, 'deploy watch')
+		return
+	}
 	if (preview !== 'background' && preview !== 'background-strip') return
 	await createTerminal().catch(() => {})
 	const exiting = activeTab
@@ -1129,13 +1263,22 @@ void (async () => {
 	} else {
 		for (const session of stripSessions) {
 			// One failed reattach must not sink the remaining sessions.
-			await createTerminal({ sessionId: session.sessionId, title: session.title }).catch(() => {})
+			await createTerminal({
+				sessionId: session.sessionId,
+				title: session.title,
+				customName: session.customName,
+			}).catch(() => {})
 		}
 		const first = tabs[0]
 		if (first) activate(first)
 	}
 	for (const session of parkedSessions) {
-		await createTerminal({ sessionId: session.sessionId, title: session.title, parked: true }).catch(() => {})
+		await createTerminal({
+			sessionId: session.sessionId,
+			title: session.title,
+			customName: session.customName,
+			parked: true,
+		}).catch(() => {})
 	}
 	tabsReady = true
 	// --term-cmd (screenshot harness): type a command into the first tab's
