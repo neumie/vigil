@@ -572,6 +572,15 @@
 	background: var(--danger-soft);
 }
 
+/* Trailing shortcut hint inside a menu item (§3.8): 11px mono, faint. */
+.menu-item .menu-hint {
+	margin-left: auto;
+	padding-left: 16px;
+	font-family: "SF Mono", Menlo, ui-monospace, monospace;
+	font-size: 11px;
+	color: var(--text-2);
+}
+
 .menu-separator {
 	height: 1px;
 	margin: 4px 0;

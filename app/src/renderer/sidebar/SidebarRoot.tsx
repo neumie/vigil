@@ -227,16 +227,13 @@ export function SidebarRoot() {
 		return () => window.removeEventListener('keydown', onKeyDown)
 	}, [pop, newItemOpen])
 
-	// --ui-preview=<list|detail|settings|appearance>: auto-navigate once for
-	// the screenshot harness (list is the default state, nothing to do).
+	// --ui-preview=<page>: auto-navigate once for the screenshot harness (list
+	// is the default state; the background* previews are terminal-strip-owned —
+	// renderer.ts handles them, the sidebar stays on the list).
 	const previewDone = useRef(false)
 	useEffect(() => {
 		if (previewDone.current) return
 		const preview = window.helm.uiPreview
-		if (!preview || preview === 'list') {
-			previewDone.current = true
-			return
-		}
 		if (preview === 'settings') {
 			previewDone.current = true
 			push({ kind: 'settings' })
@@ -245,6 +242,10 @@ export function SidebarRoot() {
 		if (preview === 'appearance') {
 			previewDone.current = true
 			reset([{ kind: 'list' }, { kind: 'settings' }, { kind: 'appearance' }])
+			return
+		}
+		if (preview !== 'detail') {
+			previewDone.current = true
 			return
 		}
 		// detail: needs an item id from the first snapshot with items.

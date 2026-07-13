@@ -81,6 +81,22 @@ export function socketPath(sessionId: string): string {
 }
 
 /**
+ * AF_UNIX paths are hard-capped by sun_path (104 bytes on macOS, 108 Linux);
+ * node/libuv rejects longer paths with EINVAL on BOTH listen and connect.
+ * dtach itself still manages to serve such paths, which is the nasty part:
+ * sessions WORK during the run, but every liveness probe false-negatives
+ * (EINVAL), so the next launch's GC sees live masters as dead. Persistence
+ * must refuse to start in an over-long dir rather than mint sessions it can
+ * never probe again. 103 = the tighter (macOS) limit minus NUL; 14 =
+ * "/xxxxxxxx.sock" (newSessionId is 8 chars).
+ */
+const MAX_UNIX_SOCKET_PATH = 103
+
+export function socketDirUsable(dir: string = socketDir()): boolean {
+	return dir.length + '/xxxxxxxx.sock'.length <= MAX_UNIX_SOCKET_PATH
+}
+
+/**
  * argv for the pty child. Okena builds
  *   `sh -c 'mkdir -p <dir> && cd <cwd> && exec dtach -A <socket> -E -r winch <shell>'`
  * (session_backend.rs:279-309). The sh wrapper exists only for mkdir/cd, which
@@ -107,21 +123,40 @@ export function buildSessionArgs(sessionId: string, shell: string): string[] {
  * same predicate in a stronger form: connect() succeeds only when a dtach
  * master is accepting. We write nothing, so the master just sees a client
  * connect + EOF and drops it.
+ *
+ * Three-valued on purpose: only ECONNREFUSED/ENOENT prove "file exists,
+ * nobody serves it" (a crash leftover, safe to GC). Every other failure —
+ * EINVAL (path over the sun_path cap), timeout, transient errno — is
+ * 'unknown', and callers MUST NOT destroy anything on 'unknown': treating it
+ * as dead is exactly the vanishing-socket bug (live masters, sockets
+ * unlinked, nothing restorable).
  */
-export function isSocketLive(sockPath: string, timeoutMs = 700): Promise<boolean> {
+export type SocketProbe = 'live' | 'dead' | 'unknown'
+
+export function probeSocket(sockPath: string, timeoutMs = 700): Promise<SocketProbe> {
 	return new Promise(resolve => {
 		let settled = false
 		const conn = net.createConnection(sockPath)
-		const done = (alive: boolean) => {
+		const done = (result: SocketProbe) => {
 			if (settled) return
 			settled = true
 			conn.destroy()
-			resolve(alive)
+			resolve(result)
 		}
-		conn.once('connect', () => done(true))
-		conn.once('error', () => done(false))
-		conn.setTimeout(timeoutMs, () => done(false))
+		conn.once('connect', () => done('live'))
+		conn.once('error', err => {
+			// Definitive death only: ECONNREFUSED = socket file with no listener
+			// (crash leftover), ENOENT = file gone, ENOTSOCK = not a socket at
+			// all — none of these can be a servable session.
+			const code = (err as NodeJS.ErrnoException).code
+			done(code === 'ECONNREFUSED' || code === 'ENOENT' || code === 'ENOTSOCK' ? 'dead' : 'unknown')
+		})
+		conn.setTimeout(timeoutMs, () => done('unknown'))
 	})
+}
+
+export async function isSocketLive(sockPath: string, timeoutMs = 700): Promise<boolean> {
+	return (await probeSocket(sockPath, timeoutMs)) === 'live'
 }
 
 export interface LiveSession {
@@ -149,7 +184,8 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
 			const sessionId = name.slice(0, -'.sock'.length)
 			if (!isValidSessionId(sessionId)) return
 			const sock = path.join(socketDir(), name)
-			if (await isSocketLive(sock)) {
+			const probe = await probeSocket(sock)
+			if (probe === 'live') {
 				let createdAt = new Date(0).toISOString()
 				try {
 					createdAt = fs.statSync(sock).birthtime.toISOString()
@@ -157,15 +193,17 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
 					// stat raced a dying session; keep epoch ordering
 				}
 				live.push({ sessionId, createdAt })
-			} else {
-				// No listener → stale socket from a crash; okena removes these
-				// (session_backend.rs:477-480).
+			} else if (probe === 'dead') {
+				// ECONNREFUSED: file exists, no listener → stale socket from a
+				// crash; okena removes these (session_backend.rs:477-480).
 				try {
 					fs.unlinkSync(sock)
 				} catch {
 					// already gone
 				}
 			}
+			// 'unknown' (EINVAL/timeout/transient): NOT restorable this launch,
+			// but never unlink on a guess — a live master may be serving it.
 		}),
 	)
 	return live.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -236,20 +274,25 @@ export async function killSession(sessionId: string): Promise<void> {
 /**
  * After a pty CLIENT exits on its own (shell `exit` → master gone → client
  * EOF), the session is dead and can be forgotten. But a client can also die
- * while the master lives (our own detach on quit, external kill), so only
- * reap when the socket no longer answers. Returns true when the session is
- * gone (caller should drop registry metadata).
+ * while the master lives (external kill), so only reap when the socket
+ * provably refuses. Returns true when the session is gone (caller should
+ * drop registry metadata).
+ *
+ * This NEVER unlinks the socket file, and treats only a definitive probe
+ * ('dead' = ECONNREFUSED) as death. It used to unlink on ANY probe failure,
+ * which destroyed live sessions when the probe false-negatived (observed:
+ * EINVAL when the socket dir exceeds the AF_UNIX path cap — dtach serves the
+ * path, node can't even connect to it) — the vanishing-socket bug: masters
+ * alive, sockets unlinked, nothing restorable. A genuinely dead session's
+ * file is either already unlinked by dtach's master atexit, or it's a crash
+ * leftover that startup GC (`listLiveSessions`) collects. Losing registry
+ * metadata to a bad guess degrades a restore (title/parked fall back to
+ * defaults); losing the socket file loses the session — keep this asymmetric.
  */
 export async function reapSessionIfDead(sessionId: string): Promise<boolean> {
 	const sock = socketPath(sessionId)
 	if (!fs.existsSync(sock)) return true
-	if (await isSocketLive(sock)) return false
-	try {
-		fs.unlinkSync(sock)
-	} catch {
-		// already gone
-	}
-	return true
+	return (await probeSocket(sock)) === 'dead'
 }
 
 // ---------- grace-period soft close ----------
@@ -325,6 +368,8 @@ export class GraceCloser {
 export interface SessionMeta {
 	createdAt: string
 	lastTitle?: string
+	/** Parked in the background list (strip-right popover) instead of the tab strip. */
+	parked?: boolean
 }
 
 /**
@@ -344,10 +389,11 @@ export class SessionRegistry {
 			const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
 			for (const [id, meta] of Object.entries(raw)) {
 				if (!isValidSessionId(id) || typeof meta !== 'object' || meta === null) continue
-				const { createdAt, lastTitle } = meta as Record<string, unknown>
+				const { createdAt, lastTitle, parked } = meta as Record<string, unknown>
 				this.#data[id] = {
 					createdAt: typeof createdAt === 'string' ? createdAt : new Date(0).toISOString(),
 					...(typeof lastTitle === 'string' ? { lastTitle } : {}),
+					...(parked === true ? { parked: true } : {}),
 				}
 			}
 		} catch {
@@ -368,6 +414,18 @@ export class SessionRegistry {
 		const meta = this.#data[sessionId]
 		if (!meta || meta.lastTitle === title) return
 		meta.lastTitle = title.slice(0, 200)
+		this.#scheduleSave()
+	}
+
+	/**
+	 * Park/unpark a session (background terminals). Persisted so a parked
+	 * session restores as parked — in the popover, never as a strip tab.
+	 */
+	setParked(sessionId: string, parked: boolean): void {
+		const meta = this.#data[sessionId]
+		if (!meta || (meta.parked === true) === parked) return
+		// undefined (not false) so JSON.stringify drops the key when unparked.
+		meta.parked = parked ? true : undefined
 		this.#scheduleSave()
 	}
 

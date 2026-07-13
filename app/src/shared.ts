@@ -13,6 +13,8 @@ export interface RestoredSession {
 	sessionId: string
 	/** Last OSC title seen for the tab, or null (renderer falls back to "zsh"). */
 	title: string | null
+	/** Parked when the previous run ended — restores headless into the background popover. */
+	parked: boolean
 }
 
 export interface PtyApi {
@@ -37,6 +39,8 @@ export interface SessionsApi {
 	list(): Promise<RestoredSession[]>
 	/** Persist the tab title so a restored tab gets its label back. */
 	setTitle(sessionId: string, title: string): void
+	/** Persist the parked flag so background terminals relaunch as background. */
+	setParked(sessionId: string, parked: boolean): void
 	/**
 	 * Soft-close a tab: detaches the pty client now, kills the session only
 	 * after the grace period. Null when the pty had no session (already dead).
@@ -50,13 +54,19 @@ export interface ConfigApi {
 	getDaemonUrl(): string
 }
 
-/** Screenshot-harness hook: `--ui-preview=<page>` auto-navigates the sidebar. */
-export type UiPreview = 'list' | 'detail' | 'settings' | 'appearance'
+/**
+ * Screenshot-harness hook: `--ui-preview=<page>` auto-navigates the sidebar.
+ * `background` parks one running + one exited session and opens the popover;
+ * `background-strip` parks them but keeps the popover closed (strip + badge shot).
+ */
+export type UiPreview = 'list' | 'detail' | 'settings' | 'appearance' | 'background' | 'background-strip'
 
-/** Menu accelerators (cmd+t / cmd+w) fire in main; renderer subscribes here. */
+/** Menu accelerators (cmd+t / cmd+w / cmd+shift+b) fire in main; renderer subscribes here. */
 export interface TabsApi {
 	onNew(listener: () => void): () => void
 	onClose(listener: () => void): () => void
+	/** Move the active tab to the background (⌘⇧B). */
+	onBackground(listener: () => void): () => void
 }
 
 /** A theme file from <userData>/themes/<id>.json (docs/design-system.md §2.8). */

@@ -9,10 +9,8 @@ const { daemonUrl } = ipcRenderer.sendSync('config:get') as { daemonUrl: string 
 // --ui-preview=<list|detail|settings> arrives via webPreferences.additionalArguments
 // (main.ts) for screenshot runs; the sidebar auto-navigates to the named page.
 const uiPreviewArg = process.argv.find(arg => arg.startsWith('--ui-preview='))?.slice('--ui-preview='.length)
-const uiPreview: UiPreview | null =
-	uiPreviewArg === 'list' || uiPreviewArg === 'detail' || uiPreviewArg === 'settings' || uiPreviewArg === 'appearance'
-		? uiPreviewArg
-		: null
+const UI_PREVIEWS: readonly UiPreview[] = ['list', 'detail', 'settings', 'appearance', 'background', 'background-strip']
+const uiPreview: UiPreview | null = UI_PREVIEWS.find(page => page === uiPreviewArg) ?? null
 
 // --ui-theme=<presetId>: screenshot runs verify a theme preset visually.
 const uiTheme = process.argv.find(arg => arg.startsWith('--ui-theme='))?.slice('--ui-theme='.length) ?? null
@@ -42,6 +40,7 @@ const api: HelmApi = {
 	sessions: {
 		list: () => ipcRenderer.invoke('sessions:list') as Promise<RestoredSession[]>,
 		setTitle: (sessionId, title) => ipcRenderer.send('session:title', sessionId, title),
+		setParked: (sessionId, parked) => ipcRenderer.send('session:set-parked', sessionId, parked),
 		closeWithGrace: ptyId => ipcRenderer.invoke('session:close-with-grace', ptyId) as Promise<GraceClose | null>,
 		undoClose: sessionId => ipcRenderer.invoke('session:undo-close', sessionId) as Promise<boolean>,
 	},
@@ -70,6 +69,7 @@ const api: HelmApi = {
 	tabs: {
 		onNew: listener => subscribe('tab:new', listener),
 		onClose: listener => subscribe('tab:close', listener),
+		onBackground: listener => subscribe('tab:background', listener),
 	},
 	nav: {
 		onOpenItem: listener => subscribe('nav:open-item', listener),

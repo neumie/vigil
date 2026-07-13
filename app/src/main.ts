@@ -42,7 +42,13 @@ const windowSizeArg = parseWindowSize()
 app.setName('Helm')
 // Must run before anything touches userData so a screenshot run never fights a
 // running Helm instance over the same profile (locks, window-state writes).
-if (process.argv.includes('--user-data-dir-tmp')) {
+// --user-data-dir=<path> is the STABLE variant: two harness runs sharing one
+// profile can verify relaunch behavior (session registry, parked terminals).
+const userDataDirArg = process.argv.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
+if (userDataDirArg) {
+	fs.mkdirSync(path.resolve(userDataDirArg), { recursive: true })
+	app.setPath('userData', path.resolve(userDataDirArg))
+} else if (process.argv.includes('--user-data-dir-tmp')) {
 	app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'helm-')))
 }
 
@@ -142,6 +148,17 @@ function getSessionSupport(): SessionSupport | null {
 		sessionSupport = null
 		return null
 	}
+	// Over-long socket dirs (AF_UNIX sun_path cap) would mint sessions whose
+	// liveness can never be probed again (node EINVALs the connect while dtach
+	// happily serves) — the next launch would see live masters as dead. Refuse
+	// persistence up front instead.
+	if (!sessions.socketDirUsable()) {
+		console.warn(
+			`[helm] socket dir path too long for unix sockets (${sessions.socketDir()}) — terminals will not survive restarts`,
+		)
+		sessionSupport = null
+		return null
+	}
 	sessions.ensureSocketDir()
 	sessionSupport = {
 		dtach,
@@ -169,14 +186,18 @@ const graceCloser = new sessions.GraceCloser(sessions.closeGraceMs(), sessionId 
  */
 function killAllPtyClients(): void {
 	graceCloser.cancelAll()
-	for (const entry of ptys.values()) {
+	// Clear the map BEFORE killing: the pty onExit handler treats "still in the
+	// map" as exited-on-its-own and reaps the session — a detach-kill must never
+	// be reapable (see the onExit comment).
+	const entries = [...ptys.values()]
+	ptys.clear()
+	for (const entry of entries) {
 		try {
 			entry.proc.kill()
 		} catch {
 			// already exited
 		}
 	}
-	ptys.clear()
 }
 
 // --- Window bounds persistence -------------------------------------------------
@@ -359,6 +380,10 @@ function buildMenu(): void {
 				{ label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: send('tab:new') },
 				// Owning cmd+w here keeps it from closing the window (no window-menu close role).
 				{ label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: send('tab:close') },
+				// Park the active tab (iTerm "bury session" analog): the tab leaves
+				// the strip, the terminal + pty stay alive behind the strip-right
+				// stack button. Renderer owns the actual park (tab state lives there).
+				{ label: 'Move Terminal to Background', accelerator: 'CmdOrCtrl+Shift+B', click: send('tab:background') },
 			],
 		},
 		{ role: 'editMenu' },
@@ -458,12 +483,17 @@ ipcMain.handle('pty:spawn', (event, args: SpawnArgs) => {
 		if (!contents.isDestroyed()) contents.send('pty:data', id, data)
 	})
 	proc.onExit(({ exitCode }) => {
+		// Only a pty still in the map exited ON ITS OWN (shell `exit`, external
+		// kill). Every helm-initiated kill — quit detach (killAllPtyClients),
+		// hard kill (pty:kill), soft close (session:close-with-grace) — removes
+		// the entry BEFORE killing and owns its own session teardown, so it must
+		// not be reaped here: quit means detach, and a probe false negative on
+		// the way out used to get a LIVE session's socket unlinked (the
+		// vanishing-socket bug — quit destroyed what persistence was supposed
+		// to keep).
+		const selfExit = ptys.has(id)
 		ptys.delete(id)
-		// A client exiting on its own usually means the session ended (shell
-		// `exit` → master gone → client EOF), but a detach-kill during quit lands
-		// here too — reapSessionIfDead only forgets the session when the socket
-		// no longer answers, so detached sessions are never dropped.
-		if (sessionId && support) {
+		if (selfExit && sessionId && support) {
 			const sid = sessionId
 			void sessions.reapSessionIfDead(sid).then(dead => {
 				if (dead) support.registry.remove(sid)
@@ -546,11 +576,20 @@ ipcMain.handle('sessions:list', async () => {
 		.map(s => ({
 			sessionId: s.sessionId,
 			title: support.registry.get(s.sessionId)?.lastTitle ?? null,
+			// Parked sessions restore as parked (popover rows), never as strip tabs.
+			parked: support.registry.get(s.sessionId)?.parked === true,
 			// Registry createdAt (original spawn) beats socket birthtime for ordering.
 			createdAt: support.registry.get(s.sessionId)?.createdAt ?? s.createdAt,
 		}))
 		.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-		.map(({ sessionId, title }) => ({ sessionId, title }))
+		.map(({ sessionId, title, parked }) => ({ sessionId, title, parked }))
+})
+
+// Park/unpark a session in the registry so background terminals survive a
+// relaunch as background terminals (renderer owns the in-memory tab state).
+ipcMain.on('session:set-parked', (_event, sessionId: unknown, parked: unknown) => {
+	if (!sessions.isValidSessionId(sessionId) || typeof parked !== 'boolean') return
+	getSessionSupport()?.registry.setParked(sessionId, parked)
 })
 
 ipcMain.on('session:title', (_event, sessionId: unknown, title: unknown) => {

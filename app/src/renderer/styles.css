@@ -117,11 +117,11 @@ button:focus-visible,
 	-webkit-app-region: drag;
 }
 
+/* Deliberately empty surface: traffic-light inset + drag region only (no
+ * branding, no connection dot — daemon state is the sidebar's job). The 84px
+ * inset keeps the strip column from sliding under the traffic lights. */
 .topbar-left {
 	grid-column: 1;
-	display: flex;
-	align-items: center;
-	gap: 8px;
 	min-width: 0;
 	padding-left: 84px; /* traffic-light inset (hiddenInset titlebar) */
 }
@@ -134,41 +134,6 @@ button:focus-visible,
 	min-width: 0;
 	/* 6px strip inset + 10px pill padding = 16px, matching the terminal well text inset */
 	padding: 0 10px 0 6px;
-}
-
-.wordmark {
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--text-2);
-	user-select: none;
-}
-
-/* Signature element: steady green glow when the daemon responds, amber breathing while unreachable. */
-.conn-dot {
-	flex: none;
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background: var(--success);
-	box-shadow: 0 0 6px color-mix(in srgb, var(--success) 55%, transparent);
-}
-
-.conn-dot.offline {
-	background: var(--warn);
-	box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 45%, transparent);
-	animation: breathe 2.4s ease-in-out infinite;
-}
-
-@keyframes breathe {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.4;
-	}
 }
 
 /* ---------- terminal tabs ---------- */
@@ -268,6 +233,166 @@ button:focus-visible,
 #new-tab:hover {
 	background: var(--fill-subtle);
 	color: var(--text-0);
+}
+
+/* ---------- background terminals (strip-right control + popover, §3.18) ---------- */
+
+/* Anchors the popover (menu-end needs a positioned ancestor) and pins the
+ * control to the strip's right edge, clear of the scrolling tab strip. */
+#bg-root {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	margin-left: auto;
+	-webkit-app-region: no-drag;
+}
+
+#bg-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 8px;
+	border: none;
+	border-radius: 6px;
+	background: none;
+	color: var(--text-2);
+	cursor: pointer;
+	transition: background-color 140ms ease-out, color 140ms ease-out;
+}
+
+#bg-toggle:hover,
+#bg-toggle[aria-expanded="true"] {
+	background: var(--fill-subtle);
+	color: var(--text-0);
+}
+
+#bg-toggle[hidden] {
+	display: none; /* visible ONLY when the background count > 0 */
+}
+
+#bg-toggle svg {
+	display: block;
+}
+
+/* Count badge: chip spec (§3.4), neutral tone — a state readout, not a button. */
+.bg-count {
+	padding: 2px 7px;
+	border-radius: 999px;
+	background: var(--neutral-soft);
+	color: var(--neutral);
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1.4;
+	font-variant-numeric: tabular-nums;
+}
+
+#bg-popover {
+	width: 260px; /* within the §3.8 180–280 band; fixed so rows don't reflow */
+}
+
+#bg-popover[hidden] {
+	display: none;
+}
+
+.bg-header {
+	padding: 4px 8px 6px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-2);
+	user-select: none;
+}
+
+/* Row = a tab surrogate at the menu-item pitch: restore on click, ✕ mirrors
+ * the strip tab's hover-revealed close (not a §3.3 list row). */
+.bg-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 28px;
+	padding: 0 8px;
+	border-radius: 4px;
+	cursor: default;
+	user-select: none;
+	transition: background-color 140ms ease-out;
+}
+
+.bg-row:hover,
+.bg-row:focus-visible {
+	background: var(--fill-subtle);
+}
+
+/* Fixed dot slot keeps titles aligned; transparent when quiet. */
+.bg-dot {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: transparent;
+}
+
+.bg-dot.on {
+	background: var(--accent);
+}
+
+.bg-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	color: var(--text-0);
+}
+
+.bg-title.exited {
+	color: var(--text-1);
+}
+
+.bg-state {
+	flex: none;
+	font-size: 11px;
+	color: var(--text-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.bg-kill {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border: none;
+	border-radius: 4px;
+	background: none;
+	color: var(--text-1);
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 140ms ease-out, background-color 140ms ease-out;
+}
+
+.bg-row:hover .bg-kill,
+.bg-row:focus-within .bg-kill {
+	opacity: 0.6;
+}
+
+.bg-kill:hover,
+.bg-kill:focus-visible {
+	opacity: 1;
+	background: var(--fill-raised);
+}
+
+/* Context menu at the pointer (tab right-click): §3.8 panel, fixed positioning
+ * (left/top set inline from the event, clamped to the viewport). */
+.menu-panel.menu-fixed {
+	position: fixed;
+	top: auto;
+	z-index: 40;
 }
 
 /* ---------- panes ---------- */

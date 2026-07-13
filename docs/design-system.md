@@ -8,7 +8,7 @@ Helm is the captain's station: dark, machined, quiet. Everything below serves th
 
 ## 1. Principles
 
-1. **One bold element per surface.** Each surface gets exactly one signature/high-emphasis element (the topbar owns the connection dot; a detail page owns its single primary button). Never two filled-accent elements visible at once.
+1. **One bold element per surface.** Each surface gets exactly one signature/high-emphasis element (a detail page owns its single primary button; the sidebar list owns its filter's active segment). The topbar deliberately owns NONE — traffic-light inset, drag region, tab strip; no branding, no status jewelry. Never two filled-accent elements visible at once.
 2. **Depth from the ladder, not decoration.** Hierarchy comes from the three-step background ladder + hairlines + white-alpha fills. No gradients, no borders heavier than 1px, no shadows on inline elements — shadows are for detached surfaces (toast, menu, sheet, widget) only.
 3. **Quiet motion.** 120–160ms, ease-out, transform/opacity only. `prefers-reduced-motion` MUST be respected globally. Ambient animation (pulse, breathe) is reserved for live status, never decoration.
 4. **Designed for its width.** Every surface is designed at its real width (sidebar: 340px). Never cram a desktop layout into a narrow pane; use push navigation instead of side-by-side panes below 480px.
@@ -123,7 +123,7 @@ Never 10/12/14px radii (extension card's 14px is reconciled to 8 — see appendi
 
 - Animate `transform` and `opacity` only; `background-color`/`color` may transition at 140ms. Never animate layout properties (width/height/top/left) — the pane divider drag is direct manipulation, not animation.
 - Entrances travel **8px** (translateY(8px)→0 for toasts/sheets; see §3.10 for push).
-- Ambient (live-status only): connection-dot offline breathe `2.4s ease-in-out infinite` (opacity 1→0.4); running-dot pulse `1.6s ease-in-out infinite`.
+- Ambient (live-status only): running-dot pulse `1.6s ease-in-out infinite`. (The retired topbar connection dot's offline breathe `2.4s ease-in-out infinite`, opacity 1→0.4, is no longer used by any surface; reuse that spec if a future surface genuinely needs an offline ambient.)
 - Global reduced-motion clamp is mandatory on every surface (pattern from `styles.css:428`):
 
 ```css
@@ -227,8 +227,9 @@ The sidebar work-item row; also the template for any dense list.
 ### 3.5 Status dots
 
 - Standard: **8px** circle, filled with the status tone (§2.1 mapping). Running state adds `pulse 1.6s ease-in-out infinite`.
-- Connection dot (topbar signature — the surface's one bold element): **7px**, `--success` with glow `0 0 6px rgba(78,201,138,0.55)`; unreachable: `--warn`, glow `rgba(224,179,65,0.45)`, breathe 2.4s.
-- **Don't** add glow/halo to list-row dots — glow is the connection dot's signature; **don't** use a dot and a chip for the same fact in one row.
+- Activity dot (background-terminal popover rows, §3.18): **6px**, `--accent`, no ambient — a quiet "output arrived" mark, not a status.
+- **There is no topbar connection dot.** The topbar carries no branding or status (§1); daemon reachability is the sidebar's job — the waiting empty state ("Waiting for the daemon" / "Start it with helm start") when unreachable, silence when connected. The retired spec (7px, `--success` + glow; unreachable `--warn` + breathe 2.4s) stays on record here only for a future surface that genuinely needs an ambient connection signal.
+- **Don't** add glow/halo to list-row dots — glow is reserved for an ambient connection signal, and no current surface has one; **don't** use a dot and a chip for the same fact in one row.
 
 ### 3.6 Toast
 
@@ -347,6 +348,21 @@ The in-flow content card and its fact/navigation rows (`app/src/renderer/sidebar
 - Custom webkit scrollbar inside panes: 10px gutter, transparent track, thumb `rgba(255,255,255,0.14)` inset 3px via `background-clip: content-box` (hover `0.24`), radius 999. Terminal keeps xterm's own scrollbar, styled at the pane edge per §3.14 (8px, same thumb alphas).
 - **Don't** leave a default (light) scrollbar on any pane surface.
 
+### 3.18 Background terminals (tab strip)
+
+iTerm2's "bury session", helm-style: a tab leaves the strip while its Terminal instance stays mounted in the hidden holder and its pty stays attached — scrollback keeps accumulating headlessly. Memory cost equals an inactive strip tab (those are already hidden, live xterm instances), so parking buys strip space, not memory. Implementation: `app/src/renderer/renderer.ts` (park/restore/popover) + `app/src/sessions.ts` (persisted `parked` flag).
+
+- **Move to background**: right-click a tab → context menu (§3.8 panel at the pointer, viewport-clamped; items "Move to background" ⇧⌘B, "Close" ⌘W with §3.8 trailing shortcut hints). ⌘⇧B parks the active tab — an Electron Shell-menu accelerator per §4 (xterm swallows renderer keys).
+- **Strip control**: ghost button pinned at the strip's right edge (28px height, radius `--radius-md`), visible ONLY when the background count > 0 — the empty state is the hidden button, never an empty popover. Content: stack/layers glyph 14px `--text-2` + count badge in the §3.4 chip spec (neutral tone soft fill, 10/700 tabular). Hover and open: `--fill-subtle` fill, `--text-0` glyph.
+- **Popover**: §3.8 panel (background `--chrome`, `--hairline`, radius `--radius-lg`, `--shadow-1`, z 40), fixed width 260, anchored `menu-end` under the button. Header "Background terminals" in the Label type style. One row per background terminal, park order.
+  - Row: 28px pitch, padding 0 8, radius `--radius-sm`, hover/focus `--fill-subtle`. Leading fixed 6px activity-dot slot (`--accent` when output arrived since parking; cleared on restore and on exit; transparent otherwise so titles align) + title 13 `--text-0` single-line ellipsis (exited rows: `--text-1`) + state 11 `--text-2` tabular ("Running" / "Exited (code)") + hover/focus-within ✕ (16px, opacity 0→0.6→1). The ✕ mirrors the strip tab's close affordance — the row is a tab surrogate, not a §3.3 list row, which is why the hover-revealed control is allowed here.
+  - Row click / Enter / Space = restore: the terminal returns as a full tab at the strip end, activated, focused, and refit through the §3.14 fit pipeline (the pty stayed attached, so only a real size change emits a resize). ✕ = close through the grace path: toast + Undo, and **Undo restores to the background list, not to a tab**.
+  - Dismiss: outside click or Esc (focus returns to the button). ↑/↓ move between rows.
+- **Exited in background**: a pty ending while parked keeps its row with state "Exited (code)" — no toast. Restoring shows the dead terminal's buffer; ✕ removes the row.
+- **Persistence**: the session registry (`sessions.json`) carries a per-session `parked` flag. On relaunch, parked sessions reattach headless into the popover; non-parked sessions restore as strip tabs. Registry titles are reused for row labels.
+- **Copy**: menu item "Move to background", header "Background terminals", states "Running" / "Exited (n)" — sentence case per §5.
+- **Don't** show the strip button at count 0; **don't** toast background exits; **don't** give the popover more than the one ✕ action per row — restore is the row itself.
+
 ---
 
 ## 4. Interaction rules
@@ -357,7 +373,7 @@ The in-flow content card and its fact/navigation rows (`app/src/renderer/sidebar
 - **Hit targets**: minimum 24×24; standard controls are 28. 1px hairlines that are drag handles get an invisible ≥8px hit area (`#divider::before` pattern).
 - **Reduced motion**: the §2.5 global clamp on every surface; ambient pulses stop; push navigation swaps instantly.
 - **Text selection**: disabled on controls/labels (`user-select: none`), always enabled on content (titles, logs, errors, ids).
-- **Live regions**: toasts announce via `aria-live="polite"`; connection changes update the dot, and the state name must exist as accessible text, not color alone.
+- **Live regions**: toasts announce via `aria-live="polite"`; state must exist as accessible text, not color alone (the sidebar's waiting card names the daemon state in words — no status-color-only signal exists to depend on).
 
 ---
 

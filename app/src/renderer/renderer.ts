@@ -26,11 +26,15 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 const leftPane = el<HTMLElement>('left')
-const connDot = el<HTMLSpanElement>('conn-dot')
 const divider = el<HTMLDivElement>('divider')
 const tabsEl = el<HTMLDivElement>('tabs')
 const newTabButton = el<HTMLButtonElement>('new-tab')
 const termsEl = el<HTMLDivElement>('terms')
+const bgRoot = el<HTMLDivElement>('bg-root')
+const bgToggle = el<HTMLButtonElement>('bg-toggle')
+const bgCount = el<HTMLSpanElement>('bg-count')
+const bgPopover = el<HTMLDivElement>('bg-popover')
+const bgRows = el<HTMLDivElement>('bg-rows')
 
 // ---------- split divider ----------
 
@@ -77,17 +81,9 @@ window.addEventListener('resize', () => {
 	}
 })
 
-// ---------- daemon connection (topbar dot) + native sidebar ----------
-
-// Reachability comes from the HelmBridge poller in main — the old renderer
-// ping loop (daemon:ping) is gone. Snapshots are pushed only on change, so the
-// initial subscribe() seeds the dot before the first change lands.
-function reflectDaemonState(reachable: boolean): void {
-	connDot.classList.toggle('offline', !reachable)
-}
-
-helm.daemon.onSnapshot(snapshot => reflectDaemonState(snapshot.reachable))
-void helm.daemon.subscribe().then(snapshot => reflectDaemonState(snapshot.reachable))
+// ---------- native sidebar ----------
+// The sidebar owns the daemon-connection signal (waiting card when
+// unreachable, silence when connected) — the topbar carries no dot/branding.
 
 mountSidebar(leftPane)
 
@@ -101,6 +97,17 @@ interface Tab {
 	/** dtach session behind the pty; null while spawning or when persistence is off. */
 	sessionId: string | null
 	closed: boolean
+	/** In the background list (strip-right stack button + popover) instead of the strip. */
+	parked: boolean
+	/** Exit code when the pty ended while parked — the popover row stays, state "Exited". */
+	exitCode: number | null
+	/** Output arrived since parking — quiet dot on the popover row; cleared on restore/exit. */
+	activity: boolean
+	/** Ignore output before this timestamp: a dtach reattach repaints on spawn (-r winch),
+	 *  and that redraw is not "new output since parking". */
+	activityMuteUntil: number
+	/** Current normalized label (popover row title, toast detail). */
+	title: string
 	term: Terminal
 	fit: FitAddon
 	holder: HTMLDivElement
@@ -114,7 +121,14 @@ interface Tab {
 // pane edge (that exact bug shipped once; don't mount into the holder again).
 
 const tabs: Tab[] = []
+// Background terminals (iTerm "bury session" analog): parked tabs leave the
+// strip but keep their Terminal instance mounted in the hidden holder — the
+// pty stays attached and scrollback keeps accumulating. Memory cost equals an
+// inactive strip tab (those are already hidden, live xterm instances).
+const parked: Tab[] = []
 let activeTab: Tab | null = null
+
+const findByPty = (id: number): Tab | undefined => tabs.find(t => t.ptyId === id) ?? parked.find(t => t.ptyId === id)
 
 // Shell OSC titles usually arrive as "user@host:cwd" — noise at tab width.
 // Normalize to the trailing path segment ("helm"); a bare "user@host" (no
@@ -198,7 +212,7 @@ function cycleTab(delta: number): void {
 function closeTab(tab: Tab): void {
 	if (tab.closed) return
 	tab.closed = true
-	const title = tab.tabButton.querySelector('.tab-label')?.textContent ?? 'zsh'
+	const { title } = tab
 	// Soft close (okena-style): main only DETACHES the pty client and arms a
 	// grace timer — the dtach session dies when it fires. The toast's Undo
 	// cancels the timer and reattaches the same session as a new tab.
@@ -215,7 +229,7 @@ function closeTab(tab: Tab): void {
 					onClick: () => {
 						toast.dismiss()
 						void helm.sessions.undoClose(grace.sessionId).then(alive => {
-							if (alive) void createTab({ sessionId: grace.sessionId, title })
+							if (alive) void createTerminal({ sessionId: grace.sessionId, title })
 						})
 					},
 				},
@@ -235,6 +249,275 @@ function closeTab(tab: Tab): void {
 	syncEmptyState()
 }
 
+// ---------- background terminals (park / restore / kill + strip control) ----------
+// iTerm2 "bury session" analog. A parked tab leaves the strip; its Terminal
+// stays mounted in the hidden holder and the pty stays attached, so output
+// keeps landing in scrollback. The strip-right stack button (visible only when
+// parked.length > 0) opens the popover listing them.
+
+/** dtach's `-r winch` repaint window after a reattach spawn — not "new output". */
+const REATTACH_MUTE_MS = 2000
+
+function parkTab(tab: Tab): void {
+	if (tab.closed || tab.parked) return
+	const index = tabs.indexOf(tab)
+	if (index === -1) return
+	tabs.splice(index, 1)
+	tab.parked = true
+	tab.activity = false
+	parked.push(tab)
+	tab.tabButton.remove()
+	tab.holder.classList.remove('active')
+	if (tab.sessionId) helm.sessions.setParked(tab.sessionId, true)
+	if (activeTab === tab) {
+		activeTab = null
+		const neighbor = tabs[Math.min(index, tabs.length - 1)]
+		if (neighbor) activate(neighbor)
+	}
+	syncEmptyState()
+	updateBackgroundUi()
+}
+
+/** Popover row click: back to the strip end, focused and refit. */
+function restoreParked(tab: Tab): void {
+	const index = parked.indexOf(tab)
+	if (index === -1) return
+	parked.splice(index, 1)
+	tab.parked = false
+	tab.activity = false // restore clears the activity dot
+	tabs.push(tab)
+	tabsEl.appendChild(tab.tabButton)
+	if (tab.sessionId) helm.sessions.setParked(tab.sessionId, false)
+	closeBackgroundPopover()
+	updateBackgroundUi()
+	syncEmptyState()
+	// activate() refits via fitTab in its rAF once the holder is visible; the
+	// pty stayed attached while parked, so the already-wired onResize replays
+	// any pane-size drift to the pty (no WINCH nudge needed — nothing is stale).
+	// An exited tab restores too: it shows the dead terminal's buffer.
+	activate(tab)
+}
+
+/** Popover ✕: grace-close path; Undo restores to the BACKGROUND list, not a tab. */
+function killParkedTab(tab: Tab): void {
+	const index = parked.indexOf(tab)
+	if (index === -1 || tab.closed) return
+	tab.closed = true
+	parked.splice(index, 1)
+	const { title } = tab
+	if (tab.ptyId !== null) {
+		void helm.sessions.closeWithGrace(tab.ptyId).then(grace => {
+			if (!grace) return
+			const toast = showToast({
+				message: 'Background terminal closed',
+				detail: title === 'zsh' ? undefined : title,
+				ttlMs: grace.graceMs,
+				countdown: true,
+				action: {
+					label: 'Undo',
+					onClick: () => {
+						toast.dismiss()
+						void helm.sessions.undoClose(grace.sessionId).then(alive => {
+							if (alive) void createTerminal({ sessionId: grace.sessionId, title, parked: true })
+						})
+					},
+				},
+			})
+		})
+	}
+	// Exited rows (ptyId null) just remove — the session is already gone.
+	tab.term.dispose()
+	tab.holder.remove()
+	updateBackgroundUi()
+}
+
+let bgOpen = false
+
+function updateBackgroundUi(): void {
+	bgToggle.hidden = parked.length === 0
+	bgCount.textContent = String(parked.length)
+	if (parked.length === 0) {
+		closeBackgroundPopover()
+		return
+	}
+	if (bgOpen) renderBackgroundRows()
+}
+
+function renderBackgroundRows(): void {
+	// Preserve roving focus across re-renders (activity/exit updates).
+	const focused = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')].indexOf(document.activeElement as HTMLElement)
+	bgRows.textContent = ''
+	for (const tab of parked) {
+		const row = document.createElement('div')
+		row.className = 'bg-row'
+		row.setAttribute('role', 'button')
+		row.tabIndex = 0
+
+		const dot = document.createElement('span')
+		dot.className = `bg-dot${tab.activity ? ' on' : ''}`
+		dot.setAttribute('aria-hidden', 'true')
+
+		const title = document.createElement('span')
+		title.className = `bg-title${tab.exitCode !== null ? ' exited' : ''}`
+		title.textContent = tab.title
+
+		const state = document.createElement('span')
+		state.className = 'bg-state'
+		state.textContent = tab.exitCode === null ? 'Running' : `Exited (${tab.exitCode})`
+
+		const kill = document.createElement('button')
+		kill.className = 'bg-kill'
+		kill.textContent = '×'
+		kill.title = 'Close'
+		kill.setAttribute('aria-label', `Close ${tab.title}`)
+		kill.addEventListener('click', event => {
+			event.stopPropagation()
+			killParkedTab(tab)
+		})
+
+		row.append(dot, title, state, kill)
+		row.setAttribute('aria-label', `Restore ${tab.title}`)
+		row.addEventListener('click', () => restoreParked(tab))
+		row.addEventListener('keydown', event => {
+			if (event.key === 'Enter' || event.key === ' ') {
+				event.preventDefault()
+				restoreParked(tab)
+			}
+		})
+		bgRows.appendChild(row)
+	}
+	if (focused >= 0) {
+		const rows = bgRows.querySelectorAll<HTMLElement>('.bg-row')
+		rows[Math.min(focused, rows.length - 1)]?.focus()
+	}
+}
+
+function onBgOutside(event: PointerEvent): void {
+	if (!(event.target instanceof Node) || !bgRoot.contains(event.target)) closeBackgroundPopover()
+}
+
+function onBgKeydown(event: KeyboardEvent): void {
+	if (event.key === 'Escape') {
+		event.stopPropagation()
+		closeBackgroundPopover()
+		bgToggle.focus()
+		return
+	}
+	if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+	const rows = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')]
+	if (rows.length === 0) return
+	event.preventDefault()
+	const current = rows.indexOf(document.activeElement as HTMLElement)
+	const next = event.key === 'ArrowDown' ? rows[Math.min(current + 1, rows.length - 1)] : rows[Math.max(current - 1, 0)]
+	next?.focus()
+}
+
+function openBackgroundPopover(): void {
+	if (bgOpen || parked.length === 0) return
+	closeTabMenu()
+	bgOpen = true
+	renderBackgroundRows()
+	bgPopover.hidden = false
+	bgToggle.setAttribute('aria-expanded', 'true')
+	bgRows.querySelector<HTMLElement>('.bg-row')?.focus()
+	document.addEventListener('pointerdown', onBgOutside, true)
+	document.addEventListener('keydown', onBgKeydown, true)
+}
+
+function closeBackgroundPopover(): void {
+	if (!bgOpen) return
+	bgOpen = false
+	bgPopover.hidden = true
+	bgToggle.setAttribute('aria-expanded', 'false')
+	document.removeEventListener('pointerdown', onBgOutside, true)
+	document.removeEventListener('keydown', onBgKeydown, true)
+}
+
+bgToggle.addEventListener('click', () => {
+	if (bgOpen) closeBackgroundPopover()
+	else openBackgroundPopover()
+})
+
+// ---------- tab context menu (§3.8 panel at the pointer) ----------
+
+let tabMenuCleanup: (() => void) | null = null
+
+function closeTabMenu(): void {
+	tabMenuCleanup?.()
+}
+
+interface TabMenuItem {
+	label: string
+	hint?: string
+	onPick: () => void
+}
+
+function openTabMenu(tab: Tab, x: number, y: number): void {
+	closeTabMenu()
+	closeBackgroundPopover()
+	const panel = document.createElement('div')
+	panel.className = 'menu-panel menu-fixed'
+	panel.setAttribute('role', 'menu')
+
+	const items: TabMenuItem[] = [
+		{ label: 'Move to background', hint: '⇧⌘B', onPick: () => parkTab(tab) },
+		{ label: 'Close', hint: '⌘W', onPick: () => closeTab(tab) },
+	]
+	const buttons: HTMLButtonElement[] = []
+	for (const item of items) {
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.className = 'menu-item'
+		button.setAttribute('role', 'menuitem')
+		const label = document.createElement('span')
+		label.textContent = item.label
+		button.appendChild(label)
+		if (item.hint) {
+			const hint = document.createElement('span')
+			hint.className = 'menu-hint'
+			hint.textContent = item.hint
+			button.appendChild(hint)
+		}
+		button.addEventListener('click', () => {
+			closeTabMenu()
+			item.onPick()
+		})
+		buttons.push(button)
+		panel.appendChild(button)
+	}
+
+	const onOutside = (event: PointerEvent): void => {
+		if (!(event.target instanceof Node) || !panel.contains(event.target)) closeTabMenu()
+	}
+	const onKeydown = (event: KeyboardEvent): void => {
+		if (event.key === 'Escape') {
+			event.stopPropagation()
+			closeTabMenu()
+			return
+		}
+		if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+		event.preventDefault()
+		const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+		const delta = event.key === 'ArrowDown' ? 1 : -1
+		buttons[(current + delta + buttons.length) % buttons.length]?.focus()
+	}
+	tabMenuCleanup = () => {
+		tabMenuCleanup = null
+		panel.remove()
+		document.removeEventListener('pointerdown', onOutside, true)
+		document.removeEventListener('keydown', onKeydown, true)
+	}
+	document.addEventListener('pointerdown', onOutside, true)
+	document.addEventListener('keydown', onKeydown, true)
+
+	document.body.appendChild(panel)
+	// Clamp inside the viewport now that the panel has a size.
+	const rect = panel.getBoundingClientRect()
+	panel.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`
+	panel.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`
+	buttons[0]?.focus()
+}
+
 // Zero terminals is a valid state — show a quiet hint instead of respawning
 // (closing the last tab used to auto-open a new one; deliberate removal).
 function syncEmptyState(): void {
@@ -242,7 +525,17 @@ function syncEmptyState(): void {
 	if (empty) empty.hidden = tabs.length > 0
 }
 
-async function createTab(restore?: RestoredSession): Promise<void> {
+interface TerminalOpts {
+	/** Restored/undone session to reattach; omitted = create a fresh session. */
+	sessionId?: string
+	/** Persisted label shown until the shell emits a fresh OSC title. */
+	title?: string | null
+	/** Create straight into the background list (startup parked restore, kill-undo). */
+	parked?: boolean
+}
+
+async function createTerminal(opts?: TerminalOpts): Promise<void> {
+	const startParked = opts?.parked === true
 	const term = new Terminal({
 		cursorBlink: true,
 		scrollback: 10000,
@@ -274,25 +567,39 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	tabButton.tabIndex = 0
 	const label = document.createElement('span')
 	label.className = 'tab-label'
-	// Restored tabs keep the label persisted from the previous run until the
-	// reattached shell emits a fresh OSC title (normalized too — older runs
-	// persisted raw "user@host:cwd" titles).
-	applyTabTitle(label, restore?.title ?? '')
-	// Shell title arrives via OSC title events; empty titles fall back to "zsh".
-	term.onTitleChange(title => {
-		const text = applyTabTitle(label, title)
-		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, text)
-	})
 	const close = document.createElement('button')
 	close.className = 'tab-close'
 	close.textContent = '×'
 	close.title = 'Close (⌘W)'
 	close.setAttribute('aria-label', 'Close terminal')
 	tabButton.append(label, close)
-	tabsEl.appendChild(tabButton)
 
-	const tab: Tab = { ptyId: null, sessionId: null, closed: false, term, fit, holder, tabButton }
-	tabs.push(tab)
+	const tab: Tab = {
+		ptyId: null,
+		sessionId: null,
+		closed: false,
+		parked: startParked,
+		exitCode: null,
+		activity: false,
+		// A parked reattach repaints on spawn (dtach -r winch); that redraw must
+		// not light the "output since parking" dot.
+		activityMuteUntil: startParked ? performance.now() + REATTACH_MUTE_MS : 0,
+		title: '',
+		term,
+		fit,
+		holder,
+		tabButton,
+	}
+	// Restored tabs keep the label persisted from the previous run until the
+	// reattached shell emits a fresh OSC title (normalized too — older runs
+	// persisted raw "user@host:cwd" titles).
+	tab.title = applyTabTitle(label, opts?.title ?? '')
+	// Shell title arrives via OSC title events; empty titles fall back to "zsh".
+	term.onTitleChange(title => {
+		tab.title = applyTabTitle(label, title)
+		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, tab.title)
+		if (tab.parked) updateBackgroundUi()
+	})
 
 	tabButton.addEventListener('click', () => activate(tab))
 	tabButton.addEventListener('keydown', event => {
@@ -301,43 +608,77 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 			activate(tab)
 		}
 	})
+	tabButton.addEventListener('contextmenu', event => {
+		event.preventDefault()
+		openTabMenu(tab, event.clientX, event.clientY)
+	})
 	close.addEventListener('click', event => {
 		event.stopPropagation()
 		closeTab(tab)
 	})
 
-	activate(tab)
-	fitTab(tab)
+	if (startParked) {
+		// Headless: hidden holder, no strip button — listed in the popover only.
+		parked.push(tab)
+		updateBackgroundUi()
+	} else {
+		tabs.push(tab)
+		tabsEl.appendChild(tabButton)
+		activate(tab)
+		fitTab(tab)
+	}
 
 	// Spawn with the best-known size, but treat it as provisional: layout can
 	// settle during the await (activate()'s rAF fit, fonts, first paint), and
 	// any term.resize in that window is LOST — onResize is attached only below.
 	const spawnCols = term.cols
 	const spawnRows = term.rows
-	const spawned = await helm.pty.spawn(spawnCols, spawnRows, restore?.sessionId)
+	const spawned = await helm.pty.spawn(spawnCols, spawnRows, opts?.sessionId)
 	if (tab.closed) {
 		helm.pty.kill(spawned.id)
 		return
 	}
 	tab.ptyId = spawned.id
 	tab.sessionId = spawned.sessionId
+	// Re-assert the parked flag under the REAL session id (a fresh spawn mints
+	// one) so a parked terminal relaunches as parked.
+	if (tab.parked && spawned.sessionId) helm.sessions.setParked(spawned.sessionId, true)
 	term.onData(data => helm.pty.write(spawned.id, data))
 	term.onResize(({ cols, rows }) => helm.pty.resize(spawned.id, cols, rows))
 	// spawn → mount → fit → resize pty: re-fit now that layout settled, then
 	// force the pty onto the fitted size (with a WINCH nudge for reattached
 	// sessions whose remote app still believes the previous run's size).
-	fitTab(tab)
-	syncPtySize(tab, spawnCols, spawnRows, restore !== undefined)
+	// A tab restored from the background mid-spawn lands here too (parked is
+	// false again), replaying the fitted size the lost-resize window ate.
+	if (!tab.parked) {
+		fitTab(tab)
+		syncPtySize(tab, spawnCols, spawnRows, opts?.sessionId !== undefined)
+	}
 }
 
 helm.pty.onData((id, data) => {
-	tabs.find(t => t.ptyId === id)?.term.write(data)
+	const tab = findByPty(id)
+	if (!tab) return
+	tab.term.write(data)
+	// Quiet activity dot: first output since parking (once — no per-chunk DOM
+	// work on the pty:data path, §6.2).
+	if (tab.parked && !tab.activity && performance.now() >= tab.activityMuteUntil) {
+		tab.activity = true
+		updateBackgroundUi()
+	}
 })
 
-helm.pty.onExit(id => {
-	const tab = tabs.find(t => t.ptyId === id)
-	if (tab) {
-		tab.ptyId = null // pty is gone; don't kill it again on close
+helm.pty.onExit((id, exitCode) => {
+	const tab = findByPty(id)
+	if (!tab) return
+	tab.ptyId = null // pty is gone; don't kill it again on close
+	if (tab.parked) {
+		// Exited in the background: keep the row (state "Exited"), no toast spam.
+		// The exit burst is a death rattle, not activity — the state says it all.
+		tab.exitCode = exitCode
+		tab.activity = false
+		updateBackgroundUi()
+	} else {
 		closeTab(tab)
 	}
 })
@@ -376,13 +717,18 @@ helm.appearance.onFontStep(step => appearance.stepTermFontSize(step))
 let tabsReady = false
 
 newTabButton.addEventListener('click', () => {
-	if (tabsReady) void createTab()
+	if (tabsReady) void createTerminal()
 })
 helm.tabs.onNew(() => {
-	if (tabsReady) void createTab()
+	if (tabsReady) void createTerminal()
 })
 helm.tabs.onClose(() => {
 	if (activeTab) closeTab(activeTab)
+})
+// ⌘⇧B (Shell menu accelerator — xterm swallows renderer keys): park the
+// active tab into the background list.
+helm.tabs.onBackground(() => {
+	if (tabsReady && activeTab) parkTab(activeTab)
 })
 
 // cmd+1..9 select tab, cmd+shift+[ / ] cycle. Capture phase so the shortcuts
@@ -407,10 +753,35 @@ window.addEventListener(
 	{ capture: true },
 )
 
-// Startup: reattach every dtach session that survived the previous run (one
-// tab per session, saved titles restored); fresh single tab only when nothing
-// survived. Zero tabs stays a valid state after that — closing restored tabs
-// never respawns.
+// --ui-preview=background[-strip] (screenshot harness): park one running and
+// one exited session — real ptys, really parked — so the strip control, badge,
+// and both popover row states are capturable without a daemon or manual setup.
+// `background` opens the popover; `background-strip` leaves it closed.
+async function runUiPreview(): Promise<void> {
+	const preview = helm.uiPreview
+	if (preview !== 'background' && preview !== 'background-strip') return
+	await createTerminal().catch(() => {})
+	const exiting = activeTab
+	if (exiting) {
+		parkTab(exiting)
+		// A real exit, observed through the normal pty:exit path → "Exited (0)".
+		if (exiting.ptyId !== null) helm.pty.write(exiting.ptyId, 'exit\r')
+	}
+	await createTerminal().catch(() => {})
+	const running = activeTab
+	if (running) {
+		parkTab(running)
+		// Output after parking lights the quiet activity dot.
+		if (running.ptyId !== null) helm.pty.write(running.ptyId, 'true\r')
+	}
+	if (preview === 'background') openBackgroundPopover()
+}
+
+// Startup: reattach every dtach session that survived the previous run —
+// non-parked sessions as strip tabs (saved titles restored), parked sessions
+// headless into the background popover. Fresh single tab only when no strip
+// tab survived. Zero tabs stays a valid state after that — closing restored
+// tabs never respawns.
 void (async () => {
 	let restored: RestoredSession[] = []
 	try {
@@ -418,15 +789,21 @@ void (async () => {
 	} catch {
 		// persistence unavailable — fall through to a fresh tab
 	}
-	if (restored.length === 0) {
-		await createTab().catch(() => {})
+	const stripSessions = restored.filter(s => !s.parked)
+	const parkedSessions = restored.filter(s => s.parked)
+	if (stripSessions.length === 0) {
+		await createTerminal().catch(() => {})
 	} else {
-		for (const session of restored) {
+		for (const session of stripSessions) {
 			// One failed reattach must not sink the remaining sessions.
-			await createTab(session).catch(() => {})
+			await createTerminal({ sessionId: session.sessionId, title: session.title }).catch(() => {})
 		}
 		const first = tabs[0]
 		if (first) activate(first)
 	}
+	for (const session of parkedSessions) {
+		await createTerminal({ sessionId: session.sessionId, title: session.title, parked: true }).catch(() => {})
+	}
 	tabsReady = true
+	await runUiPreview()
 })()
