@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { GraceClose, HelmApi, PtySpawnResult, RestoredSession, UiPreview } from './shared'
+import type { GraceClose, HelmApi, PtySpawnResult, RestoredSession, ThemeListEntry, UiPreview } from './shared'
 import type { VigilApi, VigilResult, VigilSnapshot } from './shared-vigil'
 
 // Captured synchronously at preload time so the renderer gets the URL without an async hop.
@@ -10,7 +10,12 @@ const { daemonUrl } = ipcRenderer.sendSync('config:get') as { daemonUrl: string 
 // (main.ts) for screenshot runs; the sidebar auto-navigates to the named page.
 const uiPreviewArg = process.argv.find(arg => arg.startsWith('--ui-preview='))?.slice('--ui-preview='.length)
 const uiPreview: UiPreview | null =
-	uiPreviewArg === 'list' || uiPreviewArg === 'detail' || uiPreviewArg === 'settings' ? uiPreviewArg : null
+	uiPreviewArg === 'list' || uiPreviewArg === 'detail' || uiPreviewArg === 'settings' || uiPreviewArg === 'appearance'
+		? uiPreviewArg
+		: null
+
+// --ui-theme=<presetId>: screenshot runs verify a theme preset visually.
+const uiTheme = process.argv.find(arg => arg.startsWith('--ui-theme='))?.slice('--ui-theme='.length) ?? null
 
 function subscribe<Args extends unknown[]>(channel: string, listener: (...args: Args) => void): () => void {
 	const handler = (_event: IpcRendererEvent, ...args: unknown[]) => listener(...(args as Args))
@@ -43,6 +48,10 @@ const api: HelmApi = {
 	config: {
 		getDaemonUrl: () => daemonUrl,
 	},
+	appearance: {
+		listThemes: () => ipcRenderer.invoke('themes:list') as Promise<ThemeListEntry[]>,
+		onFontStep: listener => subscribe('font:step', listener),
+	},
 	vigil: {
 		subscribe: () => ipcRenderer.invoke('vigil:subscribe') as Promise<VigilSnapshot>,
 		onSnapshot: listener => subscribe('vigil:snapshot', listener),
@@ -64,9 +73,14 @@ const api: HelmApi = {
 	},
 	nav: {
 		onOpenItem: listener => subscribe('nav:open-item', listener),
+		onGo: listener =>
+			subscribe<[string]>('nav:go', direction => {
+				if (direction === 'back' || direction === 'forward') listener(direction)
+			}),
 	},
 	platform: process.platform,
 	uiPreview,
+	uiTheme,
 }
 
 contextBridge.exposeInMainWorld('helm', api)

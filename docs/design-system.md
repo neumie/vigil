@@ -83,10 +83,11 @@ Scale (px / weight / notes). Base letter-spacing is `-0.01em`; only the Label an
 | Label | 11/600, uppercase, `0.06em` | Section labels, wordmark, field labels. `--text-2` |
 | Chip | 10/700, uppercase, `0.04em` | Chip/badge text only. Never for standalone labels |
 | Mono inline | 11/400 mono | Branch names, ids, kbd |
-| Terminal | 13/400 mono, cell height ≈19px | xterm: `lineHeight: 1.2` multiplier lands 13px at ~19px cells (`helm/src/renderer/renderer.ts:233`) — a literal 1.45 would render ~22px. Theme is `termTheme` (`renderer.ts:115`): bg `--well`, fg `--text-0`, cursor `--accent`, selection `rgba(76,154,255,0.25)` |
+| Terminal | 13/400 mono (default), cell height ≈19px | xterm: `lineHeight: 1.2` multiplier lands 13px at ~19px cells (`helm/src/renderer/renderer.ts`) — a literal 1.45 would render ~22px. Size is user-adjustable **9–24px** via ⌘= / ⌘− / ⌘0 or Settings → Appearance (§2.8). Theme comes from the `--term-*` / `--ansi-*` tokens (§2.8): bg `--term-bg`, fg `--term-fg`, cursor `--term-cursor`, selection `--term-selection` |
 
 - `-webkit-font-smoothing: antialiased` on the body.
 - Never use font sizes outside this scale. Never bold below 600 or above 700.
+- **UI text scale**: the sidebar's type scale multiplies by `--ui-scale` (0.92 / 1 / 1.08 — Settings → Appearance): every sidebar `font-size` is written `calc(<spec px> * var(--ui-scale))`. Layout metrics (heights, padding, hit targets) and the terminal do NOT scale.
 
 ### 2.3 Spacing
 
@@ -155,6 +156,16 @@ Exactly two shadows. Attached surfaces (cards in flow, banners, rows) get **no s
 | Toasts | 100 |
 | Injected widget root (extension shadow DOM, competes with host page) | 2147483647 — allowed ONLY at the shadow-root host; layers inside the widget use this table |
 
+### 2.8 Theming
+
+Every color in this document is a **CSS custom property** — components MUST consume `var(--token)`, never literals; a hex/rgba literal in component CSS is drift. Beyond §2.1, the token set includes `--accent-fill-hover`, `--on-accent` (text on accent fills), `--thumb`/`--thumb-hover` (scrollbars + toast countdown), `--scrim`, `--shadow-1`/`--shadow-2`, the terminal surface (`--term-bg`/`--term-fg`/`--term-cursor`/`--term-cursor-accent`/`--term-selection`), and the ANSI 16 as `--ansi-<name>`/`--ansi-bright-<name>`. The canonical values live in `helm/src/theme-presets.ts` (`HELM_TOKENS`); `helm/src/renderer/styles.css` `:root` mirrors them only for the pre-JS first paint — keep both in sync.
+
+- **Soft fills are derived, not stored**: `--<tone>-soft: color-mix(in srgb, var(--<tone>) 15%, transparent)`. Themes override the tone; every chip/banner/soft border follows automatically. Never hand-mix a per-component alpha (the §2.1 0.15 rule, mechanized).
+- **A theme is a flat JSON object of token overrides**, stored as `<userData>/themes/<id>.json` (`{ "name": "…", "tokens": { "--token": "value", … } }`). Main seeds the presets as editable files on first list (`themes:list` IPC) and any other `*.json` dropped in the dir appears in the Appearance theme picker; sparse themes backfill missing tokens from the Helm base. Runtime application is owned by `helm/src/renderer/appearance.ts`: `documentElement.style.setProperty` per token plus an xterm `options.theme` rebuild from the `--term-*`/`--ansi-*` tokens (`termThemeFromTokens`) — CSS and terminal can never disagree.
+- **Presets: "Helm" + "High contrast".** Deliberately NO light preset: the §2.1 ladder is dark-only — the white-alpha hairline/fill system and the terminal palette assume a dark surface, so a genuinely good light theme needs its own ladder and fill system designed from scratch, not inverted tokens. High contrast raises the text ladder to white, doubles the line/fill alphas, deepens the wells to black, and brightens the ANSI 16.
+- **Appearance state** (active theme id, per-token overrides from the color wells, terminal font size, UI text scale) persists in `localStorage['helm.appearance']` — same persistence surface as the split width. Settings → Appearance live-applies every change; "Reset to preset" drops the overrides; switching themes starts clean. The accent color well writes the whole accent family (`--accent`, `--accent-fill`, derived `--accent-fill-hover`) so buttons, links, and focus rings stay coherent.
+- **Type knobs**: terminal font size **9–24px, default 13**, via ⌘= / ⌘− / ⌘0 — View-menu accelerators forwarded over IPC (the ⌘T pattern; the stock `viewMenu` zoom roles are replaced) — or the Appearance stepper; terminals refit on change. UI text scale is `--ui-scale` per §2.2.
+
 ---
 
 ## 3. Components
@@ -181,13 +192,14 @@ Tones:
 | ghost | transparent, no border, `--text-2` | bg `--fill-subtle`, text `--text-0` | Icon buttons, overflow "…", back chevron, close × |
 
 - Radius `--radius-md`. Disabled: `opacity: 0.45; cursor: default` — never a different color set.
+- A ghost control sitting on a pane edge keeps its **text** on the pane's 12px left-edge rhythm: keep the 8px padding for the hover fill but pull it back with a matching negative margin (`padding: 0 8px; margin-left: -8px` — the list page's project trigger), so the fill extends into the gutter and the label stays flush at x=12.
 - Focus: `outline: 2px solid var(--accent); outline-offset: 2px` on `:focus-visible` only.
 - Transitions: background/color/border 140ms ease-out.
 - **Do** keep exactly one primary button per surface (principle 1). **Don't** place two filled buttons adjacent; **don't** make a destructive action primary-filled — danger tone is always outline-style.
 
 ### 3.2 Segmented control
 
-- Outer: height **28**, padding 2, radius `--radius-md`, background `--fill-subtle`, 1px `--hairline` border.
+- Outer: height **28**, padding 2, radius `--radius-md`, background `--fill-subtle`, 1px `--hairline` ring. The ring is an **inset box-shadow, not a border**, so the arithmetic is exact: 2px padding + 24px option + 2px padding = 28 (a real border would push the track to 30 or squeeze the options to 22 — verify with DevTools: outer 28, padding 2, option 24).
 - Options: height 24, radius `--radius-sm`, text 12/600, `--text-1`; equal-width columns (`grid-template-columns: repeat(n, 1fr)`).
 - Active option: background `--fill-raised`, text `--text-0`. Filter/segmented navigation is NEVER accent-filled — accent fill on a segment is allowed only for a true either/or commit choice (e.g. the widget's agent picker), and then it uses `--accent-fill` + white.
 - Trailing count badges inside options: 11px tabular, `--text-2` (active: `--text-1`), separated by 4px. No pill background — bare number.
@@ -236,6 +248,7 @@ Reference implementation: `helm/src/renderer/toast.ts` + `styles.css` "toasts" b
 - Select: `appearance: none` + inline SVG chevron data-URI, stroke `#62666e` (`--text-2`), positioned `right 10px center`, right padding 28. Option list background `--chrome`.
 - Field labels: Label type style (11/600 uppercase 0.06em, `--text-2`), 4px above the field.
 - Disabled: `opacity: 0.5; cursor: default`.
+- **Color wells** (`<input type="color">`, `.color-input`): well = `--fill-subtle`, 1px `--hairline`, radius 6. Chromium's default swatch bezel (1px gray border, square corners) MUST be stripped via the pseudo-elements: `::-webkit-color-swatch-wrapper { padding: 3px }` + `::-webkit-color-swatch { border: none; border-radius: 3px }` — inner radius = outer radius − padding, so the color chip sits inset on the well with token-only lines.
 - **Don't** use browser-default selects or native focus rings; **don't** make inputs taller than 28 to "feel friendly" — density is the register.
 
 ### 3.8 Menus (overflow / popover)
@@ -263,11 +276,16 @@ For pane-scoped tasks like New Item.
 The narrow-pane navigation model (Mail-on-iPhone): list → detail → sub-page as a push stack inside the pane. **No side-by-side master/detail below 480px pane width, ever.**
 
 - Header: height 36, background inherits the pane, 1px `--hairline` bottom border, z-layer 10. Contents: 28×28 ghost back-chevron button + page title 13/600 single-line ellipsis; optional one trailing icon button.
-- **Header title never duplicates a visible page title.** A page that renders its own 15px page title (detail) shows a static context label in the header ("Item") until the page title scrolls under the header, then swaps in the real title with a **150ms ease-out opacity fade** (fade only, no movement; the swap back on scroll-up is instant). Pages whose header is the only title (Plan, Task, Settings) keep a static header title.
+- **The header title names the content, never its type.** An item's detail header shows the item's `displayName ?? title` (single-line ellipsis) at all scroll positions — a literal type word ("Item") never appears as a header title. The page may repeat the name in full below as its 15px page title (the header copy is truncated; the page title wraps). Sub-pages of an already-named object (Plan, Task) and pages whose name IS the page (Settings, Archive) keep a static header title.
 - Forward: incoming page slides `translateX(100%)`→0 over **150ms ease-out**; outgoing page slides 0→`translateX(-25%)` (parallax) and dims to 0.9 opacity. Back: exact reverse at 120ms.
 - Reduced motion: instant swap (the global clamp handles it).
 - The list page preserves scroll position and selection across push/pop. Deep pages (plan preview, settings section) push onto the same stack; Esc = back.
-- **Do** keep every pushed page self-sufficient (own header, own back). **Don't** animate anything except the two page transforms; **don't** push more than 3 levels — flatten the IA instead.
+- **Gestures — every pushed page inherits these** (implementation: `helm/src/renderer/sidebar/swipe.ts` + the nav-stack wiring in `SidebarRoot.tsx`):
+  - **Two-finger swipe-back** (macOS trackpad, wheel `deltaX`): an interactive edge-tracking pop. The gesture qualifies on its FIRST event only — horizontal-dominant (`|deltaX| > |deltaY|`), leftward-content (`deltaX < 0` = fingers moving right under natural scrolling), a page to pop, and no horizontally-scrollable ancestor under the pointer that can still scroll left (`scrollLeft > 0` consumes the pan; at 0 it falls through to navigation — Safari's edge rule). While tracking, the top page translates 1:1 with the accumulated delta (inline transform, no easing) and the previous page peeks: parallax −25%→0 under a `--scrim` dimming layer fading 1→0. Release **commits past 50% pane width** or on a **flick** (recent velocity ≥ 0.7 px/ms with ≥ 40px travel): the remaining travel animates 150ms ease-out, then the stack pops with NO pop animation (replaying it would flash). Below threshold it **springs back in 160ms**. Gesture end = **90ms** of wheel idle; a **250ms cooldown** eats the momentum tail so one long swipe can't pop two pages. Reduced motion: no tracked animation at all — a threshold-crossing gesture pops instantly.
+  - **Native three-finger swipe**: `BrowserWindow` `'swipe'` event → back/forward over the same channel as the Go menu.
+  - **Keyboard**: ⌘[ back, ⌘] forward — Go-menu accelerators, not renderer listeners (§4: xterm swallows renderer keys). **Mouse back/forward buttons** (`event.button` 3/4, plus `app-command` mice) → back/forward.
+  - **Forward** re-pushes the most recently popped route; any new push clears the forward memory.
+- **Do** keep every pushed page self-sufficient (own header, own back). **Don't** animate anything except the two page transforms (the swipe scrim's opacity is part of the pop transform pair); **don't** push more than 3 levels — flatten the IA instead.
 
 ### 3.11 Action bar (pinned bottom)
 
@@ -282,7 +300,7 @@ Detail pages pin their actions; content scrolls, actions don't.
 - Padding 10 12, radius `--radius-md`, text 12 line-height 1.5, `word-break: break-word`.
 - Error: `--danger` text on danger-soft fill. Warning: `--warn` on warn-soft. Info: `--text-1` on `--fill-subtle`.
 - Optional ghost dismiss × (16px glyph, opacity 0.6→1 on hover), top-aligned.
-- Long content (root-cause paragraphs): clamp to 4 lines (`-webkit-line-clamp: 4`), expand on click — the block itself is the toggle (`widget.styles.ts` `.vg-notice`).
+- Long content (root-cause paragraphs, result summaries): clamp to 4 lines (`-webkit-line-clamp: 4`), expand on click — the block itself is the toggle (`widget.styles.ts` `.vg-notice`, helm `ClampText`). The toggle gets a quiet **"More"/"Less" cue** in the Label type style (11/600 uppercase 0.06em, `--text-2`, hover `--text-1`), 4px below the text, shown only when the content actually overflows the clamp.
 - **Don't** use a banner for success — success is a status change (dot/chip), not an interruption.
 
 ### 3.13 Empty & waiting states
@@ -296,8 +314,10 @@ Quiet and directive: say what the state is, then what to do.
 
 ### 3.14 Terminal well
 
-- Background `--well`; text inset 14 16 (`.term-holder` padding). The topbar/tab strip alignment mirrors the well's 16px text inset.
-- xterm theme = `termTheme` (`helm/src/renderer/renderer.ts:115`) — the canonical ANSI-16 for any future terminal surface. Cursor `--accent`, selection `rgba(76,154,255,0.25)`.
+- Background `--well`; text inset via `.term-holder` padding — **top/bottom 14, left 16, right 0**. The right padding MUST stay 0: xterm's scroll container (`.xterm-viewport`) lives inside the holder, so any right padding pushes its scrollbar off the pane edge into the well (Terminal.app never does that). Right-side breathing room comes from FitAddon's integer-column remainder (0–1 cell). The topbar/tab strip alignment mirrors the well's 16px **left** text inset.
+- Terminal scrollbar: xterm's own, styled at the pane edge — 8px wide, transparent track, thumb `rgba(255,255,255,0.14)` (hover `0.24`), radius 999. Styling `::-webkit-scrollbar` makes it a classic (non-overlay) 8px gutter that FitAddon subtracts from the column budget. No idle fade — scrollbar pseudo-elements don't transition; a JS fader isn't worth it.
+- Tab labels: shell OSC titles matching `user@host[:path]` normalize to the trailing path segment ("vigil"); a bare `user@host` falls back to "zsh"; other titles pass through. The raw title survives as the label's tooltip.
+- xterm theme = the `--term-*` / `--ansi-*` tokens (§2.8), rebuilt into an xterm theme object by `appearance.ts` (`termThemeFromTokens`) — `HELM_TOKENS` in `helm/src/theme-presets.ts` is the canonical ANSI-16 for any future terminal surface. Defaults: cursor `--accent`, selection `rgba(76,154,255,0.25)`.
 - **Don't** restyle ANSI colors per surface; **don't** put chrome-level controls inside the well.
 
 ### 3.15 Cards & info rows (sidebar detail/settings)
@@ -306,9 +326,10 @@ The in-flow content card and its fact/navigation rows (`helm/src/renderer/sideba
 
 - Card: 1px `--hairline` border, radius `--radius-lg`, padding 12, transparent background (depth from the ladder — cards in flow get no fill and no shadow). Optional head row: Label-style section label left, one small control or chip right.
 - Info row (static fact): min-height 20, 12px value `--text-0` right-aligned single-line ellipsis; label is the Label type style. Mono values (branch, refs) use Mono inline 11.
-- Tappable row (`.action-row`): min-height 28, radius `--radius-sm`, hover `--fill-subtle`. Trailing glyph declares the behavior — chevron ›= pushes a sub-page, ↗ = opens externally, copy glyph = copies to clipboard (confirm with a toast). ONLY external-link values are `--accent`; push/copy values stay `--text-0` so the pane doesn't read as a link farm.
+- **Row rhythm in a flush card** (the Details card, settings lists — `.card-flush`, gap 0, rows at exact pitch): fact rows AND copy/external action rows share **one 28px pitch** (`.card-flush .info-row` min-height 28, center-aligned; `.action-row` min-height 28); only rows that navigate — push rows (chevron ›, `.action-row-push`) and nav rows — sit at the **36px pitch**. Two pitches, one meaning: 28 = read/act in place, 36 = go somewhere.
+- Tappable row (`.action-row`): min-height 28 (push rows 36, above), radius `--radius-sm`, hover `--fill-subtle`. Trailing glyph declares the behavior — chevron ›= pushes a sub-page, ↗ = opens externally, copy glyph = copies to clipboard (confirm with a toast). ONLY external-link values are `--accent`; push/copy values stay `--text-0` so the pane doesn't read as a link farm.
 - Nav row (`.action-row-nav` — the settings section list): a tappable row whose **title is the content, not a label** — min-height **36** (36px pitch), title 13/400 `--text-0` sentence case, value 12 `--text-1` right-aligned single-line ellipsis, chevron `--text-2`. Nav rows stack flush (card gap 0 via `.card-flush`) inside cards with head rows; grouping comes from the card head row, never from a title prefix ("AI · …" is a namespace hack). Every nav row shows a current-state value with units and real state ("60s", "2 of 3 on", "default") — a blank cell next to a chevron reads as broken, a unit-less number gives no direction, and independent toggles never collapse into one fake on/off.
-- **Don't** mix behaviors on one row; **don't** accent-color a value that doesn't leave the app; **don't** use a placeholder verb ("view", "open") as a value — the value carries the fact (destination name / short id, e.g. "Contember #4821"); one object gets one row — fold source + task views into a single push row and demote the external ↗ to the pushed page's header.
+- **Don't** mix behaviors on one row; **don't** accent-color a value that doesn't leave the app; **don't** use a placeholder verb ("view", "open") or a bare destination name as a value — the value carries the fact (destination + short id: "Contember #4821", "GitHub #132" parsed from the PR url — "GitHub" alone never appears); one object gets one row — fold source + task views into a single push row and demote the external ↗ to the pushed page's header.
 
 ### 3.16 Toggle switch
 
@@ -319,7 +340,7 @@ The in-flow content card and its fact/navigation rows (`helm/src/renderer/sideba
 ### 3.17 Pane scrollbars
 
 - `color-scheme: dark` on `:root` so native form controls and fallback scrollbars render dark.
-- Custom webkit scrollbar inside panes: 10px gutter, transparent track, thumb `rgba(255,255,255,0.14)` inset 3px via `background-clip: content-box` (hover `0.24`), radius 999. Terminal keeps xterm's own scrollbar.
+- Custom webkit scrollbar inside panes: 10px gutter, transparent track, thumb `rgba(255,255,255,0.14)` inset 3px via `background-clip: content-box` (hover `0.24`), radius 999. Terminal keeps xterm's own scrollbar, styled at the pane edge per §3.14 (8px, same thumb alphas).
 - **Don't** leave a default (light) scrollbar on any pane surface.
 
 ---

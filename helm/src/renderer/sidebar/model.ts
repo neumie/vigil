@@ -19,6 +19,7 @@ export type Route =
 	| { kind: 'task'; id: string }
 	| { kind: 'settings' }
 	| { kind: 'settings-section'; sectionId: string }
+	| { kind: 'appearance' }
 
 // ---------------------------------------------------------------------------
 // Work buckets

@@ -1,5 +1,10 @@
 /* Native sidebar — docs/design-system.md is law. Tokens come from styles.css
- * :root. All px values below trace to a §-numbered spec table. */
+ * :root. All px values below trace to a §-numbered spec table.
+ *
+ * UI text scale (§2.8): every font-size is calc(<spec px> * var(--ui-scale)),
+ * where --ui-scale is 0.92 / 1 / 1.08 (Settings → Appearance). Text scales,
+ * layout metrics (heights, padding, hit targets) stay fixed; the terminal is
+ * unaffected (its size is an xterm option). New rules MUST keep the calc. */
 
 /* ---------- shell & push navigation (§3.10) ---------- */
 
@@ -25,13 +30,13 @@
 	background: transparent;
 }
 .sidebar ::-webkit-scrollbar-thumb {
-	background: rgba(255, 255, 255, 0.14);
+	background: var(--thumb);
 	border: 3px solid transparent;
 	border-radius: 999px;
 	background-clip: content-box;
 }
 .sidebar ::-webkit-scrollbar-thumb:hover {
-	background-color: rgba(255, 255, 255, 0.24);
+	background-color: var(--thumb-hover);
 }
 
 .nav-page {
@@ -116,7 +121,7 @@
 .push-title {
 	flex: 1;
 	min-width: 0;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 600;
 	color: var(--text-0);
 	overflow: hidden;
@@ -127,17 +132,6 @@
 
 .push-trailing {
 	flex: none;
-}
-
-/* Detail header title reveal (§3.10): the real title fades in — opacity only,
- * 150ms ease-out — once the 15px page title has scrolled under the header. */
-@keyframes push-title-in {
-	from {
-		opacity: 0;
-	}
-}
-.push-title-in {
-	animation: push-title-in 150ms ease-out;
 }
 
 .page-scroll {
@@ -163,7 +157,7 @@
 	border-radius: 6px;
 	background: none;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	cursor: pointer;
@@ -188,10 +182,10 @@
 
 .btn-primary {
 	background: var(--accent-fill);
-	color: #fff;
+	color: var(--on-accent);
 }
 .btn-primary:hover:not(:disabled) {
-	background: #5a9dff;
+	background: var(--accent-fill-hover);
 }
 
 .btn-quiet {
@@ -204,11 +198,11 @@
 }
 
 .btn-danger {
-	border: 1px solid rgba(242, 88, 91, 0.15);
+	border: 1px solid var(--danger-soft);
 	color: var(--danger);
 }
 .btn-danger:hover:not(:disabled) {
-	background: rgba(242, 88, 91, 0.15);
+	background: var(--danger-soft);
 }
 
 .btn-ghost {
@@ -255,7 +249,9 @@
 	gap: 8px;
 }
 
-/* Compact project filter: a ghost menu button, not a giant select. */
+/* Compact project filter: a ghost menu button, not a giant select. Its text
+ * sits flush on the pane's 12px left edge rhythm — the 8px padding is pulled
+ * back by a negative margin so only the hover fill extends into the gutter. */
 .project-trigger {
 	display: inline-flex;
 	align-items: center;
@@ -263,12 +259,13 @@
 	height: 28px;
 	max-width: 180px;
 	padding: 0 8px;
+	margin-left: -8px;
 	border: none;
 	border-radius: 6px;
 	background: none;
 	color: var(--text-1);
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	cursor: pointer;
@@ -293,11 +290,14 @@
 	padding: 8px 12px;
 }
 
+/* Track is exactly 28 = 2px padding + 24px option + 2px padding; the 1px
+ * hairline ring is an inset box-shadow so it costs no inner space (§3.2). */
 .segmented {
 	display: grid;
 	height: 28px;
 	padding: 2px;
-	border: 1px solid var(--hairline);
+	border: none;
+	box-shadow: inset 0 0 0 1px var(--hairline);
 	border-radius: 6px;
 	background: var(--fill-subtle);
 }
@@ -307,14 +307,14 @@
 	align-items: center;
 	justify-content: center;
 	gap: 4px;
-	height: 22px;
+	height: 24px;
 	min-width: 0;
 	border: none;
 	border-radius: 4px;
 	background: none;
 	color: var(--text-1);
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	cursor: pointer;
@@ -331,11 +331,11 @@
 /* Accent fill only for a true either/or commit choice (agent picker). */
 .segmented-commit .segment-active {
 	background: var(--accent-fill);
-	color: #fff;
+	color: var(--on-accent);
 }
 
 .segment-count {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	font-weight: 400;
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
@@ -344,7 +344,7 @@
 	color: var(--text-1);
 }
 .segmented-commit .segment-active .segment-count {
-	color: #fff;
+	color: var(--on-accent);
 }
 
 /* ---------- list rows (§3.3) ---------- */
@@ -390,7 +390,7 @@
 .item-row-title {
 	flex: 1;
 	min-width: 0;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 500;
 	color: var(--text-0);
 	overflow: hidden;
@@ -400,7 +400,7 @@
 
 .item-row-time {
 	flex: none;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
 }
@@ -411,7 +411,7 @@
 	gap: 8px;
 	min-width: 0;
 	padding-left: 16px; /* dot 8px + 8px gap — meta aligns under the title */
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--text-2);
 }
 
@@ -466,7 +466,7 @@
 	flex: none;
 	padding: 2px 7px;
 	border-radius: 999px;
-	font-size: 10px;
+	font-size: calc(10px * var(--ui-scale));
 	font-weight: 700;
 	line-height: 1.4;
 	letter-spacing: 0.04em;
@@ -476,23 +476,23 @@
 }
 .chip-gray {
 	color: var(--neutral);
-	background: rgba(138, 143, 152, 0.15);
+	background: var(--neutral-soft);
 }
 .chip-blue {
 	color: var(--accent);
-	background: rgba(76, 154, 255, 0.15);
+	background: var(--accent-soft);
 }
 .chip-green {
 	color: var(--success);
-	background: rgba(78, 201, 138, 0.15);
+	background: var(--success-soft);
 }
 .chip-amber {
 	color: var(--warn);
-	background: rgba(224, 179, 65, 0.15);
+	background: var(--warn-soft);
 }
 .chip-red {
 	color: var(--danger);
-	background: rgba(242, 88, 91, 0.15);
+	background: var(--danger-soft);
 }
 
 .chip-row {
@@ -518,7 +518,7 @@
 	border: 1px solid var(--hairline);
 	border-radius: 8px;
 	background: var(--chrome);
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+	box-shadow: var(--shadow-1);
 	z-index: 40;
 	outline: none;
 	animation: menu-in 120ms ease-out;
@@ -547,7 +547,7 @@
 	background: none;
 	color: var(--text-0);
 	font-family: inherit;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	letter-spacing: -0.01em;
 	text-align: left;
 	cursor: pointer;
@@ -569,7 +569,7 @@
 }
 .menu-item-danger:hover,
 .menu-item-danger.menu-item-active {
-	background: rgba(242, 88, 91, 0.15);
+	background: var(--danger-soft);
 }
 
 .menu-separator {
@@ -594,14 +594,14 @@
 }
 
 .empty-title {
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 600;
 	color: var(--text-1);
 }
 
 .empty-detail {
 	margin-top: 6px;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	color: var(--text-2);
 	line-height: 1.5;
 }
@@ -609,7 +609,7 @@
 /* ---------- detail page ---------- */
 
 .detail-title {
-	font-size: 15px;
+	font-size: calc(15px * var(--ui-scale));
 	font-weight: 600;
 	line-height: 1.4;
 	color: var(--text-0);
@@ -618,7 +618,7 @@
 
 .detail-subtitle {
 	margin-top: -8px; /* tighten against the 12px page gap */
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-1);
 	overflow-wrap: break-word;
@@ -636,13 +636,13 @@
 }
 
 .detail-elapsed {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
 }
 
 .meta-text {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--text-2);
 }
 
@@ -665,16 +665,21 @@
 	min-height: 16px;
 }
 
-/* Flush card: zero row gap so nav rows land at their exact 36px pitch. */
+/* Flush card: zero row gap so rows land at their exact pitch (§3.15) —
+ * fact + copy/external rows 28px, push/nav rows 36px. */
 .card-flush {
 	gap: 0;
 }
 .card-flush .card-head {
 	margin-bottom: 4px;
 }
+.card-flush .info-row {
+	min-height: 28px;
+	align-items: center;
+}
 
 .section-label {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -683,7 +688,7 @@
 }
 
 .section-description {
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-1);
 }
@@ -695,12 +700,12 @@
 	justify-content: space-between;
 	gap: 12px;
 	min-height: 20px;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 }
 
 .info-label {
 	flex: none;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -719,7 +724,7 @@
 
 .mono {
 	font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 }
 
 /* Tappable rows: chevron pushes a sub-page, ↗ opens externally. */
@@ -736,7 +741,7 @@
 	border-radius: 4px;
 	background: none;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	letter-spacing: -0.01em;
 	text-align: left;
 	cursor: pointer;
@@ -769,6 +774,11 @@
 	color: var(--text-2);
 }
 
+/* Push rows (chevron ›) read as navigation: 36px pitch, same as nav rows. */
+.action-row-push {
+	min-height: 36px;
+}
+
 /* Nav rows (§3.15): the title IS the content — primary text, not a faint
  * label; the value is the secondary current-state summary. 36px pitch. */
 .action-row-nav {
@@ -777,7 +787,7 @@
 .action-row-title {
 	flex: none;
 	min-width: 0;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 400;
 	color: var(--text-0);
 	overflow: hidden;
@@ -790,7 +800,7 @@
 
 /* Intent card */
 .intent-text {
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-0);
 	overflow-wrap: break-word;
@@ -805,7 +815,7 @@
 .intent-questions li {
 	display: flex;
 	gap: 8px;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-1);
 	overflow-wrap: anywhere;
@@ -818,17 +828,17 @@
 	width: 16px;
 	height: 16px;
 	border-radius: 999px;
-	font-size: 10px;
+	font-size: calc(10px * var(--ui-scale));
 	font-weight: 700;
 }
 
 .security-note {
 	padding: 10px 12px;
 	border-radius: 6px;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--danger);
-	background: rgba(242, 88, 91, 0.15);
+	background: var(--danger-soft);
 	overflow-wrap: break-word;
 }
 
@@ -843,7 +853,7 @@
 	border: none;
 	border-radius: 6px;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	letter-spacing: -0.01em;
 	text-align: left;
@@ -852,18 +862,18 @@
 }
 .banner-error {
 	color: var(--danger);
-	background: rgba(242, 88, 91, 0.15);
+	background: var(--danger-soft);
 }
 .banner-warning {
 	color: var(--warn);
-	background: rgba(224, 179, 65, 0.15);
+	background: var(--warn-soft);
 }
 .banner-info {
 	color: var(--text-1);
 	background: var(--fill-subtle);
 }
 .banner-label {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -877,7 +887,7 @@
 	overflow: hidden;
 }
 
-/* Clamped body text; the block is the toggle. */
+/* Clamped body text; the block is the toggle, the cue names the direction. */
 .clamp-text {
 	display: block;
 	width: 100%;
@@ -885,20 +895,38 @@
 	border: none;
 	background: none;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	letter-spacing: -0.01em;
 	color: var(--text-1);
 	text-align: left;
-	overflow-wrap: break-word;
-	white-space: pre-wrap;
 	cursor: pointer;
 }
-.clamp-text.clamped {
+.clamp-body {
+	display: block;
+	overflow-wrap: break-word;
+	white-space: pre-wrap;
+}
+.clamp-text.clamped .clamp-body {
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 	white-space: normal;
+}
+/* Quiet More/Less cue — Label type style (11/600 uppercase 0.06em). */
+.clamp-cue {
+	display: block;
+	margin-top: 4px;
+	font-size: calc(11px * var(--ui-scale));
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-2);
+	user-select: none;
+	transition: color 140ms ease-out;
+}
+.clamp-text:hover .clamp-cue {
+	color: var(--text-1);
 }
 
 /* ---------- run section ---------- */
@@ -909,7 +937,7 @@
 	border: none;
 	background: none;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	font-weight: 600;
 	color: var(--accent);
 	cursor: pointer;
@@ -924,7 +952,7 @@
 	background: var(--well);
 	color: var(--text-1);
 	font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	line-height: 1.6;
 	white-space: pre-wrap;
 	word-break: break-word;
@@ -972,7 +1000,7 @@
 	min-height: 28px;
 	padding: 4px 12px;
 	font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--accent);
 	cursor: pointer;
 	user-select: none;
@@ -990,7 +1018,7 @@
 	max-height: 320px;
 	overflow: auto;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.6;
 	color: var(--text-1);
 	white-space: pre-wrap;
@@ -1005,14 +1033,14 @@
 }
 
 .task-heading {
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 600;
 	color: var(--text-0);
 	overflow-wrap: break-word;
 }
 
 .task-text {
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-1);
 	white-space: pre-wrap;
@@ -1032,7 +1060,7 @@
 	border-radius: 4px;
 	background: none;
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	letter-spacing: -0.01em;
 	color: var(--accent);
 	text-align: left;
@@ -1057,11 +1085,11 @@
 	border-left: 1px solid var(--hairline);
 }
 .comment-meta {
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	color: var(--text-2);
 }
 .comment-body {
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	line-height: 1.5;
 	color: var(--text-1);
 	white-space: pre-wrap;
@@ -1074,7 +1102,7 @@
 .field-label {
 	display: block;
 	margin-bottom: 4px;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 	font-weight: 600;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -1092,7 +1120,7 @@
 	background: var(--fill-subtle);
 	color: var(--text-0);
 	font-family: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	letter-spacing: -0.01em;
 	outline: none;
 	transition: border-color 140ms ease-out;
@@ -1111,7 +1139,7 @@
 	cursor: default;
 }
 .input-invalid {
-	border-color: rgba(242, 88, 91, 0.5);
+	border-color: var(--danger-strong);
 }
 
 .textarea {
@@ -1121,7 +1149,7 @@
 	line-height: 1.5;
 	resize: vertical;
 	font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-scale));
 }
 
 .select {
@@ -1148,7 +1176,7 @@
 	min-height: 28px;
 }
 .toggle-label {
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-scale));
 	color: var(--text-0);
 }
 
@@ -1180,7 +1208,7 @@
 }
 .toggle-on .toggle-knob {
 	transform: translateX(14px);
-	background: #fff;
+	background: var(--on-accent);
 }
 
 .color-field {
@@ -1196,6 +1224,16 @@
 	border-radius: 6px;
 	background: var(--fill-subtle);
 	cursor: pointer;
+}
+/* Kill Chromium's default gray swatch bezel (§3.7: no browser-default
+   control chrome). Chip sits inset on the well's --fill-subtle; inner
+   radius = outer 6px − 3px padding. */
+.color-input::-webkit-color-swatch-wrapper {
+	padding: 3px;
+}
+.color-input::-webkit-color-swatch {
+	border: none;
+	border-radius: 3px;
 }
 
 /* ---------- sheet (§3.9) ---------- */
@@ -1214,7 +1252,7 @@
 	position: absolute;
 	inset: 0;
 	border: none;
-	background: rgba(0, 0, 0, 0.4);
+	background: var(--scrim);
 	cursor: default;
 	animation: scrim-in 150ms ease-out;
 }
@@ -1236,7 +1274,7 @@
 	border: 1px solid var(--hairline);
 	border-radius: 8px;
 	background: var(--chrome);
-	box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.35);
+	box-shadow: var(--shadow-2);
 	animation: sheet-in 150ms ease-out;
 }
 @keyframes sheet-in {
@@ -1254,7 +1292,7 @@
 	margin-bottom: 12px;
 }
 .sheet-title {
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-scale));
 	font-weight: 600;
 	color: var(--text-0);
 }
@@ -1277,4 +1315,73 @@
 	justify-content: flex-end;
 	gap: 8px;
 	margin-top: 16px;
+}
+
+/* ---------- interactive swipe-back (§3.10 gestures) ---------- */
+
+/* While a two-finger gesture drives the pop, inline transforms own the pages:
+ * kill entrance animations so tracking is 1:1 with the fingers. The commit /
+ * spring-back easing is set inline by the controller (swipe.ts). */
+.nav-page.nav-swiping {
+	animation: none !important;
+}
+
+/* Dimming scrim over the peeking previous page; opacity 1→0 with progress.
+ * Uses --scrim so themes carry it. Injected/removed by the controller. */
+.swipe-scrim {
+	position: absolute;
+	inset: 0;
+	background: var(--scrim);
+	opacity: 1;
+	pointer-events: none;
+	z-index: 30;
+}
+
+/* ---------- appearance page (§2.8 theming) ---------- */
+
+.stepper {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.stepper-value {
+	min-width: 48px;
+	text-align: center;
+	font-size: calc(12px * var(--ui-scale));
+	color: var(--text-0);
+	font-variant-numeric: tabular-nums;
+	user-select: none;
+}
+
+/* Color wells: 2-up grid of token swatches (terminal palette + accent). */
+.swatch-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 4px 12px;
+}
+
+.swatch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 28px;
+	min-width: 0;
+}
+
+.swatch .color-input {
+	flex: none;
+	width: 24px;
+	height: 24px;
+}
+
+.swatch-label {
+	flex: 1;
+	min-width: 0;
+	font-size: calc(12px * var(--ui-scale));
+	color: var(--text-1);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	user-select: none;
 }

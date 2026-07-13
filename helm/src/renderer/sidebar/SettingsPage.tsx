@@ -4,7 +4,7 @@
 // daemon owns which fields exist and how secrets redact). Draft state lives in
 // a store owned by SidebarRoot so edits survive section navigation.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type {
 	ConfigDocument,
 	ConfigEditField,
@@ -12,6 +12,7 @@ import type {
 	ConfigEditListControl,
 	ConfigEditSection,
 } from '../../shared-vigil'
+import { appearance } from '../appearance'
 import { showToast } from '../toast'
 import {
 	ActionRow,
@@ -160,21 +161,35 @@ function sectionRowTitle(section: ConfigEditSection): string {
 	return section.title.replace(/^AI\s*·\s*/, '')
 }
 
-/** Root settings page: grouped section cards; each row pushes its own page. */
+/** Root settings page: the app-local Helm card (Appearance — no daemon
+ *  involved, so it renders even when config is unavailable), then grouped
+ *  daemon section cards; each row pushes its own page. */
 export function SettingsPage({
 	store,
 	onBack,
 	onOpenSection,
+	onOpenAppearance,
 }: {
 	store: SettingsStore
 	onBack: () => void
 	onOpenSection: (sectionId: string) => void
+	onOpenAppearance: () => void
 }) {
 	const sections = store.doc?.edit.sections ?? []
+	const look = useSyncExternalStore(appearance.subscribe, appearance.getSnapshot)
+	const themeName = look.themes.find(theme => theme.id === look.state.themeId)?.name ?? look.state.themeId
 	return (
 		<div className="page-frame">
 			<PushHeader title="Settings" onBack={onBack} />
 			<div className="page-scroll">
+				<Card label="Helm" flush>
+					<ActionRow
+						nav
+						label="Appearance"
+						value={`${themeName} · ${look.state.termFontSize}px`}
+						onClick={onOpenAppearance}
+					/>
+				</Card>
 				{store.loadError ? (
 					<EmptyState title="Config unavailable" detail={store.loadError} />
 				) : sections.length === 0 ? (
@@ -187,7 +202,7 @@ export function SettingsPage({
 									key={section.id}
 									nav
 									label={sectionRowTitle(section)}
-									value={sectionSummary(section, store.draft)}
+									value={sectionSummary(section, store.draft, sections)}
 									onClick={() => onOpenSection(section.id)}
 								/>
 							))}
@@ -203,7 +218,7 @@ export function SettingsPage({
 /** Current-state summary for a section row. Every row gets one — a blank cell
  *  next to a chevron reads as broken (§3.15) — with units and real state:
  *  "60s", "2 of 3 on", "default", never a unit-less number or a fake boolean. */
-function sectionSummary(section: ConfigEditSection, draft: Draft | null): string {
+function sectionSummary(section: ConfigEditSection, draft: Draft | null, sections: ConfigEditSection[]): string {
 	if (!draft) return ''
 	switch (section.id) {
 		case 'projects': {
@@ -221,12 +236,37 @@ function sectionSummary(section: ConfigEditSection, draft: Draft | null): string
 			if (agent !== '') return agent
 			break
 		}
+		case 'server': {
+			// Where the daemon answers, not a bare port number.
+			const port = getAtPath(draft, ['server', 'port'])
+			if (typeof port === 'number' && Number.isFinite(port)) {
+				const host = getAtPath(draft, ['server', 'host'])
+				const shown = typeof host === 'string' && host !== '' && host !== '0.0.0.0' ? host : 'localhost'
+				return `${shown}:${port}`
+			}
+			break
+		}
+		case 'spawner':
+			return spawnerSummary(draft, sections)
 		case 'ai-model-guidance':
 			return guidanceSummary(section, draft)
 		case 'github':
 			return toggleSummary(section, draft)
 	}
 	return firstCompactValue(section, draft)
+}
+
+/** Humanized spawner adapter name — raw ids stay inside the editor page:
+ *  "okena" → "Okena"; "default" → the solver-agent label ("Claude Code"). */
+function spawnerSummary(draft: Draft, sections: ConfigEditSection[]): string {
+	const name = getAtPath(draft, ['spawner', 'name'])
+	if (typeof name !== 'string' || name === '') return '—'
+	if (name === 'default') {
+		const solver = sections.find(s => s.id === 'solver')
+		const agent = solver ? selectValueLabel(solver, ['solver', 'agent'], draft) : ''
+		return agent !== '' ? agent : 'Solver agent'
+	}
+	return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 function fieldsOf(section: ConfigEditSection): ConfigEditFieldControl[] {

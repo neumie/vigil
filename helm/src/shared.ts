@@ -51,7 +51,7 @@ export interface ConfigApi {
 }
 
 /** Screenshot-harness hook: `--ui-preview=<page>` auto-navigates the sidebar. */
-export type UiPreview = 'list' | 'detail' | 'settings'
+export type UiPreview = 'list' | 'detail' | 'settings' | 'appearance'
 
 /** Menu accelerators (cmd+t / cmd+w) fire in main; renderer subscribes here. */
 export interface TabsApi {
@@ -59,15 +59,36 @@ export interface TabsApi {
 	onClose(listener: () => void): () => void
 }
 
+/** A theme file from <userData>/themes/<id>.json (docs/design-system.md §2.8). */
+export interface ThemeListEntry {
+	id: string
+	name: string
+	/** CSS custom-property overrides ('--token': value). */
+	tokens: Record<string, string>
+}
+
+/** Appearance: theme files (main owns the dir) + font-size menu accelerators. */
+export interface AppearanceApi {
+	/** Presets first (seeded on first call), then custom files alphabetically. */
+	listThemes(): Promise<ThemeListEntry[]>
+	/** View menu Bigger/Smaller/Reset text (cmd+= / cmd+- / cmd+0): +1 / -1 / 0. */
+	onFontStep(listener: (step: number) => void): () => void
+}
+
 /** vigil://item/<id> deep links (main's open-url handler) land here. */
 export interface NavApi {
 	onOpenItem(listener: (itemId: string) => void): () => void
+	/** Back/forward from main: native three-finger swipe, Go menu (cmd+[ / cmd+]),
+	 *  and app-command mouse buttons all normalize to one channel. */
+	onGo(listener: (direction: 'back' | 'forward') => void): () => void
 }
 
 export interface HelmApi {
 	pty: PtyApi
 	sessions: SessionsApi
 	config: ConfigApi
+	/** Theme files + font-size accelerators (docs/design-system.md §2.8). */
+	appearance: AppearanceApi
 	tabs: TabsApi
 	/** Deep-link navigation pushed from main (vigil:// protocol). */
 	nav: NavApi
@@ -77,4 +98,6 @@ export interface HelmApi {
 	platform: NodeJS.Platform
 	/** Set only on `--ui-preview=…` screenshot runs; null in normal use. */
 	uiPreview: UiPreview | null
+	/** Set only on `--ui-theme=<presetId>` screenshot runs; null in normal use. */
+	uiTheme: string | null
 }

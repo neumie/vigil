@@ -1,23 +1,74 @@
-/* Helm design tokens — one machined instrument panel, macOS dark. */
+/* Helm design tokens — one machined instrument panel, macOS dark.
+ *
+ * Theming (docs/design-system.md §2.8): every color below is a CSS custom
+ * property; components consume vars, never literals. The values here mirror
+ * helm/src/theme-presets.ts HELM_TOKENS (the canonical source) and exist only
+ * for the pre-JS first paint — appearance.ts re-applies the active theme over
+ * them at startup and on every change. Keep both files in sync. */
 :root {
 	color-scheme: dark;
+	/* Background ladder */
 	--chrome: #1a1c1f;
 	--pane: #141517;
 	--well: #0f1113;
+	/* Lines & fills */
 	--hairline: rgba(255, 255, 255, 0.07);
 	--hairline-strong: rgba(255, 255, 255, 0.16);
 	--fill-subtle: rgba(255, 255, 255, 0.05);
 	--fill-raised: rgba(255, 255, 255, 0.09);
+	/* Text ladder */
 	--text-0: #ececee;
 	--text-1: #9a9ea6;
 	--text-2: #62666e;
+	/* Accent & semantic tones */
 	--accent: #4c9aff;
 	--accent-fill: #3b82f6;
+	--accent-fill-hover: #5a9dff;
+	--on-accent: #ffffff;
 	--success: #4ec98a;
 	--warn: #e0b341;
 	--danger: #f2585b;
 	--neutral: #8a8f98;
+	/* Derived soft fills — exactly 15% of the tone (§2.1); themes override the
+	 * tone and the soft fill follows automatically. Never hand-mix per component. */
+	--accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+	--success-soft: color-mix(in srgb, var(--success) 15%, transparent);
+	--warn-soft: color-mix(in srgb, var(--warn) 15%, transparent);
+	--danger-soft: color-mix(in srgb, var(--danger) 15%, transparent);
+	--neutral-soft: color-mix(in srgb, var(--neutral) 15%, transparent);
+	--danger-strong: color-mix(in srgb, var(--danger) 50%, transparent);
+	/* Scroll thumbs + toast countdown share one alpha pair (§3.17) */
+	--thumb: rgba(255, 255, 255, 0.14);
+	--thumb-hover: rgba(255, 255, 255, 0.24);
+	--scrim: rgba(0, 0, 0, 0.4);
+	--shadow-1: 0 8px 24px rgba(0, 0, 0, 0.35);
+	--shadow-2: 0 10px 30px -8px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.35);
+	/* Terminal surface + ANSI 16 (§3.14) — consumed by appearance.ts to build
+	 * the xterm theme object; CSS itself only uses --term-bg for the well. */
+	--term-bg: #0f1113;
+	--term-fg: #ececee;
+	--term-cursor: #4c9aff;
+	--term-cursor-accent: #0f1113;
+	--term-selection: rgba(76, 154, 255, 0.25);
+	--ansi-black: #2a2e33;
+	--ansi-red: #f2585b;
+	--ansi-green: #4ec98a;
+	--ansi-yellow: #e0b341;
+	--ansi-blue: #4c9aff;
+	--ansi-magenta: #c08ae0;
+	--ansi-cyan: #54c6d6;
+	--ansi-white: #c9ccd1;
+	--ansi-bright-black: #5b6068;
+	--ansi-bright-red: #ff7477;
+	--ansi-bright-green: #6fe0a8;
+	--ansi-bright-yellow: #f2cd6d;
+	--ansi-bright-blue: #78b5ff;
+	--ansi-bright-magenta: #d5a9f0;
+	--ansi-bright-cyan: #74dcea;
+	--ansi-bright-white: #f5f6f7;
+	/* Layout + type scale knobs (not theme tokens) */
 	--left-width: 340px;
+	--ui-scale: 1;
 }
 
 *,
@@ -101,12 +152,12 @@ button:focus-visible,
 	height: 7px;
 	border-radius: 50%;
 	background: var(--success);
-	box-shadow: 0 0 6px rgba(78, 201, 138, 0.55);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--success) 55%, transparent);
 }
 
 .conn-dot.offline {
 	background: var(--warn);
-	box-shadow: 0 0 6px rgba(224, 179, 65, 0.45);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 45%, transparent);
 	animation: breathe 2.4s ease-in-out infinite;
 }
 
@@ -270,7 +321,9 @@ body.dragging {
 	position: relative; /* anchors the #no-terms overlay */
 	min-width: 0;
 	min-height: 0;
-	background: var(--well);
+	/* Terminal surface token, not --well: the pane must match the themed xterm
+	 * background exactly (a theme may split them). */
+	background: var(--term-bg);
 }
 
 #terms {
@@ -279,10 +332,15 @@ body.dragging {
 	min-height: 0;
 }
 
+/* Terminal well padding rule (§3.14): breathing room top/bottom/left only —
+ * right padding MUST stay 0 so xterm's viewport scrollbar hugs the pane edge
+ * (any right padding pushes the scrollbar into the well, Terminal.app never
+ * does that). Right-side breathing room comes from FitAddon's integer-column
+ * remainder (0–1 cell). */
 .term-holder {
 	position: absolute;
 	inset: 0;
-	padding: 14px 16px;
+	padding: 14px 0 14px 16px;
 	display: none;
 }
 
@@ -292,6 +350,23 @@ body.dragging {
 
 .term-holder .xterm {
 	height: 100%;
+}
+
+/* xterm scrollbar at the pane edge: thin 8px, transparent track, rgba thumb
+ * (same alphas as §3.17 pane scrollbars). Styling ::-webkit-scrollbar makes
+ * it a classic 8px gutter FitAddon subtracts from the column budget. */
+.term-holder .xterm-viewport::-webkit-scrollbar {
+	width: 8px;
+}
+.term-holder .xterm-viewport::-webkit-scrollbar-track {
+	background: transparent;
+}
+.term-holder .xterm-viewport::-webkit-scrollbar-thumb {
+	background: var(--thumb);
+	border-radius: 999px;
+}
+.term-holder .xterm-viewport::-webkit-scrollbar-thumb:hover {
+	background: var(--thumb-hover);
 }
 
 /* ---------- toasts ---------- */
@@ -318,7 +393,7 @@ body.dragging {
 	border: 1px solid var(--hairline);
 	border-radius: 8px;
 	background: var(--chrome);
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+	box-shadow: var(--shadow-1);
 	overflow: hidden; /* clips the countdown bar to the radius */
 	opacity: 0;
 	transform: translateY(8px);
@@ -377,7 +452,7 @@ body.dragging {
 	right: 0;
 	bottom: 0;
 	height: 2px;
-	background: rgba(255, 255, 255, 0.14);
+	background: var(--thumb);
 	transform-origin: left;
 }
 
@@ -408,19 +483,19 @@ body.dragging {
 .no-terms-title {
 	font-size: 13px;
 	font-weight: 600;
-	color: #9a9ea6;
+	color: var(--text-1);
 }
 .no-terms-detail {
 	margin-top: 6px;
 	font-size: 12px;
-	color: #62666e;
+	color: var(--text-2);
 }
 .no-terms-detail kbd {
 	font-family: "SF Mono", Menlo, ui-monospace, monospace;
 	font-size: 11px;
 	padding: 1px 5px;
-	border: 1px solid rgba(255, 255, 255, 0.09);
+	border: 1px solid var(--fill-raised);
 	border-radius: 4px;
 	background: var(--fill-subtle);
-	color: #9a9ea6;
+	color: var(--text-1);
 }

@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import type { HelmApi, RestoredSession } from '../shared'
+import { appearance } from './appearance'
 import { mountSidebar } from './sidebar/SidebarRoot'
 import { showToast } from './toast'
 
@@ -14,6 +15,9 @@ declare global {
 }
 
 const helm = window.helm
+
+// Apply the persisted theme/scale/font-size before anything paints or mounts.
+appearance.init()
 
 function el<T extends HTMLElement>(id: string): T {
 	const node = document.getElementById(id)
@@ -86,30 +90,9 @@ void helm.vigil.subscribe().then(snapshot => reflectDaemonState(snapshot.reachab
 mountSidebar(leftPane)
 
 // ---------- terminal tabs ----------
-
-const termTheme = {
-	background: '#0f1113',
-	foreground: '#ececee',
-	cursor: '#4c9aff',
-	cursorAccent: '#0f1113',
-	selectionBackground: 'rgba(76, 154, 255, 0.25)',
-	black: '#2a2e33',
-	red: '#f2585b',
-	green: '#4ec98a',
-	yellow: '#e0b341',
-	blue: '#4c9aff',
-	magenta: '#c08ae0',
-	cyan: '#54c6d6',
-	white: '#c9ccd1',
-	brightBlack: '#5b6068',
-	brightRed: '#ff7477',
-	brightGreen: '#6fe0a8',
-	brightYellow: '#f2cd6d',
-	brightBlue: '#78b5ff',
-	brightMagenta: '#d5a9f0',
-	brightCyan: '#74dcea',
-	brightWhite: '#f5f6f7',
-}
+// The xterm theme comes from the appearance token map (--term-* / --ansi-*,
+// docs/design-system.md §2.8) — the old hardcoded termTheme literal is gone;
+// theme-presets.ts HELM_TOKENS carries the canonical ANSI-16 values.
 
 interface Tab {
 	ptyId: number | null
@@ -124,6 +107,30 @@ interface Tab {
 
 const tabs: Tab[] = []
 let activeTab: Tab | null = null
+
+// Shell OSC titles usually arrive as "user@host:cwd" — noise at tab width.
+// Normalize to the trailing path segment ("vigil"); a bare "user@host" (no
+// path) falls back to "zsh". Anything else (ssh banners, app-set titles)
+// passes through untouched. The raw title survives as the label's tooltip.
+function normalizeTabTitle(raw: string): string {
+	const text = raw.trim()
+	if (!text) return 'zsh'
+	if (!/^\S+@\S+(:.*)?$/.test(text)) return text
+	const colon = text.indexOf(':')
+	const path = colon === -1 ? '' : text.slice(colon + 1).trim()
+	const segment = path.replace(/\/+$/, '').split('/').pop() ?? ''
+	return segment || 'zsh'
+}
+
+function applyTabTitle(label: HTMLSpanElement, raw: string): string {
+	const text = normalizeTabTitle(raw)
+	label.textContent = text
+	// Tooltip carries the raw title whenever normalization changed/ellipsized it.
+	const trimmed = raw.trim()
+	if (trimmed && trimmed !== text) label.title = trimmed
+	else label.removeAttribute('title')
+	return text
+}
 
 function fitActive(): void {
 	if (!activeTab) return
@@ -203,14 +210,14 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	const term = new Terminal({
 		cursorBlink: true,
 		scrollback: 10000,
-		fontSize: 13,
+		fontSize: appearance.getTermFontSize(),
 		fontFamily: "'SF Mono', Menlo, ui-monospace, monospace",
 		// Spec asks for CSS line-height 1.45 (13px -> ~19px). xterm's lineHeight
 		// multiplies the font's natural cell height (~15.5px here), so 1.2 lands
 		// at that same ~19px; a literal 1.45 would render ~22px cells.
 		lineHeight: 1.2,
 		macOptionIsMeta: true,
-		theme: termTheme,
+		theme: appearance.getTermTheme(),
 	})
 	const fit = new FitAddon()
 	term.loadAddon(fit)
@@ -228,12 +235,12 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	const label = document.createElement('span')
 	label.className = 'tab-label'
 	// Restored tabs keep the label persisted from the previous run until the
-	// reattached shell emits a fresh OSC title.
-	label.textContent = restore?.title || 'zsh'
+	// reattached shell emits a fresh OSC title (normalized too — older runs
+	// persisted raw "user@host:cwd" titles).
+	applyTabTitle(label, restore?.title ?? '')
 	// Shell title arrives via OSC title events; empty titles fall back to "zsh".
 	term.onTitleChange(title => {
-		const text = title.trim() || 'zsh'
-		label.textContent = text
+		const text = applyTabTitle(label, title)
 		if (tab.sessionId) helm.sessions.setTitle(tab.sessionId, text)
 	})
 	const close = document.createElement('button')
@@ -286,6 +293,25 @@ helm.pty.onExit(id => {
 })
 
 new ResizeObserver(() => fitActive()).observe(termsEl)
+
+// ---------- appearance: live re-theme + font-size ----------
+
+// Theme/font changes re-apply to every open terminal. Only the ACTIVE tab can
+// refit (hidden holders measure 0x0); background tabs refit in activate()'s
+// rAF, so every terminal lands on the new metrics by the time it's visible.
+appearance.subscribe(() => {
+	const theme = appearance.getTermTheme()
+	const fontSize = appearance.getTermFontSize()
+	for (const tab of tabs) {
+		tab.term.options.theme = theme
+		if (tab.term.options.fontSize !== fontSize) tab.term.options.fontSize = fontSize
+	}
+	fitActive()
+})
+
+// cmd+= / cmd+- / cmd+0 (View menu accelerators — same main→IPC pattern as
+// cmd+t): bounds + persistence live in the appearance store.
+helm.appearance.onFontStep(step => appearance.stepTermFontSize(step))
 
 // New-tab actions are gated until session restore finishes, so restored tabs
 // always come first and a fast cmd+T can't interleave with reattachment.

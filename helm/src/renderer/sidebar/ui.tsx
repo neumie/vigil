@@ -324,28 +324,19 @@ export function PushHeader({
 	title,
 	onBack,
 	trailing,
-	reveal,
 }: {
+	/** Names the content (§3.10): an item page passes the item's display name,
+	 *  never a type word ("Item"); single-line ellipsis handles length. */
 	title: string
 	onBack: () => void
 	trailing?: ReactNode
-	/** Scroll-reveal header title (§3.10): while false the title is a static
-	 *  context label; flipping to true remounts the node so the real title
-	 *  fades in (150ms ease-out, opacity only). Leave undefined for pages
-	 *  whose header title never changes. */
-	reveal?: boolean
 }) {
 	return (
 		<header className="push-header">
 			<IconBtn label="Back" onClick={onBack}>
 				{GLYPH.back}
 			</IconBtn>
-			<div
-				key={reveal === undefined ? 'static' : reveal ? 'revealed' : 'context'}
-				className={`push-title${reveal ? ' push-title-in' : ''}`}
-			>
-				{title}
-			</div>
+			<div className="push-title">{title}</div>
 			{trailing && <div className="push-trailing">{trailing}</div>}
 		</header>
 	)
@@ -391,18 +382,35 @@ export function Banner({
 	)
 }
 
-/** Clamped body text (run summaries etc.); the block itself is the toggle. */
+/** Clamped body text (run summaries etc.); the block itself is the toggle
+ *  (§3.12), with a quiet More/Less cue shown only when the text overflows. */
 export function ClampText({ text, lines = 4 }: { text: string; lines?: number }) {
 	const [expanded, setExpanded] = useState(false)
+	const [overflows, setOverflows] = useState(false)
+	const bodyRef = useRef<HTMLSpanElement>(null)
+	// Measure only while clamped; once expanded the last answer stays so the
+	// "Less" cue doesn't vanish mid-toggle.
+	// biome-ignore lint/correctness/useExhaustiveDependencies(text): the effect reads the DOM, so it must re-run when the rendered text changes
+	useEffect(() => {
+		if (expanded) return
+		const node = bodyRef.current
+		if (node) setOverflows(node.scrollHeight > node.clientHeight + 1)
+	}, [text, expanded])
 	return (
 		<button
 			type="button"
 			className={`clamp-text${expanded ? '' : ' clamped'}`}
-			style={expanded ? undefined : ({ WebkitLineClamp: lines } as React.CSSProperties)}
 			onClick={() => setExpanded(prev => !prev)}
 			title={expanded ? 'Collapse' : 'Expand'}
 		>
-			{text}
+			<span
+				ref={bodyRef}
+				className="clamp-body"
+				style={expanded ? undefined : ({ WebkitLineClamp: lines } as React.CSSProperties)}
+			>
+				{text}
+			</span>
+			{(overflows || expanded) && <span className="clamp-cue">{expanded ? 'Less' : 'More'}</span>}
 		</button>
 	)
 }
@@ -468,8 +476,16 @@ export function ActionRow({
 	disabled?: boolean
 }) {
 	const glyphNode = glyphKind === 'external' ? GLYPH.external : glyphKind === 'copy' ? GLYPH.copy : GLYPH.chevronRight
+	// Push rows (chevron) sit at the 36px nav pitch; copy/external rows share
+	// the 28px fact pitch (§3.15 card row rhythm).
+	const push = glyphKind === 'chevron' && !nav
 	return (
-		<button type="button" className={`action-row${nav ? ' action-row-nav' : ''}`} onClick={onClick} disabled={disabled}>
+		<button
+			type="button"
+			className={`action-row${nav ? ' action-row-nav' : ''}${push ? ' action-row-push' : ''}`}
+			onClick={onClick}
+			disabled={disabled}
+		>
 			<span className={nav ? 'action-row-title' : 'info-label'}>{label}</span>
 			<span className={`action-row-value${mono ? ' mono' : ''}${glyphKind === 'external' ? ' action-row-link' : ''}`}>
 				{value}

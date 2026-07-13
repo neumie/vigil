@@ -5,6 +5,7 @@ import { BrowserWindow, Menu, app, ipcMain, screen, shell } from 'electron'
 import * as pty from 'node-pty'
 import { parseVigilItemUrl } from './protocol'
 import * as sessions from './sessions'
+import { THEME_PRESETS } from './theme-presets'
 import { VigilBridge } from './vigil-bridge'
 
 const daemonUrl = process.env.VIGIL_URL ?? 'http://localhost:7474'
@@ -19,9 +20,12 @@ const vigilBridge = new VigilBridge(daemonUrl)
 // writes a full-window PNG, and exits 0.
 const screenshotPath = process.argv.find(a => a.startsWith('--screenshot='))?.slice('--screenshot='.length) || null
 
-// `--ui-preview=<list|detail|settings>` forwards to the renderer (via preload
-// additionalArguments) so screenshot runs can capture a specific sidebar page.
+// `--ui-preview=<list|detail|settings|appearance>` forwards to the renderer
+// (via preload additionalArguments) so screenshot runs can capture a specific
+// sidebar page. `--ui-theme=<presetId>` applies a theme preset for the run
+// (no persistence) so theme presets are screenshot-verifiable.
 const uiPreviewArg = process.argv.find(a => a.startsWith('--ui-preview=')) || null
+const uiThemeArg = process.argv.find(a => a.startsWith('--ui-theme=')) || null
 
 app.setName('Helm')
 // Must run before anything touches userData so a screenshot run never fights a
@@ -273,7 +277,9 @@ function createWindow(): void {
 			nodeIntegration: false,
 			// A screenshot run captures an unfocused window; keep it painting.
 			backgroundThrottling: !screenshotPath,
-			...(uiPreviewArg ? { additionalArguments: [uiPreviewArg] } : {}),
+			...(uiPreviewArg || uiThemeArg
+				? { additionalArguments: [uiPreviewArg, uiThemeArg].filter((arg): arg is string => arg !== null) }
+				: {}),
 		},
 	})
 	// Terminal web-links + sidebar external links open in the default browser, never a new Electron window.
@@ -295,12 +301,27 @@ function createWindow(): void {
 	}
 	// A vigil:// deep link may land before the renderer is up (cold start).
 	win.webContents.on('did-finish-load', () => flushPendingOpenItem(win))
+	// Native macOS three-finger swipe (System Settings "Swipe between pages"):
+	// swiping right = back, left = forward — same channel as the Go menu.
+	win.on('swipe', (_event, direction) => {
+		if (direction === 'right') win.webContents.send('nav:go', 'back')
+		else if (direction === 'left') win.webContents.send('nav:go', 'forward')
+	})
+	// Mice that report back/forward as app commands (renderer also handles
+	// plain button-3/4 pointer events itself).
+	win.on('app-command', (_event, command) => {
+		if (command === 'browser-backward') win.webContents.send('nav:go', 'back')
+		else if (command === 'browser-forward') win.webContents.send('nav:go', 'forward')
+	})
 	void win.loadFile(path.join(__dirname, 'index.html'))
 	mainWindow = win
 }
 
 function buildMenu(): void {
-	const send = (channel: string) => () => mainWindow?.webContents.send(channel)
+	const send =
+		(channel: string, ...args: unknown[]) =>
+		() =>
+			mainWindow?.webContents.send(channel, ...args)
 	const template: Electron.MenuItemConstructorOptions[] = [
 		...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
 		{
@@ -312,7 +333,41 @@ function buildMenu(): void {
 			],
 		},
 		{ role: 'editMenu' },
-		{ role: 'viewMenu' },
+		{
+			// Custom View menu: the stock viewMenu role owns cmd+= / cmd+- / cmd+0
+			// as webContents zoom — helm gives those to the terminal font size
+			// (renderer applies bounds + persistence, mirroring the cmd+t pattern).
+			label: 'View',
+			submenu: [
+				{ label: 'Bigger text', accelerator: 'CmdOrCtrl+=', click: send('font:step', 1) },
+				// Hidden twin so the literal ⌘⇧= ("cmd +") chord also works.
+				{
+					label: 'Bigger text',
+					accelerator: 'CmdOrCtrl+Shift+=',
+					visible: false,
+					acceleratorWorksWhenHidden: true,
+					click: send('font:step', 1),
+				},
+				{ label: 'Smaller text', accelerator: 'CmdOrCtrl+-', click: send('font:step', -1) },
+				{ label: 'Reset text size', accelerator: 'CmdOrCtrl+0', click: send('font:step', 0) },
+				{ type: 'separator' },
+				{ role: 'reload' },
+				{ role: 'forceReload' },
+				{ role: 'toggleDevTools' },
+				{ type: 'separator' },
+				{ role: 'togglefullscreen' },
+			],
+		},
+		{
+			// Sidebar push-stack navigation (design-system.md §3.10 gestures):
+			// keyboard equivalents live in the menu because xterm swallows
+			// renderer keydowns when a terminal has focus.
+			label: 'Go',
+			submenu: [
+				{ label: 'Back', accelerator: 'CmdOrCtrl+[', click: send('nav:go', 'back') },
+				{ label: 'Forward', accelerator: 'CmdOrCtrl+]', click: send('nav:go', 'forward') },
+			],
+		},
 		{ label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
 	]
 	Menu.setApplicationMenu(Menu.buildFromTemplate(template))
@@ -476,6 +531,74 @@ ipcMain.on('session:title', (_event, sessionId: unknown, title: unknown) => {
 
 ipcMain.on('config:get', event => {
 	event.returnValue = { daemonUrl }
+})
+
+// --- Themes (<userData>/themes/*.json, docs/design-system.md §2.8) --------------
+// Main owns the directory: presets are seeded as editable files on first list,
+// any other *.json dropped in the dir shows up in the Appearance theme picker.
+// The renderer bundles THEME_PRESETS as its synchronous fallback, so this IPC
+// is never on the first-paint path.
+
+function themesDir(): string {
+	return path.join(app.getPath('userData'), 'themes')
+}
+
+interface ThemeFileEntry {
+	id: string
+	name: string
+	tokens: Record<string, string>
+}
+
+function readThemeFile(file: string): ThemeFileEntry | null {
+	try {
+		const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
+		const tokens: Record<string, string> = {}
+		if (typeof raw.tokens === 'object' && raw.tokens !== null) {
+			for (const [key, value] of Object.entries(raw.tokens)) {
+				if (key.startsWith('--') && typeof value === 'string') tokens[key] = value
+			}
+		}
+		if (Object.keys(tokens).length === 0) return null
+		const id = path.basename(file, '.json')
+		return { id, name: typeof raw.name === 'string' && raw.name !== '' ? raw.name : id, tokens }
+	} catch {
+		return null // unreadable/invalid file — skip, never break the list
+	}
+}
+
+ipcMain.handle('themes:list', () => {
+	const dir = themesDir()
+	try {
+		fs.mkdirSync(dir, { recursive: true })
+		for (const [id, preset] of Object.entries(THEME_PRESETS)) {
+			const file = path.join(dir, `${id}.json`)
+			if (!fs.existsSync(file)) {
+				fs.writeFileSync(file, `${JSON.stringify({ name: preset.name, tokens: preset.tokens }, null, '\t')}\n`)
+			}
+		}
+	} catch (err) {
+		console.warn('[helm] theme seeding failed:', err)
+	}
+	let files: string[] = []
+	try {
+		files = fs.readdirSync(dir).filter(name => name.endsWith('.json'))
+	} catch {
+		// dir unreadable — fall through to bundled presets only
+	}
+	const fromDisk = new Map<string, ThemeFileEntry>()
+	for (const name of files) {
+		const entry = readThemeFile(path.join(dir, name))
+		if (entry) fromDisk.set(entry.id, entry)
+	}
+	// Preset order first (a user-edited preset file wins over the bundled copy,
+	// a corrupt one falls back to it), then custom themes alphabetically.
+	const list: ThemeFileEntry[] = Object.entries(THEME_PRESETS).map(
+		([id, preset]) => fromDisk.get(id) ?? { id, name: preset.name, tokens: preset.tokens },
+	)
+	const custom = [...fromDisk.values()]
+		.filter(entry => !THEME_PRESETS[entry.id])
+		.sort((a, b) => a.name.localeCompare(b.name))
+	return [...list, ...custom]
 })
 
 vigilBridge.registerIpc()

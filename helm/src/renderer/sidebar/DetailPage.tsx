@@ -109,25 +109,6 @@ export function DetailPage({ id, snapshot, onBack, onOpenPlan, onOpenTask }: Det
 	const [model, setModel] = useState('')
 	const touched = useRef({ agent: false, model: false })
 
-	// Header title reveal (§3.10): the header shows a static "Item" label until
-	// the 15px page title scrolls under it — never the same string twice in the
-	// first 120px of a 340px pane.
-	const scrollRef = useRef<HTMLDivElement>(null)
-	const pageTitleRef = useRef<HTMLHeadingElement>(null)
-	const [titleUnderHeader, setTitleUnderHeader] = useState(false)
-	const hasItem = item !== null
-	useEffect(() => {
-		if (!hasItem) return
-		const root = scrollRef.current
-		const target = pageTitleRef.current
-		if (!root || !target) return
-		const observer = new IntersectionObserver(entries => setTitleUnderHeader(!(entries[0]?.isIntersecting ?? true)), {
-			root,
-		})
-		observer.observe(target)
-		return () => observer.disconnect()
-	}, [hasItem])
-
 	if (!item) {
 		return (
 			<div className="page-frame">
@@ -217,12 +198,11 @@ export function DetailPage({ id, snapshot, onBack, onOpenPlan, onOpenTask }: Det
 
 	return (
 		<div className="page-frame">
-			<PushHeader title={titleUnderHeader ? itemTitle(item) : 'Item'} reveal={titleUnderHeader} onBack={onBack} />
+			{/* Header names the item (§3.10) — never the literal type word "Item". */}
+			<PushHeader title={itemTitle(item)} onBack={onBack} />
 
-			<div className="page-scroll" ref={scrollRef}>
-				<h1 className="detail-title" ref={pageTitleRef}>
-					{itemTitle(item)}
-				</h1>
+			<div className="page-scroll">
+				<h1 className="detail-title">{itemTitle(item)}</h1>
 				{item.displayName && <div className="detail-subtitle">{item.title}</div>}
 
 				<div className="detail-chips">
@@ -251,7 +231,9 @@ export function DetailPage({ id, snapshot, onBack, onOpenPlan, onOpenTask }: Det
 
 				{item.assessment && <AssessmentCard assessment={item.assessment} />}
 
-				<Card label="Details">
+				{/* Flush rows (§3.15): facts + copy/external at the 28px pitch,
+				    push rows (Source/Plan) at the 36px nav pitch. */}
+				<Card label="Details" flush>
 					<InfoRow label="Project" value={item.projectSlug} />
 					<InfoRow label="Kind" value={item.kind} />
 					<InfoRow label="Base" value={item.baseRef} mono />
@@ -269,7 +251,7 @@ export function DetailPage({ id, snapshot, onBack, onOpenPlan, onOpenTask }: Det
 					{item.links.pr?.url && (
 						<ActionRow
 							label="PR"
-							value={prValue(observation.pr)}
+							value={prValue(item.links.pr.url)}
 							glyphKind="external"
 							onClick={() => window.open(item.links.pr?.url ?? '', '_blank')}
 						/>
@@ -401,11 +383,11 @@ function sourceRowValue(item: DashboardItem): string {
 	return short ? `${item.source.provider} #${short}` : item.source.provider
 }
 
-/** PR row value: a real state when known, else the destination name. */
-function prValue(pr: DashboardItem['runObservation']['pr']): string {
-	if (pr.merged) return 'merged'
-	if (pr.state && pr.state.toLowerCase() !== 'unknown') return pr.state.toLowerCase()
-	return 'GitHub'
+/** PR row value names the destination + number ("GitHub #132", §3.15) —
+ *  "GitHub" alone never appears as a value. State lives in the chips. */
+function prValue(url: string): string {
+	const match = /\/pull\/(\d+)/.exec(url)
+	return match ? `GitHub #${match[1]}` : 'Pull request'
 }
 
 function deployTone(state: string): 'green' | 'red' | 'gray' | 'blue' {
