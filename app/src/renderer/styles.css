@@ -336,20 +336,47 @@ body.dragging {
  * right padding MUST stay 0 so xterm's viewport scrollbar hugs the pane edge
  * (any right padding pushes the scrollbar into the well, Terminal.app never
  * does that). Right-side breathing room comes from FitAddon's integer-column
- * remainder (0–1 cell). */
+ * remainder plus its fixed scrollbar reserve.
+ *
+ * overflow:hidden is load-bearing: a transient fit desync (mid-drag, mid-
+ * reattach) must clip at the pane edge, never paint over the divider/window. */
 .term-holder {
 	position: absolute;
 	inset: 0;
 	padding: 14px 0 14px 16px;
 	display: none;
+	overflow: hidden;
 }
 
 .term-holder.active {
 	display: block;
 }
 
-.term-holder .xterm {
+/* xterm mounts HERE, not in .term-holder: FitAddon measures the computed width
+ * of xterm's parent element, which under border-box includes that element's
+ * own padding — mounting into the padded holder overcounts columns by 16px and
+ * the last cells paint past the pane edge. The mount is padding-free and spans
+ * exactly the holder's content box, so fit measures the true usable area. */
+.term-mount {
 	height: 100%;
+	/* Neutralize body's letter-spacing (-0.01em, §2.2 type scale): it leaks into
+	 * xterm's DOM width cache (span-based, inherits CSS) but not its cell metric
+	 * (canvas measureText), so xterm "compensates" with +0.13px/char span
+	 * letter-spacing — ~18px of cumulative drift over 130 columns, clipping the
+	 * last ~2 columns at the .xterm-screen edge. The terminal grid must measure
+	 * and paint with the font's natural advance. */
+	letter-spacing: normal;
+}
+
+.term-mount .xterm {
+	height: 100%;
+}
+
+/* xterm.css hardcodes .xterm-viewport background #000; with a correct fit the
+ * sub-cell remainder gap below/right of the grid would show it as a black seam
+ * against --term-bg. Transparent lets the themed well paint the remainder. */
+.term-holder .xterm-viewport {
+	background-color: transparent !important;
 }
 
 /* xterm scrollbar at the pane edge: thin 8px, transparent track, rgba thumb

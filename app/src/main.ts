@@ -28,6 +28,17 @@ const screenshotPath = process.argv.find(a => a.startsWith('--screenshot='))?.sl
 const uiPreviewArg = process.argv.find(a => a.startsWith('--ui-preview=')) || null
 const uiThemeArg = process.argv.find(a => a.startsWith('--ui-theme=')) || null
 
+// `--window-size=WxH` (screenshot runs): capture at a specific window size so
+// layout-dependent behavior (terminal fit/reflow) is verifiable at more than
+// the default bounds. Ignored outside screenshot mode; clamped to minimums.
+function parseWindowSize(): { width: number; height: number } | null {
+	const arg = process.argv.find(a => a.startsWith('--window-size='))?.slice('--window-size='.length)
+	const match = arg?.match(/^(\d{3,5})x(\d{3,5})$/)
+	if (!match) return null
+	return { width: Number(match[1]), height: Number(match[2]) }
+}
+const windowSizeArg = parseWindowSize()
+
 app.setName('Helm')
 // Must run before anything touches userData so a screenshot run never fights a
 // running Helm instance over the same profile (locks, window-state writes).
@@ -114,7 +125,12 @@ let sessionSupport: SessionSupport | null | undefined
 
 function getSessionSupport(): SessionSupport | null {
 	if (sessionSupport !== undefined) return sessionSupport
-	if (screenshotPath || process.platform === 'win32') {
+	// Screenshot runs are non-persistent (a throwaway capture must not leave
+	// detached shells behind) UNLESS HELM_SOCKET_DIR points at an isolated test
+	// pool — that combination exists so the dtach reattach path (restore → fit
+	// → pty resize → WINCH) is screenshot-verifiable without touching the real
+	// /tmp/helm-<uid> sessions.
+	if ((screenshotPath && !process.env.HELM_SOCKET_DIR) || process.platform === 'win32') {
 		sessionSupport = null
 		return null
 	}
@@ -267,8 +283,14 @@ function captureScreenshot(win: BrowserWindow, outPath: string): void {
 }
 
 function createWindow(): void {
-	// Screenshot runs use fixed default bounds for deterministic captures.
-	const state = screenshotPath ? { ...DEFAULT_BOUNDS } : restoreWindowState()
+	// Screenshot runs use fixed bounds (default or --window-size) for
+	// deterministic captures.
+	const state = screenshotPath
+		? {
+				width: Math.max(MIN_WIDTH, windowSizeArg?.width ?? DEFAULT_BOUNDS.width),
+				height: Math.max(MIN_HEIGHT, windowSizeArg?.height ?? DEFAULT_BOUNDS.height),
+			}
+		: restoreWindowState()
 	const win = new BrowserWindow({
 		...state,
 		minWidth: MIN_WIDTH,

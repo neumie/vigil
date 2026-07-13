@@ -62,6 +62,8 @@ divider.addEventListener('pointerdown', down => {
 		divider.removeEventListener('pointerup', onUp)
 		document.body.classList.remove('dragging')
 		localStorage.setItem(LEFT_WIDTH_KEY, String(leftWidth))
+		// Final fit at the released size — don't leave it to the debounce.
+		fitActive()
 	}
 	divider.addEventListener('pointermove', onMove)
 	divider.addEventListener('pointerup', onUp)
@@ -105,6 +107,12 @@ interface Tab {
 	tabButton: HTMLDivElement
 }
 
+// FitAddon measures getComputedStyle(term.element.parentElement).width, which
+// under box-sizing:border-box INCLUDES that element's own padding — so xterm
+// must be mounted in an UNPADDED .term-mount inside the padded .term-holder,
+// or fit overcounts columns by the padding and the last cells paint past the
+// pane edge (that exact bug shipped once; don't mount into the holder again).
+
 const tabs: Tab[] = []
 let activeTab: Tab | null = null
 
@@ -132,9 +140,37 @@ function applyTabTitle(label: HTMLSpanElement, raw: string): string {
 	return text
 }
 
+function fitTab(tab: Tab): void {
+	// Hidden/zero-size holders measure 0x0 — fitting then would clamp the grid
+	// to FitAddon's 2x1 floor. activate()'s rAF refits once visible.
+	if (tab.holder.clientWidth === 0 || tab.holder.clientHeight === 0) return
+	tab.fit.fit()
+}
+
 function fitActive(): void {
-	if (!activeTab) return
-	activeTab.fit.fit()
+	if (activeTab) fitTab(activeTab)
+}
+
+/**
+ * Force the pty to the terminal's CURRENT fitted size after spawn/reattach.
+ * fit.fit() only calls term.resize when dims changed, and term.onResize only
+ * fires on change — so an equal-size fit sends nothing, and an equal-size pty
+ * resize emits no SIGWINCH. For restored dtach sessions the REMOTE app's size
+ * belief is stale from the previous run, so `nudge` forces a real WINCH pair
+ * (cols-1 then cols): two TIOCSWINSZ changes → dtach client SIGWINCH → client
+ * pushes its winsize to the session master → remote app relearns and relayouts.
+ */
+function syncPtySize(tab: Tab, spawnCols: number, spawnRows: number, nudge: boolean): void {
+	if (tab.ptyId === null) return
+	const { cols, rows } = tab.term
+	if (cols !== spawnCols || rows !== spawnRows) {
+		// Fitted size drifted while the spawn was in flight (onResize was not
+		// attached yet, so the update was lost) — replay it.
+		helm.pty.resize(tab.ptyId, cols, rows)
+	} else if (nudge && cols > 2) {
+		helm.pty.resize(tab.ptyId, cols - 1, rows)
+		helm.pty.resize(tab.ptyId, cols, rows)
+	}
 }
 
 function activate(tab: Tab): void {
@@ -225,8 +261,12 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 
 	const holder = document.createElement('div')
 	holder.className = 'term-holder'
+	// Unpadded measurement/mount element — see the comment above interface Tab.
+	const mount = document.createElement('div')
+	mount.className = 'term-mount'
+	holder.appendChild(mount)
 	termsEl.appendChild(holder)
-	term.open(holder)
+	term.open(mount)
 
 	const tabButton = document.createElement('div')
 	tabButton.className = 'tab'
@@ -267,9 +307,14 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	})
 
 	activate(tab)
-	fit.fit()
+	fitTab(tab)
 
-	const spawned = await helm.pty.spawn(term.cols, term.rows, restore?.sessionId)
+	// Spawn with the best-known size, but treat it as provisional: layout can
+	// settle during the await (activate()'s rAF fit, fonts, first paint), and
+	// any term.resize in that window is LOST — onResize is attached only below.
+	const spawnCols = term.cols
+	const spawnRows = term.rows
+	const spawned = await helm.pty.spawn(spawnCols, spawnRows, restore?.sessionId)
 	if (tab.closed) {
 		helm.pty.kill(spawned.id)
 		return
@@ -278,6 +323,11 @@ async function createTab(restore?: RestoredSession): Promise<void> {
 	tab.sessionId = spawned.sessionId
 	term.onData(data => helm.pty.write(spawned.id, data))
 	term.onResize(({ cols, rows }) => helm.pty.resize(spawned.id, cols, rows))
+	// spawn → mount → fit → resize pty: re-fit now that layout settled, then
+	// force the pty onto the fitted size (with a WINCH nudge for reattached
+	// sessions whose remote app still believes the previous run's size).
+	fitTab(tab)
+	syncPtySize(tab, spawnCols, spawnRows, restore !== undefined)
 }
 
 helm.pty.onData((id, data) => {
@@ -292,7 +342,15 @@ helm.pty.onExit(id => {
 	}
 })
 
-new ResizeObserver(() => fitActive()).observe(termsEl)
+// Debounced refit on pane size changes (~50ms): #terms tracks every source of
+// terminal-pane width change (divider drag, window resize, --left-width), and
+// rapid divider drags would otherwise refit + pty-resize every pointermove.
+// The drag-end pointerup calls fitActive() directly for the final size.
+let fitTimer: ReturnType<typeof setTimeout> | undefined
+new ResizeObserver(() => {
+	clearTimeout(fitTimer)
+	fitTimer = setTimeout(fitActive, 50)
+}).observe(termsEl)
 
 // ---------- appearance: live re-theme + font-size ----------
 
