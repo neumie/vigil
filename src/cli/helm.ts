@@ -48,8 +48,7 @@ any agent can call it. The daemon must be running (\`helm start\`).
 
 Kinds:
   solve    Requires --project, --title, --prompt
-  ralph    Requires --project, --title, --prd-path
-  harden   Requires --project, --title, --target
+  loop    Requires --project, --title, --prd-path
 
 Common options:
   --project <slug>        Project slug
@@ -60,18 +59,14 @@ Common options:
   --parallelism <n>       Number of sibling Items to create
   --url <baseUrl>         Daemon base URL (default: $HELM_URL or http://localhost:7474)
 
-Ralph options:
+Loop options:
   --prd-path <path>       PRD path
-  --mode <once|afk>       Ralph mode
+  --mode <once|afk>       Loop mode
   --provider <name>       claude or codex
   --model <model>         Agent model
   --effort <effort>       Agent effort
   --iterations <n>        AFK iterations
-  --no-oversee            Disable overseer
-
-Harden options:
-  --target <path>         Target file, directory, PR, or module
-  --rounds <n>            Harden rounds`
+  --no-oversee            Disable overseer`
 
 function start(): void {
 	try {
@@ -210,7 +205,7 @@ async function postToDaemon<T>(baseUrl: string, path: string, payload: unknown):
  */
 function buildAddPayload(args: string[]): Record<string, unknown> {
 	const kind = args[0]
-	if (kind !== 'solve' && kind !== 'ralph' && kind !== 'harden') {
+	if (kind !== 'solve' && kind !== 'loop') {
 		throw new Error(`Unknown Item kind: ${kind}`)
 	}
 	const common = {
@@ -224,20 +219,17 @@ function buildAddPayload(args: string[]): Record<string, unknown> {
 	if (kind === 'solve') {
 		return { kind, ...common, prompt: requiredOption(args, '--prompt') }
 	}
-	if (kind === 'ralph') {
-		return {
-			kind,
-			...common,
-			prdPath: optionValueAny(args, ['--prd-path', '--prd']) ?? requiredOption(args, '--prd-path'),
-			mode: enumOption(args, '--mode', ['once', 'afk'] as const),
-			provider: enumOption(args, '--provider', ['claude', 'codex'] as const),
-			model: optionValue(args, '--model'),
-			effort: optionValue(args, '--effort'),
-			iterations: positiveIntegerOption(args, '--iterations'),
-			noOversee: args.includes('--no-oversee') ? true : undefined,
-		}
+	return {
+		kind,
+		...common,
+		prdPath: optionValueAny(args, ['--prd-path', '--prd']) ?? requiredOption(args, '--prd-path'),
+		mode: enumOption(args, '--mode', ['once', 'afk'] as const),
+		provider: enumOption(args, '--provider', ['claude', 'codex'] as const),
+		model: optionValue(args, '--model'),
+		effort: optionValue(args, '--effort'),
+		iterations: positiveIntegerOption(args, '--iterations'),
+		noOversee: args.includes('--no-oversee') ? true : undefined,
 	}
-	return { kind, ...common, target: requiredOption(args, '--target'), rounds: positiveIntegerOption(args, '--rounds') }
 }
 
 async function add(): Promise<void> {

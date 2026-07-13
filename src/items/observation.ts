@@ -76,7 +76,7 @@ const STATE_LABEL: Record<RunObservationState, string> = {
 
 function sourceForItem(item: ItemRecord): RunObservationSource {
 	if (item.kind === 'solve') return 'solve'
-	if (item.kind === 'ralph' || item.kind === 'harden') return 'loop'
+	if (item.kind === 'loop') return 'loop'
 	return 'none'
 }
 
@@ -257,7 +257,7 @@ function readTsvRecord(path: string): Record<string, string> | null {
 }
 
 function readAlmanac(item: ItemRecord): RunObservationAlmanac {
-	if (item.kind !== 'ralph' && item.kind !== 'harden') {
+	if (item.kind !== 'loop') {
 		return { runId: null, statusPath: null, status: null, round: null, summary: null, failureReason: null }
 	}
 	if (!item.almanacRunId || !item.worktreePath) {

@@ -20,6 +20,7 @@ import {
 import { configSchema } from '../src/config.js'
 import type { HelmConfig } from '../src/config.js'
 import { DB } from '../src/db/client.js'
+import { MIGRATIONS } from '../src/db/schema.js'
 import { DeployWatcher, httpUrlOrNull, parsePrUrl } from '../src/github/deploy-watcher.js'
 import { ItemCommands } from '../src/items/commands.js'
 import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
@@ -30,7 +31,7 @@ import { Poller } from '../src/poller/poller.js'
 import { Drainer } from '../src/queue/drainer.js'
 import { AlmanacLoopRunner } from '../src/queue/loop-runner.js'
 import type { LoopRunParams, LoopRunResult, LoopRunner } from '../src/queue/loop-runner.js'
-import { processRalphItem, processSolveItem } from '../src/queue/worker.js'
+import { processLoopItem, processSolveItem } from '../src/queue/worker.js'
 import { apiRoutes } from '../src/server/routes/api.js'
 import { createAgentAdapter } from '../src/solver/agent-adapter.js'
 import { buildPrompt } from '../src/solver/prompt-builder.js'
@@ -159,6 +160,45 @@ test('DB migration drops legacy Task + chat storage, keeps Items and poll_state'
 		assert.equal(tableNames.includes('poll_state'), true)
 	} finally {
 		sqlite.close()
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('DB migration renames legacy loop Items and removes harden Items', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'helm-remove-harden-'))
+	const dbPath = join(dir, 'helm.db')
+	const legacy = new Database(dbPath)
+	try {
+		for (const migration of MIGRATIONS.filter(entry => entry.version <= 19)) {
+			legacy.exec(migration.sql)
+			legacy.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(migration.version)
+		}
+		const insertItem = legacy.prepare(`
+INSERT INTO items (id, kind, status, project_slug, title, base_ref, payload, created_at, updated_at)
+VALUES (?, ?, 'done', 'helm', ?, 'main', ?, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
+`)
+		insertItem.run('legacy-harden', 'harden', 'Legacy harden', JSON.stringify({ kind: 'harden', target: 'src' }))
+		insertItem.run(
+			'legacy-loop',
+			'ralph',
+			'Legacy loop',
+			JSON.stringify({ kind: 'ralph', prdPath: 'docs/plans/legacy/prd.md' }),
+		)
+		legacy
+			.prepare('INSERT INTO item_events (item_id, event_type, created_at) VALUES (?, ?, ?)')
+			.run('legacy-harden', 'loop_completed', '2026-07-13T00:00:00.000Z')
+	} finally {
+		legacy.close()
+	}
+
+	const db = new DB(dbPath)
+	try {
+		assert.equal(db.items.get('legacy-harden'), null)
+		assert.equal(db.items.getEvents('legacy-harden').length, 0)
+		assert.equal(db.items.get('legacy-loop')?.kind, 'loop')
+		assert.equal(db.items.get('legacy-loop')?.payload.kind, 'loop')
+	} finally {
+		db.close()
 		rmSync(dir, { recursive: true, force: true })
 	}
 })
@@ -308,12 +348,8 @@ class FakePlanningSpawner implements Spawner {
 class FakeLoopRunner implements LoopRunner {
 	readonly calls: LoopRunParams[] = []
 
-	get ralphCalls(): LoopRunParams[] {
-		return this.calls.filter(call => call.payload.kind === 'ralph')
-	}
-
-	get hardenCalls(): LoopRunParams[] {
-		return this.calls.filter(call => call.payload.kind === 'harden')
+	get loopCalls(): LoopRunParams[] {
+		return this.calls.filter(call => call.payload.kind === 'loop')
 	}
 
 	constructor(
@@ -573,11 +609,11 @@ test('CLI add posts to the running daemon (headless) and creates queued Item kin
 			'2',
 		])
 		await run([
-			'ralph',
+			'loop',
 			'--project',
 			'helm',
 			'--title',
-			'CLI ralph',
+			'CLI loop',
 			'--prd-path',
 			'docs/plans/afk-rework/prd.md',
 			'--mode',
@@ -588,8 +624,6 @@ test('CLI add posts to the running daemon (headless) and creates queued Item kin
 			'3',
 			'--no-oversee',
 		])
-		await run(['harden', '--project', 'helm', '--title', 'CLI harden', '--target', 'src/items', '--rounds', '2'])
-
 		const items = db.items.list({ projectSlug: 'helm', limit: 10 })
 		const solveItems = items.filter(item => item.title === 'CLI solve')
 		assert.equal(solveItems.length, 2)
@@ -602,25 +636,16 @@ test('CLI add posts to the running daemon (headless) and creates queued Item kin
 			prompt: 'Ship a CLI-created solve.',
 		})
 
-		const ralph = items.find(item => item.title === 'CLI ralph')
-		assert.ok(ralph)
-		assert.equal(ralph.status, 'ready')
-		assert.deepEqual(ralph.payload, {
-			kind: 'ralph',
+		const loop = items.find(item => item.title === 'CLI loop')
+		assert.ok(loop)
+		assert.equal(loop.status, 'ready')
+		assert.deepEqual(loop.payload, {
+			kind: 'loop',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 			mode: 'afk',
 			provider: 'codex',
 			iterations: 3,
 			noOversee: true,
-		})
-
-		const harden = items.find(item => item.title === 'CLI harden')
-		assert.ok(harden)
-		assert.equal(harden.status, 'ready')
-		assert.deepEqual(harden.payload, {
-			kind: 'harden',
-			target: 'src/items',
-			rounds: 2,
 		})
 	} finally {
 		server.close()
@@ -735,7 +760,7 @@ test('ItemCommands only completes processing Items through execution completion 
 			projectSlug: 'helm',
 			prompt: 'Do not complete this before execution starts.',
 		})
-		const loop = commands.createRalphItem({
+		const loop = commands.createLoopItem({
 			title: 'Guard loop completion',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
@@ -776,22 +801,22 @@ test('ItemCommands only completes processing Items through execution completion 
 test('ItemCommands only records AlmanacRunId for processing loop Items', async () => {
 	await withTempDb(db => {
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
+		const item = commands.createLoopItem({
 			title: 'Guard loop run id',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
 
 		assert.throws(
-			() => commands.recordAlmanacRunId(item.id, 'ralph-guard-run-1'),
+			() => commands.recordAlmanacRunId(item.id, 'loop-guard-run-1'),
 			/Only running loop Items can record AlmanacRunId/,
 		)
 		assert.equal(db.items.get(item.id)?.almanacRunId, null)
 		assert.deepEqual(db.items.getEvents(item.id), [])
 
 		commands.startItem(item.id)
-		const updated = commands.recordAlmanacRunId(item.id, 'ralph-guard-run-1')
-		assert.equal(updated.almanacRunId, 'ralph-guard-run-1')
+		const updated = commands.recordAlmanacRunId(item.id, 'loop-guard-run-1')
+		assert.equal(updated.almanacRunId, 'loop-guard-run-1')
 		assert.deepEqual(
 			db.items.getEvents(item.id).map(event => event.eventType),
 			['item_started', 'almanac_run_started'],
@@ -861,7 +886,7 @@ test('ItemCommands only records dispatch events for review solve Items', async (
 			projectSlug: 'helm',
 			prompt: 'Do not record dispatch events before solve completion.',
 		})
-		const loop = commands.createRalphItem({
+		const loop = commands.createLoopItem({
 			title: 'No loop dispatch events',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
@@ -907,7 +932,7 @@ test('ItemCommands only records generic run events for matching Item lifecycles'
 			projectSlug: 'helm',
 			prompt: 'Do not record solve events outside a solve run.',
 		})
-		const loop = commands.createRalphItem({
+		const loop = commands.createLoopItem({
 			title: 'Guard generic loop events',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
@@ -1060,7 +1085,7 @@ test('ItemCommands only records execution workspace identity for processing Item
 	})
 })
 
-test('server creates queued ralph Items with PRD path and almanac flags', async () => {
+test('server creates queued loop Items with PRD path and almanac flags', async () => {
 	await withTempDb(async db => {
 		const api = apiRoutes(
 			config,
@@ -1077,7 +1102,7 @@ test('server creates queued ralph Items with PRD path and almanac flags', async 
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				kind: 'ralph',
+				kind: 'loop',
 				title: 'Run AFK PRD',
 				projectSlug: 'helm',
 				prdPath: 'docs/plans/afk-rework/prd.md',
@@ -1093,13 +1118,13 @@ test('server creates queued ralph Items with PRD path and almanac flags', async 
 
 		assert.equal(res.status, 201)
 		const body = (await res.json()) as { data: ReturnType<typeof toDashboardItem> }
-		assert.equal(body.data.kind, 'ralph')
+		assert.equal(body.data.kind, 'loop')
 		assert.equal(body.data.status, 'ready')
 		assert.equal(body.data.baseRef, 'release/afk')
 
 		const stored = db.items.get(body.data.id)
 		assert.deepEqual(stored?.payload, {
-			kind: 'ralph',
+			kind: 'loop',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 			mode: 'afk',
 			provider: 'codex',
@@ -1368,47 +1393,6 @@ test('createWorktree can fork from a local Item branch BaseRef', async () => {
 	}
 })
 
-test('server creates queued harden Items with target and almanac flags', async () => {
-	await withTempDb(async db => {
-		const api = apiRoutes(
-			config,
-			'helm.config.json',
-			db,
-			queue as never,
-			poller as never,
-			provider as never,
-			spawner as never,
-			fakeEnricher as never,
-		)
-
-		const res = await api.request('/items', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				kind: 'harden',
-				title: 'Harden Item pipeline',
-				projectSlug: 'helm',
-				target: 'src/items',
-				baseRef: 'release/afk',
-				rounds: 3,
-			}),
-		})
-
-		assert.equal(res.status, 201)
-		const body = (await res.json()) as { data: ReturnType<typeof toDashboardItem> }
-		assert.equal(body.data.kind, 'harden')
-		assert.equal(body.data.status, 'ready')
-		assert.equal(body.data.baseRef, 'release/afk')
-
-		const stored = db.items.get(body.data.id)
-		assert.deepEqual(stored?.payload, {
-			kind: 'harden',
-			target: 'src/items',
-			rounds: 3,
-		})
-	})
-})
-
 test('server creates parallel loop Items with shared GroupId', async () => {
 	await withTempDb(async db => {
 		const api = apiRoutes(
@@ -1422,44 +1406,27 @@ test('server creates parallel loop Items with shared GroupId', async () => {
 			fakeEnricher as never,
 		)
 
-		const ralphRes = await api.request('/items', {
+		const loopRes = await api.request('/items', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				kind: 'ralph',
-				title: 'Parallel ralph run',
+				kind: 'loop',
+				title: 'Parallel loop run',
 				projectSlug: 'helm',
 				prdPath: 'docs/plans/afk-rework/prd.md',
 				parallelism: 2,
 			}),
 		})
-		const hardenRes = await api.request('/items', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				kind: 'harden',
-				title: 'Parallel harden run',
-				projectSlug: 'helm',
-				target: 'src/items',
-				parallelism: 2,
-			}),
-		})
-
-		assert.equal(ralphRes.status, 201)
-		assert.equal(hardenRes.status, 201)
-		const ralphBody = (await ralphRes.json()) as { data: ReturnType<typeof toDashboardItem>[] }
-		const hardenBody = (await hardenRes.json()) as { data: ReturnType<typeof toDashboardItem>[] }
-		assert.equal(ralphBody.data.length, 2)
-		assert.equal(hardenBody.data.length, 2)
-		assert.equal(new Set(ralphBody.data.map(item => item.groupId)).size, 1)
-		assert.equal(new Set(hardenBody.data.map(item => item.groupId)).size, 1)
-		assert.notEqual(ralphBody.data[0].groupId, hardenBody.data[0].groupId)
+		assert.equal(loopRes.status, 201)
+		const loopBody = (await loopRes.json()) as { data: ReturnType<typeof toDashboardItem>[] }
+		assert.equal(loopBody.data.length, 2)
+		assert.equal(new Set(loopBody.data.map(item => item.groupId)).size, 1)
 		assert.deepEqual(
 			db.items
 				.list({ projectSlug: 'helm' })
 				.map(item => item.kind)
 				.sort(),
-			['harden', 'harden', 'ralph', 'ralph'],
+			['loop', 'loop'],
 		)
 	})
 })
@@ -1566,12 +1533,12 @@ test('Drainer runs queued solve Items oldest-first through the Solver and Item S
 	})
 })
 
-test('Drainer runs queued ralph Items through the loop lane and captures AlmanacRunId', async () => {
+test('Drainer runs queued loop Items through the loop lane and captures AlmanacRunId', async () => {
 	await withTempDb(async db => {
-		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-ralph-worktree-'))
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-worktree-'))
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
-			title: 'Run ralph loop',
+		const item = commands.createLoopItem({
+			title: 'Run implementation loop',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 			mode: 'once',
@@ -1579,27 +1546,27 @@ test('Drainer runs queued ralph Items through the loop lane and captures Almanac
 		})
 		commands.recordPlanPrepared(item.id, {
 			worktreePath,
-			branchName: 'helm/item/ralph-loop',
+			branchName: 'helm/item/loop',
 			planDirName: 'afk-rework',
 			spawner: 'default',
 		})
 		const solver = new FakeSolveSolver(worktreePath)
-		const loopRunner = new FakeLoopRunner(10, 'ralph-afk-rework-1')
+		const loopRunner = new FakeLoopRunner(10, 'loop-afk-rework-1')
 		const drainer = new Drainer(config, db, provider, solver, loopRunner)
 
 		try {
 			drainer.start()
 			drainer.resume()
 
-			await waitFor(() => db.items.get(item.id)?.status === 'done', 'queued ralph Item did not finish')
+			await waitFor(() => db.items.get(item.id)?.status === 'done', 'queued loop Item did not finish')
 
 			assert.equal(solver.calls.length, 0)
-			assert.equal(loopRunner.ralphCalls.length, 1)
-			assert.equal(loopRunner.ralphCalls[0].worktreePath, worktreePath)
-			assert.equal(loopRunner.ralphCalls[0].branchName, 'helm/item/ralph-loop')
-			assert.equal(loopRunner.ralphCalls[0].payload.prdPath, 'docs/plans/afk-rework/prd.md')
-			assert.equal(db.items.get(item.id)?.almanacRunId, 'ralph-afk-rework-1')
-			assert.equal(db.items.get(item.id)?.resultSummary, 'almanac ralph run completed')
+			assert.equal(loopRunner.loopCalls.length, 1)
+			assert.equal(loopRunner.loopCalls[0].worktreePath, worktreePath)
+			assert.equal(loopRunner.loopCalls[0].branchName, 'helm/item/loop')
+			assert.equal(loopRunner.loopCalls[0].payload.prdPath, 'docs/plans/afk-rework/prd.md')
+			assert.equal(db.items.get(item.id)?.almanacRunId, 'loop-afk-rework-1')
+			assert.equal(db.items.get(item.id)?.resultSummary, 'almanac loop run completed')
 			assert.deepEqual(
 				db.items.getEvents(item.id).map(event => event.eventType),
 				['plan_prepared', 'item_started', 'almanac_run_started', 'loop_completed'],
@@ -1611,81 +1578,36 @@ test('Drainer runs queued ralph Items through the loop lane and captures Almanac
 	})
 })
 
-test('Drainer runs queued harden Items through the loop lane and captures AlmanacRunId', async () => {
-	await withTempDb(async db => {
-		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-harden-worktree-'))
-		const commands = new ItemCommands(db.items, config)
-		const item = commands.createHardenItem({
-			title: 'Run harden loop',
-			projectSlug: 'helm',
-			target: 'src/items',
-			rounds: 2,
-		})
-		commands.recordPlanPrepared(item.id, {
-			worktreePath,
-			branchName: 'helm/item/harden-loop',
-			planDirName: 'harden-loop',
-			spawner: 'default',
-		})
-		const solver = new FakeSolveSolver(worktreePath)
-		const loopRunner = new FakeLoopRunner(10, 'harden-src-items-1')
-		const drainer = new Drainer(config, db, provider, solver, loopRunner)
-
-		try {
-			drainer.start()
-			drainer.resume()
-
-			await waitFor(() => db.items.get(item.id)?.status === 'done', 'queued harden Item did not finish')
-
-			assert.equal(solver.calls.length, 0)
-			assert.equal(loopRunner.hardenCalls.length, 1)
-			assert.equal(loopRunner.hardenCalls[0].worktreePath, worktreePath)
-			assert.equal(loopRunner.hardenCalls[0].branchName, 'helm/item/harden-loop')
-			assert.equal(loopRunner.hardenCalls[0].payload.target, 'src/items')
-			assert.equal(loopRunner.hardenCalls[0].payload.rounds, 2)
-			assert.equal(db.items.get(item.id)?.almanacRunId, 'harden-src-items-1')
-			assert.equal(db.items.get(item.id)?.resultSummary, 'almanac harden run completed')
-			assert.deepEqual(
-				db.items.getEvents(item.id).map(event => event.eventType),
-				['plan_prepared', 'item_started', 'almanac_run_started', 'loop_completed'],
-			)
-		} finally {
-			drainer.stop()
-			rmSync(worktreePath, { recursive: true, force: true })
-		}
-	})
-})
-
-test('Drainer runs loop Items oldest-first across ralph and harden kinds', async () => {
+test('Drainer runs loop Items oldest-first', async () => {
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-loop-order-'))
-		const ralphWorktree = join(worktreeRoot, 'ralph')
-		const hardenWorktree = join(worktreeRoot, 'harden')
-		mkdirSync(ralphWorktree, { recursive: true })
-		mkdirSync(hardenWorktree, { recursive: true })
+		const newerWorktree = join(worktreeRoot, 'newer')
+		const olderWorktree = join(worktreeRoot, 'older')
+		mkdirSync(newerWorktree, { recursive: true })
+		mkdirSync(olderWorktree, { recursive: true })
 		const commands = new ItemCommands(db.items, config)
-		const newerRalph = commands.createRalphItem({
-			title: 'Newer ralph loop',
+		const newerLoop = commands.createLoopItem({
+			title: 'Newer loop',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		const olderHarden = commands.createHardenItem({
-			title: 'Older harden loop',
+		const olderLoop = commands.createLoopItem({
+			title: 'Older loop',
 			projectSlug: 'helm',
-			target: 'src/items',
+			prdPath: 'docs/plans/older/prd.md',
 		})
-		db.items.update(newerRalph.id, { queuedAt: '2026-06-19T12:00:02.000Z' })
-		db.items.update(olderHarden.id, { queuedAt: '2026-06-19T12:00:01.000Z' })
-		commands.recordPlanPrepared(newerRalph.id, {
-			worktreePath: ralphWorktree,
-			branchName: 'helm/item/newer-ralph-loop',
-			planDirName: 'newer-ralph-loop',
+		db.items.update(newerLoop.id, { queuedAt: '2026-06-19T12:00:02.000Z' })
+		db.items.update(olderLoop.id, { queuedAt: '2026-06-19T12:00:01.000Z' })
+		commands.recordPlanPrepared(newerLoop.id, {
+			worktreePath: newerWorktree,
+			branchName: 'helm/item/newer-loop',
+			planDirName: 'newer-loop',
 			spawner: 'default',
 		})
-		commands.recordPlanPrepared(olderHarden.id, {
-			worktreePath: hardenWorktree,
-			branchName: 'helm/item/older-harden-loop',
-			planDirName: 'older-harden-loop',
+		commands.recordPlanPrepared(olderLoop.id, {
+			worktreePath: olderWorktree,
+			branchName: 'helm/item/older-loop',
+			planDirName: 'older-loop',
 			spawner: 'default',
 		})
 		const solver = new FakeSolveSolver(worktreeRoot)
@@ -1697,13 +1619,13 @@ test('Drainer runs loop Items oldest-first across ralph and harden kinds', async
 			drainer.resume()
 
 			await waitFor(
-				() => db.items.get(olderHarden.id)?.status === 'done' && db.items.get(newerRalph.id)?.status === 'done',
+				() => db.items.get(olderLoop.id)?.status === 'done' && db.items.get(newerLoop.id)?.status === 'done',
 				'queued loop Items did not finish',
 			)
 
 			assert.deepEqual(
 				loopRunner.calls.map(call => call.itemId),
-				[olderHarden.id, newerRalph.id],
+				[olderLoop.id, newerLoop.id],
 			)
 			assert.equal(solver.calls.length, 0)
 		} finally {
@@ -1713,17 +1635,17 @@ test('Drainer runs loop Items oldest-first across ralph and harden kinds', async
 	})
 })
 
-test('AlmanacLoopRunner cancellation writes ralph stop signal and preserves worktree', async () => {
-	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-ralph-cancel-worktree-'))
+test('AlmanacLoopRunner cancellation writes loop stop signal and preserves worktree', async () => {
+	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-cancel-worktree-'))
 	const fakeBin = mkdtempSync(join(tmpdir(), 'helm-fake-almanac-'))
-	const outputLogPath = join(worktreePath, 'ralph.log')
+	const outputLogPath = join(worktreePath, 'loop.log')
 	const almanacPath = join(fakeBin, 'almanac')
 	writeFileSync(
 		almanacPath,
 		[
 			'#!/bin/sh',
-			'echo "Run ID: ralph-cancel-test"',
-			'while [ ! -f .ralph-stop ]; do',
+			'echo "Run ID: loop-cancel-test"',
+			'while [ ! -f .loop-stop ]; do',
 			'  sleep 0.01',
 			'done',
 			'echo "stop seen"',
@@ -1742,17 +1664,17 @@ test('AlmanacLoopRunner cancellation writes ralph stop signal and preserves work
 			new AlmanacLoopRunner().runLoop({
 				projectConfig: config.projects[0],
 				solverConfig: config.solver,
-				itemId: 'item-ralph-cancel',
-				itemTitle: 'Cancel ralph',
+				itemId: 'item-loop-cancel',
+				itemTitle: 'Cancel loop',
 				payload: {
-					kind: 'ralph',
+					kind: 'loop',
 					prdPath: 'docs/plans/afk-rework/prd.md',
 					mode: 'once',
 					provider: 'codex',
 				},
 				worktreePath,
-				branchName: 'helm/item/cancel-ralph',
-				planDirName: 'cancel-ralph',
+				branchName: 'helm/item/cancel-loop',
+				planDirName: 'cancel-loop',
 				outputLogPath,
 				signal: controller.signal,
 				onRunId: id => {
@@ -1763,8 +1685,8 @@ test('AlmanacLoopRunner cancellation writes ralph stop signal and preserves work
 			(err: unknown) => err instanceof Error && err.name === 'AbortError',
 		)
 
-		assert.equal(runId, 'ralph-cancel-test')
-		assert.equal(existsSync(join(worktreePath, '.ralph-stop')), true)
+		assert.equal(runId, 'loop-cancel-test')
+		assert.equal(existsSync(join(worktreePath, '.loop-stop')), true)
 		assert.equal(existsSync(worktreePath), true)
 		assert.match(readFileSync(outputLogPath, 'utf-8'), /stop seen/)
 	} finally {
@@ -1774,99 +1696,30 @@ test('AlmanacLoopRunner cancellation writes ralph stop signal and preserves work
 	}
 })
 
-test('AlmanacLoopRunner cancellation writes harden stop signal and preserves worktree', async () => {
-	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-harden-cancel-worktree-'))
-	const fakeBin = mkdtempSync(join(tmpdir(), 'helm-fake-almanac-'))
-	const outputLogPath = join(worktreePath, 'harden.log')
-	const argsLogPath = join(worktreePath, 'args.log')
-	const almanacPath = join(fakeBin, 'almanac')
-	writeFileSync(
-		almanacPath,
-		[
-			'#!/bin/sh',
-			`printf '%s\\n' "$@" > "${argsLogPath}"`,
-			'echo "Run registered: harden-cancel-test"',
-			'while [ ! -f .harden-stop ]; do',
-			'  sleep 0.01',
-			'done',
-			'echo "stop seen"',
-		].join('\n'),
-		'utf-8',
-	)
-	chmodSync(almanacPath, 0o755)
-
-	const oldPath = process.env.PATH
-	process.env.PATH = `${fakeBin}:${oldPath ?? ''}`
-	const controller = new AbortController()
-	let runId: string | null = null
-
-	try {
-		await assert.rejects(
-			new AlmanacLoopRunner().runLoop({
-				projectConfig: config.projects[0],
-				solverConfig: config.solver,
-				itemId: 'item-harden-cancel',
-				itemTitle: 'Cancel harden',
-				payload: {
-					kind: 'harden',
-					target: 'src/items',
-					rounds: 2,
-				},
-				worktreePath,
-				branchName: 'helm/item/cancel-harden',
-				planDirName: 'cancel-harden',
-				outputLogPath,
-				signal: controller.signal,
-				onRunId: id => {
-					runId = id
-					controller.abort()
-				},
-			}),
-			(err: unknown) => err instanceof Error && err.name === 'AbortError',
-		)
-
-		assert.equal(runId, 'harden-cancel-test')
-		assert.deepEqual(readFileSync(argsLogPath, 'utf-8').trim().split('\n'), [
-			'harden',
-			'src/items',
-			'--loop',
-			'--rounds',
-			'2',
-		])
-		assert.equal(existsSync(join(worktreePath, '.harden-stop')), true)
-		assert.equal(existsSync(worktreePath), true)
-		assert.match(readFileSync(outputLogPath, 'utf-8'), /stop seen/)
-	} finally {
-		process.env.PATH = oldPath
-		rmSync(worktreePath, { recursive: true, force: true })
-		rmSync(fakeBin, { recursive: true, force: true })
-	}
-})
-
-test('processRalphItem records loop runner failures through ItemCommands', async () => {
+test('processLoopItem records loop runner failures through ItemCommands', async () => {
 	await withTempDb(async db => {
-		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-ralph-fail-worktree-'))
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-fail-worktree-'))
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
-			title: 'Fail ralph loop',
+		const item = commands.createLoopItem({
+			title: 'Fail loop',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
 		commands.recordPlanPrepared(item.id, {
 			worktreePath,
-			branchName: 'helm/item/fail-ralph',
-			planDirName: 'fail-ralph',
+			branchName: 'helm/item/fail-loop',
+			planDirName: 'fail-loop',
 			spawner: 'default',
 		})
 
 		try {
-			await processRalphItem(item.id, config, db, new FailingLoopRunner())
+			await processLoopItem(item.id, config, db, new FailingLoopRunner())
 
 			const failed = db.items.get(item.id)
 			assert.equal(failed?.status, 'failed')
-			assert.equal(failed?.almanacRunId, 'ralph-failed-run')
+			assert.equal(failed?.almanacRunId, 'loop-failed-run')
 			assert.equal(failed?.errorPhase, 'loop')
-			assert.equal(failed?.errorMessage, 'ralph runner failed')
+			assert.equal(failed?.errorMessage, 'loop runner failed')
 			assert.deepEqual(
 				db.items.getEvents(item.id).map(event => event.eventType),
 				['plan_prepared', 'item_started', 'almanac_run_started', 'item_failed'],
@@ -2005,8 +1858,8 @@ test('Drainer recovers stale processing Items before scheduling lanes', async ()
 			projectSlug: 'helm',
 			prompt: 'Continue after daemon restart.',
 		})
-		const loopItem = commands.createRalphItem({
-			title: 'Recover stale ralph',
+		const loopItem = commands.createLoopItem({
+			title: 'Recover stale loop',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
@@ -2014,12 +1867,12 @@ test('Drainer recovers stale processing Items before scheduling lanes', async ()
 		commands.startItem(loopItem.id)
 		commands.recordExecutionWorkspaceIdentity(loopItem.id, {
 			worktreePath: loopWorktree,
-			branchName: 'helm/item/recover-stale-ralph',
-			planDirName: 'recover-stale-ralph',
+			branchName: 'helm/item/recover-stale-loop',
+			planDirName: 'recover-stale-loop',
 		})
 
 		const solver = new FakeSolveSolver(worktreeRoot)
-		const loopRunner = new FakeLoopRunner(0, 'ralph-recovered-1')
+		const loopRunner = new FakeLoopRunner(0, 'loop-recovered-1')
 		const drainer = new Drainer(config, db, provider, solver, loopRunner)
 
 		try {
@@ -2046,8 +1899,8 @@ test('Drainer recovers stale processing Items before scheduling lanes', async ()
 			)
 
 			assert.equal(solver.calls.length, 1)
-			assert.equal(loopRunner.ralphCalls.length, 1)
-			assert.equal(db.items.get(loopItem.id)?.almanacRunId, 'ralph-recovered-1')
+			assert.equal(loopRunner.loopCalls.length, 1)
+			assert.equal(db.items.get(loopItem.id)?.almanacRunId, 'loop-recovered-1')
 		} finally {
 			drainer.stop()
 			rmSync(worktreeRoot, { recursive: true, force: true })
@@ -2224,12 +2077,12 @@ test('Run Observation normalizes almanac status.tsv for loop Items', async () =>
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-observe-loop-'))
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
-			title: 'Observe ralph loop',
+		const item = commands.createLoopItem({
+			title: 'Observe loop',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		const runId = 'ralph-afk-rework-99'
+		const runId = 'loop-afk-rework-99'
 		const worktreePath = join(worktreeRoot, 'worktree')
 		const statusPath = join(worktreePath, '.almanac', 'runs', runId, 'status.tsv')
 
@@ -2239,7 +2092,7 @@ test('Run Observation normalizes almanac status.tsv for loop Items', async () =>
 				statusPath,
 				[
 					`id\t${runId}`,
-					'type\tralph',
+					'type\tloop',
 					'target\tdocs/plans/afk-rework/prd.md',
 					'pid\t12345',
 					`status_file\t.almanac/runs/${runId}/status.tsv`,
@@ -2254,8 +2107,8 @@ test('Run Observation normalizes almanac status.tsv for loop Items', async () =>
 			commands.startItem(item.id)
 			commands.recordExecutionWorkspaceIdentity(item.id, {
 				worktreePath,
-				branchName: 'helm/item/observe-ralph',
-				planDirName: 'observe-ralph',
+				branchName: 'helm/item/observe-loop',
+				planDirName: 'observe-loop',
 			})
 			commands.recordAlmanacRunId(item.id, runId)
 			const stored = db.items.get(item.id)
@@ -2288,12 +2141,12 @@ test('Run Observation surfaces almanac failure_reason when loop summary is absen
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-observe-loop-failure-'))
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createHardenItem({
-			title: 'Observe harden failure',
+		const item = commands.createLoopItem({
+			title: 'Observe loop failure',
 			projectSlug: 'helm',
-			target: 'src/items',
+			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		const runId = 'harden-items-42'
+		const runId = 'loop-items-42'
 		const worktreePath = join(worktreeRoot, 'worktree')
 		const statusPath = join(worktreePath, '.almanac', 'runs', runId, 'status.tsv')
 
@@ -2303,8 +2156,8 @@ test('Run Observation surfaces almanac failure_reason when loop summary is absen
 				statusPath,
 				[
 					`id\t${runId}`,
-					'type\tharden',
-					'target\tsrc/items',
+					'type\tloop',
+					'target\tdocs/plans/afk-rework/prd.md',
 					'pid\t12345',
 					`status_file\t.almanac/runs/${runId}/status.tsv`,
 					'started_at\t2026-06-22T12:00:00Z',
@@ -2316,8 +2169,8 @@ test('Run Observation surfaces almanac failure_reason when loop summary is absen
 			commands.startItem(item.id)
 			commands.recordExecutionWorkspaceIdentity(item.id, {
 				worktreePath,
-				branchName: 'helm/item/observe-harden-failure',
-				planDirName: 'observe-harden-failure',
+				branchName: 'helm/item/observe-loop-failure',
+				planDirName: 'observe-loop-failure',
 			})
 			commands.recordAlmanacRunId(item.id, runId)
 			const stored = db.items.get(item.id)
@@ -2344,12 +2197,12 @@ test('Run Observation surfaces almanac failure_reason when loop summary is absen
 test('server returns unknown and empty Run Observation fields when sources are missing', async () => {
 	await withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
+		const item = commands.createLoopItem({
 			title: 'Missing observation sources',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		const runId = 'ralph-missing-1'
+		const runId = 'loop-missing-1'
 		const missingWorktree = join(tmpdir(), 'helm-missing-observation-worktree')
 		commands.startItem(item.id)
 		commands.recordExecutionWorkspaceIdentity(item.id, {
@@ -2591,7 +2444,7 @@ test('ItemStore validates payload kind and shape at the persistence seam', async
 					source: null,
 					baseRef: 'main',
 					groupId: null,
-					payload: { kind: 'ralph', prdPath: 'docs/plans/x/prd.md' },
+					payload: { kind: 'loop', prdPath: 'docs/plans/x/prd.md' },
 				}),
 			/payload kind/i,
 		)
@@ -3009,26 +2862,17 @@ export function createSpawner() {
 	}
 })
 
-test('server planning route accepts loop Item kinds through the same Spawner seam', async () => {
+test('server planning route accepts loop Items through the Spawner seam', async () => {
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-loop-item-plans-'))
-		const ralph = db.items.create({
-			kind: 'ralph',
+		const loop = db.items.create({
+			kind: 'loop',
 			status: 'ready',
 			projectSlug: 'helm',
-			title: 'Plan ralph run',
+			title: 'Plan loop run',
 			source: null,
 			baseRef: 'main',
-			payload: { kind: 'ralph', prdPath: 'docs/plans/afk-rework/prd.md' },
-		})
-		const harden = db.items.create({
-			kind: 'harden',
-			status: 'ready',
-			projectSlug: 'helm',
-			title: 'Plan harden run',
-			source: null,
-			baseRef: 'main',
-			payload: { kind: 'harden', target: 'src/items' },
+			payload: { kind: 'loop', prdPath: 'docs/plans/afk-rework/prd.md' },
 		})
 		const planningSpawner = new FakePlanningSpawner(worktreeRoot)
 		const api = apiRoutes(
@@ -3043,20 +2887,14 @@ test('server planning route accepts loop Item kinds through the same Spawner sea
 		)
 
 		try {
-			const ralphRes = await api.request(`/items/${ralph.id}/plan`, { method: 'POST' })
-			const hardenRes = await api.request(`/items/${harden.id}/plan`, { method: 'POST' })
-
-			assert.equal(ralphRes.status, 200)
-			assert.equal(hardenRes.status, 200)
-			const ralphBody = (await ralphRes.json()) as { data: { planDirName: string } }
-			const hardenBody = (await hardenRes.json()) as { data: { branchName: string } }
+			const loopRes = await api.request(`/items/${loop.id}/plan`, { method: 'POST' })
+			assert.equal(loopRes.status, 200)
+			const loopBody = (await loopRes.json()) as { data: { planDirName: string } }
 			assert.equal(
 				planningSpawner.calls[0].taskContext.description,
-				'Run almanac ralph for PRD: docs/plans/afk-rework/prd.md',
+				'Run almanac loop for PRD: docs/plans/afk-rework/prd.md',
 			)
-			assert.equal(planningSpawner.calls[1].taskContext.description, 'Run almanac harden for target: src/items')
-			assert.equal(db.items.get(ralph.id)?.planDirName, ralphBody.data.planDirName)
-			assert.equal(db.items.get(harden.id)?.branchName, hardenBody.data.branchName)
+			assert.equal(db.items.get(loop.id)?.planDirName, loopBody.data.planDirName)
 		} finally {
 			rmSync(worktreeRoot, { recursive: true, force: true })
 		}
@@ -3106,7 +2944,7 @@ test('Dashboard Contract includes optional source, branch, and PR links', async 
 test('Dashboard Contract exposes persisted Item plan identity', async () => {
 	await withTempDb(db => {
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({
+		const item = commands.createLoopItem({
 			title: 'Resume planned Item',
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
@@ -3256,7 +3094,7 @@ test('reopenItem is the manual false-failure override (failed solve → review)'
 
 		// reopen is only valid from failed, and only for solve Items
 		assert.throws(() => commands.reopenItem(item.id))
-		const loop = commands.createRalphItem({ title: 'loop', projectSlug: 'helm', prdPath: 'docs/p.md' })
+		const loop = commands.createLoopItem({ title: 'loop', projectSlug: 'helm', prdPath: 'docs/p.md' })
 		commands.startItem(loop.id)
 		commands.failItem(loop.id, 'loop failed', 'loop')
 		assert.throws(() => commands.reopenItem(loop.id))
@@ -3981,7 +3819,7 @@ test('POST /items/:id/ai/:pass guards unknown pass, missing item, and unsafe bra
 	withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)
 		const solve = commands.createSolveItem({ title: 'whatever', projectSlug: 'helm', prompt: 'do it' })
-		const ralph = commands.createRalphItem({ title: 'loop', projectSlug: 'helm', prdPath: 'docs/prd/x.md' })
+		const loop = commands.createLoopItem({ title: 'loop', projectSlug: 'helm', prdPath: 'docs/prd/x.md' })
 		// A worktree already exists → renaming its branch would orphan it.
 		db.items.update(solve.id, { worktreePath: '/tmp/already-a-worktree' })
 
@@ -3994,7 +3832,7 @@ test('POST /items/:id/ai/:pass guards unknown pass, missing item, and unsafe bra
 
 		assert.equal((await post(`/items/${solve.id}/ai/bogus`)).status, 400) // unknown pass
 		assert.equal((await post('/items/nope/ai/display-name')).status, 404) // missing item
-		assert.equal((await post(`/items/${ralph.id}/ai/branch-name`)).status, 400) // loop kind
+		assert.equal((await post(`/items/${loop.id}/ai/branch-name`)).status, 400) // loop kind
 		assert.equal((await post(`/items/${solve.id}/ai/branch-name`)).status, 400) // worktree exists
 		assert.equal(modelCalled, false) // every guard short-circuits before the model
 	}))
@@ -4077,8 +3915,8 @@ test('setSolveItemModel stores and clears the per-item model override', () =>
 		const cleared = commands.setSolveItemModel(item.id, null)
 		assert.equal(cleared.payload.kind === 'solve' ? cleared.payload.solverModel : 'set', undefined)
 
-		const ralph = commands.createRalphItem({ title: 'r', projectSlug: 'helm', prdPath: 'docs/prd.md' })
-		assert.throws(() => commands.setSolveItemModel(ralph.id, 'claude-fable-5'))
+		const loop = commands.createLoopItem({ title: 'r', projectSlug: 'helm', prdPath: 'docs/prd.md' })
+		assert.throws(() => commands.setSolveItemModel(loop.id, 'claude-fable-5'))
 	}))
 
 test('Item action routes set, reject, and clear the per-item solver model', () =>
@@ -4193,8 +4031,8 @@ test('setSolveItemWorkspace stores and clears the per-item workspace override', 
 		const cleared = commands.setSolveItemWorkspace(item.id, null)
 		assert.equal(cleared.payload.kind === 'solve' ? cleared.payload.solverWorkspace : 'set', undefined)
 
-		const ralph = commands.createRalphItem({ title: 'r', projectSlug: 'helm', prdPath: 'docs/prd.md' })
-		assert.throws(() => commands.setSolveItemWorkspace(ralph.id, 'main'))
+		const loop = commands.createLoopItem({ title: 'r', projectSlug: 'helm', prdPath: 'docs/prd.md' })
+		assert.throws(() => commands.setSolveItemWorkspace(loop.id, 'main'))
 	}))
 
 test('Item action routes set, reject, and clear the per-item solver workspace', () =>

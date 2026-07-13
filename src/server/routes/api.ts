@@ -519,7 +519,7 @@ export function apiRoutes(
 					.strict(),
 				z
 					.object({
-						kind: z.literal('ralph'),
+						kind: z.literal('loop'),
 						title: z.string().min(1),
 						projectSlug: z.string().min(1),
 						prdPath: z.string().min(1),
@@ -536,23 +536,9 @@ export function apiRoutes(
 						intent: createIntentSchema.optional(),
 					})
 					.strict(),
-				z
-					.object({
-						kind: z.literal('harden'),
-						title: z.string().min(1),
-						projectSlug: z.string().min(1),
-						target: z.string().min(1),
-						baseRef: z.string().min(1).optional(),
-						baseItemId: z.string().min(1).optional(),
-						spawner: spawnerNameSchema.optional(),
-						rounds: z.number().int().positive().optional(),
-						parallelism: z.number().int().positive().optional(),
-						intent: createIntentSchema.optional(),
-					})
-					.strict(),
 			])
 			.safeParse(body)
-		if (!parsed.success) return c.json({ error: 'Only valid solve, ralph, or harden Item creation is supported' }, 400)
+		if (!parsed.success) return c.json({ error: 'Only valid solve or loop Item creation is supported' }, 400)
 		if (parsed.data.spawner && !spawnerInstalled(parsed.data.spawner)) {
 			return c.json({ error: `Spawner adapter not installed: ${parsed.data.spawner}` }, 400)
 		}
@@ -570,8 +556,8 @@ export function apiRoutes(
 							initialStatus: parsed.data.intent === 'plan' ? 'triage' : undefined,
 							parallelism: parsed.data.parallelism,
 						})
-					case 'ralph':
-						return itemCommands.createRalphItems({
+					case 'loop':
+						return itemCommands.createLoopItems({
 							title: parsed.data.title,
 							projectSlug: parsed.data.projectSlug,
 							prdPath: parsed.data.prdPath,
@@ -584,18 +570,6 @@ export function apiRoutes(
 							effort: parsed.data.effort,
 							iterations: parsed.data.iterations,
 							noOversee: parsed.data.noOversee,
-							initialStatus: parsed.data.intent === 'plan' ? 'triage' : undefined,
-							parallelism: parsed.data.parallelism,
-						})
-					case 'harden':
-						return itemCommands.createHardenItems({
-							title: parsed.data.title,
-							projectSlug: parsed.data.projectSlug,
-							target: parsed.data.target,
-							baseRef: parsed.data.baseRef,
-							baseItemId: parsed.data.baseItemId,
-							spawner: parsed.data.spawner,
-							rounds: parsed.data.rounds,
 							initialStatus: parsed.data.intent === 'plan' ? 'triage' : undefined,
 							parallelism: parsed.data.parallelism,
 						})
@@ -680,8 +654,8 @@ export function apiRoutes(
 		if (invalid) return invalid
 		const item = itemCommands.getItem(c.req.param('id'))
 		if (!item) return c.json({ error: 'Not found' }, 404)
-		if (item.kind !== 'solve' && item.kind !== 'ralph' && item.kind !== 'harden') {
-			return c.json({ error: 'Only solve, ralph, or harden Items can be started by this drainer' }, 400)
+		if (item.kind !== 'solve' && item.kind !== 'loop') {
+			return c.json({ error: 'Only solve or loop Items can be started by this drainer' }, 400)
 		}
 		if (item.status !== 'ready' && item.status !== 'triage') return c.json({ error: 'Item is not ready to start' }, 400)
 		recordSolveSelection(item, selection)

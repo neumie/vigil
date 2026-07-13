@@ -12,10 +12,9 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
 
 1. **Item** - one unit of work. Every Item has a Kind, status, project, title,
    BaseRef, payload, optional Source, optional GroupId, and run metadata.
-2. **Kind** - `solve`, `ralph`, or `harden`.
+2. **Kind** - `solve` or `loop`.
    - `solve` runs the configured agent through the Solver seam.
-   - `ralph` shells out to `almanac ralph`.
-   - `harden` shells out to `almanac harden <target> --loop`.
+   - `loop` shells out to `almanac loop`.
 3. **Source** - external origin for poller-created Items. Source is optional;
    dashboard/API-created Items are first-class without it.
 4. **Triage** - Source-backed solve Items start `unverified`; approve queues
@@ -116,31 +115,17 @@ curl -sS http://localhost:7474/api/items \
   }'
 ```
 
-Create a ralph loop Item:
+Create a loop Item:
 
 ```bash
 curl -sS http://localhost:7474/api/items \
   -H 'content-type: application/json' \
   -d '{
-    "kind": "ralph",
+    "kind": "loop",
     "title": "Run AFK PRD slice",
     "projectSlug": "my-project",
     "prdPath": "docs/plans/example/prd.md",
     "mode": "once"
-  }'
-```
-
-Create a harden loop Item:
-
-```bash
-curl -sS http://localhost:7474/api/items \
-  -H 'content-type: application/json' \
-  -d '{
-    "kind": "harden",
-    "title": "Harden item commands",
-    "projectSlug": "my-project",
-    "target": "src/items",
-    "rounds": 2
   }'
 ```
 
@@ -154,11 +139,9 @@ CLI equivalents write to the same Item Commands path:
 helm add solve --project my-project --title "Fix dashboard empty state" \
   --prompt "Fix the empty state copy and verify the dashboard." --base-ref main
 
-helm add ralph --project my-project --title "Run AFK PRD slice" \
+helm add loop --project my-project --title "Run AFK PRD slice" \
   --prd-path docs/plans/example/prd.md --mode once
 
-helm add harden --project my-project --title "Harden item commands" \
-  --target src/items --rounds 2
 ```
 
 Useful operator actions:

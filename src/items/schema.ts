@@ -3,7 +3,7 @@ import { taskContextSchema } from '../providers/provider.js'
 import { solverAgentSchema } from '../solver/agent.js'
 import { solverWorkspaceSchema } from '../solver/workspace.js'
 
-export const itemKindSchema = z.enum(['solve', 'ralph', 'harden'])
+export const itemKindSchema = z.enum(['solve', 'loop'])
 
 export const itemStatusSchema = z.enum([
 	'triage', // awaiting your go/no-go (source tasks + plan-first items); was unverified + planned
@@ -90,9 +90,9 @@ export const solveItemPayloadSchema = z
 	})
 	.strict()
 
-export const ralphItemPayloadSchema = z
+export const loopItemPayloadSchema = z
 	.object({
-		kind: z.literal('ralph'),
+		kind: z.literal('loop'),
 		prdPath: z.string().min(1),
 		mode: z.enum(['once', 'afk']).optional(),
 		provider: z.enum(['claude', 'codex']).optional(),
@@ -103,19 +103,7 @@ export const ralphItemPayloadSchema = z
 	})
 	.strict()
 
-export const hardenItemPayloadSchema = z
-	.object({
-		kind: z.literal('harden'),
-		target: z.string().min(1),
-		rounds: z.number().int().positive().optional(),
-	})
-	.strict()
-
-export const itemPayloadSchema = z.discriminatedUnion('kind', [
-	solveItemPayloadSchema,
-	ralphItemPayloadSchema,
-	hardenItemPayloadSchema,
-])
+export const itemPayloadSchema = z.discriminatedUnion('kind', [solveItemPayloadSchema, loopItemPayloadSchema])
 
 export const itemRecordSchema = z.object({
 	id: z.string().min(1),

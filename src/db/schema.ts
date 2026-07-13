@@ -281,4 +281,16 @@ UPDATE items SET planned_at = (
 WHERE id IN (SELECT item_id FROM item_events WHERE event_type = 'plan_prepared');
 `,
 	},
+	{
+		// Rename the legacy loop kind and remove obsolete harden Items before the
+		// narrower ItemKind schema reads them; item_events has no ON DELETE cascade.
+		version: 20,
+		sql: `
+UPDATE items
+SET kind = 'loop', payload = json_set(payload, '$.kind', 'loop')
+WHERE kind = 'ralph';
+DELETE FROM item_events WHERE item_id IN (SELECT id FROM items WHERE kind = 'harden');
+DELETE FROM items WHERE kind = 'harden';
+`,
+	},
 ]

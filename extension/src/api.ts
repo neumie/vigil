@@ -107,7 +107,7 @@ export interface RunObservation {
 
 export interface DashboardItem {
 	id: string
-	kind: 'solve' | 'ralph' | 'harden'
+	kind: 'solve' | 'loop'
 	status: string
 	projectSlug: string
 	title: string

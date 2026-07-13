@@ -13,7 +13,7 @@ This PRD treats the AFK rework as a breaking storage reset. Old Task rows, tieri
 ## User Stories
 
 1. As an operator, I want to add a solve Item from the dashboard, so that Vigil can ship a PR from a free-form prompt.
-2. As an operator, I want to add a ralph Item from the dashboard, so that Vigil can delegate PRD execution to almanac.
+2. As an operator, I want to add a loop Item from the dashboard, so that Vigil can delegate PRD execution to almanac.
 3. As an operator, I want to add a harden Item from the dashboard, so that Vigil can delegate hardening rounds to almanac.
 4. As an operator, I want hand-added Items to start as queued by default, so that I can use Vigil without an external source.
 5. As an operator, I want poller-discovered Items to start as unverified, so that ambiguous external work does not run without triage.
@@ -34,7 +34,7 @@ This PRD treats the AFK rework as a breaking storage reset. Old Task rows, tieri
 20. As an operator, I want cancellation to preserve worktrees, so that partial work can be inspected.
 21. As an operator, I want to retry failed, skipped, cancelled, or completed Items, so that I can rerun work without recreating it.
 22. As an operator, I want planning to be available separately from execution, so that I can explore scope before queueing or running.
-23. As an operator, I want planning to work for any Item kind, so that solve, ralph, and harden Items can all get plan artifacts.
+23. As an operator, I want planning to work for any Item kind, so that solve, loop, and harden Items can all get plan artifacts.
 24. As an operator, I want to choose a Spawner per Item, so that planning opens in my preferred interactive surface.
 25. As an operator, I want available Spawners to match files installed in the repo, so that adding a Spawner is an adapter addition, not a schema change.
 26. As an operator, I want repeated Plan clicks to reuse the same planning context when possible, so that I do not create duplicate planning sessions.
@@ -42,7 +42,7 @@ This PRD treats the AFK rework as a breaking storage reset. Old Task rows, tieri
 28. As an operator, I want solve execution to reuse the planned worktree, so that planning artifacts survive into the autonomous run.
 29. As an operator, I want loop execution to reuse the planned worktree when present, so that almanac sees the same repo state.
 30. As an operator, I want solve Items to go through Solver only, so that solve execution stays isolated from almanac loop execution.
-31. As an operator, I want ralph and harden Items to shell out to almanac, so that loop behavior stays owned by almanac.
+31. As an operator, I want loop and harden Items to shell out to almanac, so that loop behavior stays owned by almanac.
 32. As an operator, I want Vigil to capture AlmanacRunId for loop Items, so that the dashboard can follow canonical almanac run state.
 33. As an operator, I want solve prompt snapshots to reflect exactly what was handed to the agent, so that debugging does not depend on mutable plan artifacts.
 34. As an operator, I want solve results to read from the result file only, so that behavior is consistent across default and Okena solvers.
@@ -70,7 +70,7 @@ This PRD treats the AFK rework as a breaking storage reset. Old Task rows, tieri
 - Item Store is the persistence module. Its interface should let callers add, load, list, update lifecycle fields, and persist observations without knowing table layout.
 - Item Store uses one envelope row with queryable lifecycle columns and one Zod-validated JSON payload column.
 - Item envelope includes identity, kind, status, project slug, title, optional Source, BaseRef, optional GroupId, branch/worktree/plan identity, optional AlmanacRunId, timestamps, error state, and result/dispatch state.
-- Item payload is a discriminated union keyed by kind. Solve payload contains prompt. Ralph payload mirrors almanac ralph flags. Harden payload mirrors almanac harden flags.
+- Item payload is a discriminated union keyed by kind. Solve payload contains prompt. Loop payload mirrors almanac loop flags. Harden payload mirrors almanac harden flags.
 - Kind-specific payload fields remain in JSON until a field needs indexed querying.
 - Source is optional. Poller-created Items have Source; hand-added Items have null Source.
 - BaseRef is explicit per Item and defaults from project config only at creation time.
@@ -82,7 +82,7 @@ This PRD treats the AFK rework as a breaking storage reset. Old Task rows, tieri
 - HTTP routes, extension endpoints, CLI commands, and poller ingestion are adapters over Item Commands.
 - Item Commands should expose results that adapters can return directly without duplicating business rules.
 - Solver remains the seam for solve-kind execution only.
-- Loop execution is not a Solver adapter. Ralph and harden shell out to almanac and capture AlmanacRunId from the first stdout line.
+- Loop execution is not a Solver adapter. Loop and harden shell out to almanac and capture AlmanacRunId from the first stdout line.
 - Spawner is the seam for interactive planning. Planning is not a Kind, not Solver behavior, and not loop execution.
 - Spawner adapters are file-discovered. Config names the default Spawner but does not define the available set.
 - PlanWorkspace owns on-disk plan layout and is Item-scoped. Planning artifacts may exist for any Item kind.

@@ -295,7 +295,7 @@ export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Pro
 	const feature = config.solver.branchNaming
 	if (!force && !feature.enabled) return item
 	// Solve-only: enforced here (not just at call sites) so the plan route can't
-	// name a ralph/harden Item — loop Items keep the deterministic helm/item name.
+	// name a loop Item — loop Items keep the deterministic helm/item name.
 	// Structural; applies even to a forced manual run.
 	if (item.kind !== 'solve') return item
 	if (!force && item.branchName) return item // already planned / forked / named

@@ -93,7 +93,7 @@ export class Drainer {
 		const item = this.db.items.get(itemId)
 		if (!item) return false
 		if (item.kind === 'solve') return this.startSolveItem(itemId)
-		if (item.kind === 'ralph' || item.kind === 'harden') return this.startLoopItem(itemId)
+		if (item.kind === 'loop') return this.startLoopItem(itemId)
 		return false
 	}
 
@@ -120,7 +120,7 @@ export class Drainer {
 
 	getStatus(): QueueStatus {
 		const solvePending = this.itemCommands.countQueuedItems('solve')
-		const loopPending = this.itemCommands.countQueuedItems('ralph') + this.itemCommands.countQueuedItems('harden')
+		const loopPending = this.itemCommands.countQueuedItems('loop')
 		const activeSolve = this.activeSolveCount()
 		const activeLoop = this.activeLoopCount()
 		return {
@@ -231,7 +231,7 @@ export class Drainer {
 	private startLoopItem(itemId: string): boolean {
 		if (this.activeLoopItems.has(itemId)) return false
 		const item = this.db.items.get(itemId)
-		if (!item || (item.kind !== 'ralph' && item.kind !== 'harden')) return false
+		if (!item || item.kind !== 'loop') return false
 		if (!isStartableItem(item)) return false
 
 		const controller = new AbortController()
@@ -258,10 +258,7 @@ export class Drainer {
 	private nextQueuedLoopItem(): ItemRecord | null {
 		const activeIds = new Set(this.activeLoopItems.keys())
 		const limit = this.loopCapacity() + activeIds.size + 5
-		const candidates = [
-			...this.itemCommands.nextQueuedItems('ralph', limit),
-			...this.itemCommands.nextQueuedItems('harden', limit),
-		].filter(item => !activeIds.has(item.id))
+		const candidates = this.itemCommands.nextQueuedItems('loop', limit).filter(item => !activeIds.has(item.id))
 		candidates.sort((a, b) => {
 			const queued = (a.queuedAt ?? a.createdAt).localeCompare(b.queuedAt ?? b.createdAt)
 			if (queued !== 0) return queued

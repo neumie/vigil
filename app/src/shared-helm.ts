@@ -131,7 +131,7 @@ export interface RunObservation {
 
 export interface DashboardItem {
 	id: string
-	kind: 'solve' | 'ralph' | 'harden'
+	kind: 'solve' | 'loop'
 	status: ItemStatus
 	projectSlug: string
 	title: string
@@ -194,7 +194,7 @@ export type CreateItemInput =
 			intent?: 'queue' | 'plan'
 	  }
 	| {
-			kind: 'ralph'
+			kind: 'loop'
 			title: string
 			projectSlug: string
 			prdPath: string
@@ -207,18 +207,6 @@ export type CreateItemInput =
 			effort?: string
 			iterations?: number
 			noOversee?: boolean
-			parallelism?: number
-			intent?: 'queue' | 'plan'
-	  }
-	| {
-			kind: 'harden'
-			title: string
-			projectSlug: string
-			target: string
-			baseRef?: string
-			baseItemId?: string
-			spawner?: string
-			rounds?: number
 			parallelism?: number
 			intent?: 'queue' | 'plan'
 	  }

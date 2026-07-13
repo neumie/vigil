@@ -13,11 +13,10 @@ disagrees, drive the rework toward the doc — not the other way round.
 **Item** — a unit on the AFK list. Has a `kind` (discriminator), an envelope, and
 a kind-specific payload. Replaces the pre-rework `Task`.
 
-**Kind** — `solve | ralph | harden`. Top-level discriminator on an Item.
+**Kind** — `solve | loop`. Top-level discriminator on an Item.
 - `solve` — one configured-agent invocation in a worktree → `/almanac:ship` → PR. Payload: `prompt`.
-- `ralph` / `harden` — delegated to almanac's loop engine. Payload mirrors almanac
-  flags 1:1: ralph `{ prdPath, mode?, provider?, model?, effort?, iterations?, noOversee? }`;
-  harden `{ target, rounds? }`.
+- `loop` — delegated to almanac's loop engine. Payload mirrors almanac flags 1:1:
+  `{ prdPath, mode?, provider?, model?, effort?, iterations?, noOversee? }`.
 
 **Source** — optional `{ provider, externalId }` on the envelope. Populated by the
 clientcare poller for poller-discovered items; null for hand-added ones. The
@@ -58,7 +57,7 @@ it replaces the pre-rework solver clarification-chat round.
 
 **Lane** — a per-kind concurrency slot. Solve capacity follows `solver.concurrency`;
 loop capacity is currently 1. Solve and loop items never share a slot, so a long
-ralph can't starve a queue of short solves.
+loop can't starve a queue of short solves.
 
 **Drainer** — helm's worker pool. Always-on daemon (launchd-managed); selects
 queued items respecting lane caps and `queuedAt ASC` per lane.
@@ -176,8 +175,8 @@ Helm is **the** entrypoint for tasks across projects — the dashboard is where
 Items are created, not just observed. Three entrypoints write Items into the DB,
 all via Item Commands (no parallel write paths):
 
-1. **Dashboard add form** — per-project page, three tabs (solve/ralph/harden).
-   Fields: title, payload (prompt or prdPath or target), `baseRef` (free-form
+1. **Dashboard add form** — per-project page, two tabs (solve/loop).
+   Fields: title, payload (prompt or prdPath), `baseRef` (free-form
    ref today), `spawner` (dropdown from discovered spawners; defaults to active
    Spawner), `parallelism: N` (defaults 1; N > 1 →
    fan-out group). [Plan] and [Queue] buttons: Plan creates `planned` Item(s),
@@ -213,11 +212,11 @@ diverging afterward.
 
 ## Cross-tool contracts
 
-**Almanac handoff.** `almanac ralph` / `almanac harden` emit a run id such as
+**Almanac handoff.** `almanac loop` emits a run id such as
 `run_id=<id>`, `Run ID: <id>`, `Run registered: <id>`, or a bare
-`ralph-*`/`harden-*` id. Helm captures the first match, stores it on the Item
+`loop-*` id. Helm captures the first match, stores it on the Item
 (`almanacRunId`), and tails `.almanac/runs/<id>/status.tsv` (almanac's canonical
 per-run record) for live state. To cancel a loop, helm writes the loop adapter's
-between-round signal file (`.ralph-stop` / `.harden-stop`) in the worktree;
+between-round signal file (`.loop-stop`) in the worktree;
 almanac exits cleanly between rounds and helm marks the Item `cancelled`. The
 worktree is preserved either way.

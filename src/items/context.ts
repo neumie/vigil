@@ -63,17 +63,11 @@ export function buildItemTaskContext(item: ItemRecord, sourceContext?: TaskConte
 				description: item.payload.prompt,
 				metadata,
 			}
-		case 'ralph':
+		case 'loop':
 			return {
 				title: item.title,
-				description: `Run almanac ralph for PRD: ${item.payload.prdPath}`,
+				description: `Run almanac loop for PRD: ${item.payload.prdPath}`,
 				metadata: { ...metadata, PRD: item.payload.prdPath },
-			}
-		case 'harden':
-			return {
-				title: item.title,
-				description: `Run almanac harden for target: ${item.payload.target}`,
-				metadata: { ...metadata, Target: item.payload.target },
 			}
 	}
 }

@@ -43,7 +43,7 @@ const createSolveItemsInputSchema = createSolveItemInputSchema
 
 export type CreateSolveItemsInput = z.infer<typeof createSolveItemsInputSchema>
 
-const createRalphItemInputSchema = z
+const createLoopItemInputSchema = z
 	.object({
 		title: z.string().min(1),
 		projectSlug: z.string().min(1),
@@ -61,41 +61,18 @@ const createRalphItemInputSchema = z
 	})
 	.strict()
 
-export type CreateRalphItemInput = z.infer<typeof createRalphItemInputSchema>
+export type CreateLoopItemInput = z.infer<typeof createLoopItemInputSchema>
 
-const createRalphItemsInputSchema = createRalphItemInputSchema
+const createLoopItemsInputSchema = createLoopItemInputSchema
 	.extend({
 		parallelism: z.number().int().positive().optional(),
 	})
 	.strict()
 
-export type CreateRalphItemsInput = z.infer<typeof createRalphItemsInputSchema>
-
-const createHardenItemInputSchema = z
-	.object({
-		title: z.string().min(1),
-		projectSlug: z.string().min(1),
-		target: z.string().min(1),
-		baseRef: z.string().min(1).optional(),
-		baseItemId: z.string().min(1).optional(),
-		spawner: z.string().min(1).optional(),
-		initialStatus: createItemInitialStatusSchema.optional(),
-		rounds: z.number().int().positive().optional(),
-	})
-	.strict()
-
-export type CreateHardenItemInput = z.infer<typeof createHardenItemInputSchema>
-
-const createHardenItemsInputSchema = createHardenItemInputSchema
-	.extend({
-		parallelism: z.number().int().positive().optional(),
-	})
-	.strict()
-
-export type CreateHardenItemsInput = z.infer<typeof createHardenItemsInputSchema>
+export type CreateLoopItemsInput = z.infer<typeof createLoopItemsInputSchema>
 
 const RETRYABLE_STATUSES = new Set<ItemRecord['status']>(['failed', 'cancelled', 'done', 'review'])
-const ITEM_KINDS: ItemKind[] = ['solve', 'ralph', 'harden']
+const ITEM_KINDS: ItemKind[] = ['solve', 'loop']
 const RESERVED_EVENT_TYPES = new Set([
 	'item_approved',
 	'item_rejected',
@@ -247,20 +224,20 @@ export class ItemCommands {
 		return updated
 	}
 
-	createRalphItem(input: CreateRalphItemInput): ItemRecord {
-		return this.createRalphItems({ ...input, parallelism: 1 })[0]
+	createLoopItem(input: CreateLoopItemInput): ItemRecord {
+		return this.createLoopItems({ ...input, parallelism: 1 })[0]
 	}
 
-	createRalphItems(input: CreateRalphItemsInput): ItemRecord[] {
-		const parsed = createRalphItemsInputSchema.safeParse(input)
-		if (!parsed.success) throw new Error(`Invalid ralph Item input: ${parsed.error.message}`)
+	createLoopItems(input: CreateLoopItemsInput): ItemRecord[] {
+		const parsed = createLoopItemsInputSchema.safeParse(input)
+		if (!parsed.success) throw new Error(`Invalid loop Item input: ${parsed.error.message}`)
 
 		const project = this.config.projects.find(p => p.slug === parsed.data.projectSlug)
 		if (!project) throw new Error(`Unknown project slug: ${parsed.data.projectSlug}`)
 		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
 
 		const payload = {
-			kind: 'ralph' as const,
+			kind: 'loop' as const,
 			prdPath: parsed.data.prdPath,
 			...(parsed.data.mode ? { mode: parsed.data.mode } : {}),
 			...(parsed.data.provider ? { provider: parsed.data.provider } : {}),
@@ -274,42 +251,7 @@ export class ItemCommands {
 		const groupId = count > 1 ? randomUUID() : null
 		return Array.from({ length: count }, () =>
 			this.store.create({
-				kind: 'ralph',
-				status: initialStatus(parsed.data),
-				projectSlug: parsed.data.projectSlug,
-				title: parsed.data.title,
-				source: null,
-				baseRef,
-				spawner: parsed.data.spawner ?? null,
-				groupId,
-				payload,
-			}),
-		)
-	}
-
-	createHardenItem(input: CreateHardenItemInput): ItemRecord {
-		return this.createHardenItems({ ...input, parallelism: 1 })[0]
-	}
-
-	createHardenItems(input: CreateHardenItemsInput): ItemRecord[] {
-		const parsed = createHardenItemsInputSchema.safeParse(input)
-		if (!parsed.success) throw new Error(`Invalid harden Item input: ${parsed.error.message}`)
-
-		const project = this.config.projects.find(p => p.slug === parsed.data.projectSlug)
-		if (!project) throw new Error(`Unknown project slug: ${parsed.data.projectSlug}`)
-		const baseRef = this.resolveBaseRef(parsed.data, project.baseBranch)
-
-		const payload = {
-			kind: 'harden' as const,
-			target: parsed.data.target,
-			...(parsed.data.rounds ? { rounds: parsed.data.rounds } : {}),
-		}
-
-		const count = parsed.data.parallelism ?? 1
-		const groupId = count > 1 ? randomUUID() : null
-		return Array.from({ length: count }, () =>
-			this.store.create({
-				kind: 'harden',
+				kind: 'loop',
 				status: initialStatus(parsed.data),
 				projectSlug: parsed.data.projectSlug,
 				title: parsed.data.title,
@@ -553,7 +495,7 @@ export class ItemCommands {
 
 	recordAlmanacRunId(id: string, runId: string): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.kind !== 'ralph' && item.kind !== 'harden') throw new Error('Only loop Items can record AlmanacRunId')
+		if (item.kind !== 'loop') throw new Error('Only loop Items can record AlmanacRunId')
 		if (item.status !== 'running') throw new Error('Only running loop Items can record AlmanacRunId')
 		if (item.almanacRunId === runId) return item
 
@@ -564,7 +506,7 @@ export class ItemCommands {
 
 	completeLoopItem(id: string, fields: { resultSummary: string }): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.kind !== 'ralph' && item.kind !== 'harden') throw new Error('Only loop Items can complete through almanac')
+		if (item.kind !== 'loop') throw new Error('Only loop Items can complete through almanac')
 		if (item.status !== 'running') throw new Error('Only running loop Items can complete through almanac')
 
 		const completed = this.store.update(id, {

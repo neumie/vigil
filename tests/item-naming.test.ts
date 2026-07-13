@@ -178,11 +178,11 @@ test('ensureItemWorkspaceName appends the id suffix on collision', () =>
 		assert.notEqual(result.branchName, 'feat/fix-login-redirect')
 	}))
 
-test('ensureItemWorkspaceName skips loop (ralph/harden) Items', () =>
+test('ensureItemWorkspaceName skips loop Items', () =>
 	withTempDb(async db => {
 		const config = makeConfig()
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({ title: 'payments loop', projectSlug: 'helm', prdPath: 'docs/prd/pay.md' })
+		const item = commands.createLoopItem({ title: 'payments loop', projectSlug: 'helm', prdPath: 'docs/prd/pay.md' })
 
 		let called = false
 		const result = await ensureItemWorkspaceName({
@@ -385,7 +385,7 @@ test('ensureItemWorkspaceName force still skips loop Items (structural gate)', (
 	withTempDb(async db => {
 		const config = makeConfig()
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createRalphItem({ title: 'payments loop', projectSlug: 'helm', prdPath: 'docs/prd/pay.md' })
+		const item = commands.createLoopItem({ title: 'payments loop', projectSlug: 'helm', prdPath: 'docs/prd/pay.md' })
 
 		let called = false
 		const result = await ensureItemWorkspaceName({

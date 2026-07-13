@@ -5,9 +5,7 @@ import type { HelmConfig, ProjectConfig } from '../config.js'
 import type { ItemPayload } from '../items/schema.js'
 import { isCancellation, phaseError, taskCancelled } from '../util/errors.js'
 
-export type RalphPayload = Extract<ItemPayload, { kind: 'ralph' }>
-export type HardenPayload = Extract<ItemPayload, { kind: 'harden' }>
-export type LoopPayload = RalphPayload | HardenPayload
+export type LoopPayload = Extract<ItemPayload, { kind: 'loop' }>
 
 export interface LoopRunParams {
 	projectConfig: ProjectConfig
@@ -47,13 +45,13 @@ function parseRunIdLine(line: string): string | null {
 	if (labelled) return labelled[1]
 	const assigned = trimmed.match(/^run_id[=:]\s*(\S+)/i)
 	if (assigned) return assigned[1]
-	return /^(?:ralph|harden)-[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : null
+	return /^loop-[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : null
 }
 
-function ralphArgs(payload: RalphPayload, solverConfig: HelmConfig['solver']): string[] {
+function loopArgs(payload: LoopPayload, solverConfig: HelmConfig['solver']): string[] {
 	const mode = payload.mode ?? 'once'
 	const args = [
-		'ralph',
+		'loop',
 		'--prd',
 		prdNameFromPath(payload.prdPath),
 		'--mode',
@@ -71,19 +69,8 @@ function ralphArgs(payload: RalphPayload, solverConfig: HelmConfig['solver']): s
 	return args
 }
 
-function hardenArgs(payload: HardenPayload): string[] {
-	const args = ['harden', payload.target, '--loop']
-	if (payload.rounds) args.push('--rounds', String(payload.rounds))
-	return args
-}
-
 function almanacArgs(payload: LoopPayload, solverConfig: HelmConfig['solver']): string[] {
-	switch (payload.kind) {
-		case 'ralph':
-			return ralphArgs(payload, solverConfig)
-		case 'harden':
-			return hardenArgs(payload)
-	}
+	return loopArgs(payload, solverConfig)
 }
 
 export class AlmanacLoopRunner implements LoopRunner {

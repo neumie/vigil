@@ -289,7 +289,7 @@ export async function processLoopItem(
 	const commands = new ItemCommands(db.items, config)
 	const item = commands.getItem(itemId)
 	if (!item) throw new Error(`Item ${itemId} not found in DB`)
-	if ((item.kind !== 'ralph' && item.kind !== 'harden') || item.payload.kind !== item.kind) {
+	if (item.kind !== 'loop' || item.payload.kind !== item.kind) {
 		throw new Error(`Item ${itemId} is ${item.kind}, not a loop Item`)
 	}
 
@@ -301,8 +301,8 @@ export async function processLoopItem(
 	const outputLogPath = resolve(LOGS_DIR, `${itemId}.log`)
 
 	try {
-		// Loop (ralph/harden) Items keep the deterministic helm/item name: their
-		// title is a PRD path / harden target, not a single conventional change, so
+		// Loop Items keep the deterministic helm/item name: their title is a PRD
+		// path, not a single conventional change, so
 		// AI naming is scoped to solve Items only.
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(item)
 		commands.recordExecutionWorkspaceIdentity(itemId, { planDirName, branchName })
@@ -340,14 +340,4 @@ export async function processLoopItem(
 			log.error('worker', `${item.kind} Item failed: ${item.title}`, err)
 		}
 	}
-}
-
-export async function processRalphItem(
-	itemId: string,
-	config: HelmConfig,
-	db: DB,
-	loopRunner: LoopRunner = new AlmanacLoopRunner(),
-	signal?: AbortSignal,
-): Promise<void> {
-	return processLoopItem(itemId, config, db, loopRunner, signal)
 }

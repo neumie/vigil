@@ -6,12 +6,11 @@ import type { CreateItemInput, HelmSnapshot } from '../../shared-helm'
 import { showToast } from '../toast'
 import { Btn, FieldLabel, Segmented, SelectInput, Sheet, TextArea, TextInput } from './ui'
 
-type Kind = 'solve' | 'ralph' | 'harden'
+type Kind = 'solve' | 'loop'
 
 const KIND_FIELD: Record<Kind, { label: string; placeholder: string }> = {
 	solve: { label: 'Prompt', placeholder: 'What should the agent do?' },
-	ralph: { label: 'PRD path', placeholder: 'docs/plans/…/prd.md' },
-	harden: { label: 'Target', placeholder: 'Module or path to harden' },
+	loop: { label: 'PRD path', placeholder: 'docs/plans/…/prd.md' },
 }
 
 export function NewItemSheet({
@@ -46,11 +45,7 @@ export function NewItemSheet({
 			...(baseRef.trim() ? { baseRef: baseRef.trim() } : {}),
 		}
 		const input: CreateItemInput =
-			kind === 'solve'
-				? { kind, ...common, prompt: body.trim() }
-				: kind === 'ralph'
-					? { kind, ...common, prdPath: body.trim() }
-					: { kind, ...common, target: body.trim() }
+			kind === 'solve' ? { kind, ...common, prompt: body.trim() } : { kind, ...common, prdPath: body.trim() }
 		setBusy(true)
 		try {
 			const result = await window.helm.daemon.createItem(input)
@@ -89,8 +84,7 @@ export function NewItemSheet({
 					onChange={setKind}
 					options={[
 						{ value: 'solve', label: 'Solve' },
-						{ value: 'ralph', label: 'Ralph' },
-						{ value: 'harden', label: 'Harden' },
+						{ value: 'loop', label: 'Loop' },
 					]}
 				/>
 			</div>
