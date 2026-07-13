@@ -313,6 +313,13 @@ function AgentSelect(props: {
  * dropdown so the row never wraps. "Auto" = no per-item override (the
  * daemon's configured model). Hidden when the daemon didn't provide a
  * catalog (older server).
+ *
+ * This is a CUSTOM dropdown, not a native `<select>`: the widget renders in a
+ * closed shadow root, and macOS Chromium silently fails to open native select
+ * popups inside shadow DOM (clicks land, no popup ever shows). The options
+ * panel renders in the same shadow root, anchored to the trigger; the card is
+ * `overflow: hidden`, so the panel flips above the trigger when it wouldn't
+ * fit below and clamps its max-height to the room actually inside the card.
  */
 function ModelSelect(props: {
 	value: Accessor<string>
@@ -320,26 +327,186 @@ function ModelSelect(props: {
 	onChange: (model: string) => void
 	disabled?: boolean
 }) {
+	const [open, setOpen] = createSignal(false)
+	const [dropUp, setDropUp] = createSignal(false)
+	const [maxHeight, setMaxHeight] = createSignal(180)
+	// Keyboard/hover highlight — one source so arrows and the mouse never
+	// paint two rows at once (rows style `.is-active`, not `:hover`).
+	const [active, setActive] = createSignal(0)
+	let rootEl: HTMLDivElement | undefined
+	let triggerEl: HTMLButtonElement | undefined
+
+	// "Auto" first, then the favorites — one flat row list; '' = no override.
+	const rows = (): ModelOption[] => [{ id: '', label: 'Auto' }, ...props.options()]
+	const selectedIndex = () =>
+		Math.max(
+			0,
+			rows().findIndex(row => row.id === props.value()),
+		)
+	const currentLabel = () => rows()[selectedIndex()]?.label ?? 'Auto'
+
+	function openMenu() {
+		const card = triggerEl?.closest('.vg-card')
+		if (triggerEl && card) {
+			const t = triggerEl.getBoundingClientRect()
+			const c = card.getBoundingClientRect()
+			const below = c.bottom - t.bottom - 10
+			const above = t.top - c.top - 10
+			const wanted = Math.min(180, rows().length * 28 + 10)
+			const up = below < wanted && above > below
+			setDropUp(up)
+			setMaxHeight(Math.max(64, Math.min(180, Math.floor(up ? above : below))))
+		}
+		setActive(selectedIndex())
+		setOpen(true)
+	}
+
+	const close = () => setOpen(false)
+
+	function choose(id: string) {
+		props.onChange(id)
+		close()
+	}
+
+	// While open: click outside closes. The shadow root is CLOSED, so one
+	// document listener can't do it — events from inside the widget retarget
+	// to the host and their composedPath is truncated there. Two capture
+	// listeners: the shadow root sees clicks inside the widget but outside
+	// this control; the document sees page clicks (target ≠ host).
+	createEffect(() => {
+		if (!open()) return
+		const root = rootEl?.getRootNode()
+		const host = root instanceof ShadowRoot ? root.host : null
+		const onShadowDown = (e: Event) => {
+			if (rootEl && e.target instanceof Node && !rootEl.contains(e.target)) close()
+		}
+		const onDocDown = (e: Event) => {
+			if (e.target !== host) close()
+		}
+		const onDocKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') close()
+		}
+		root?.addEventListener('pointerdown', onShadowDown, true)
+		document.addEventListener('pointerdown', onDocDown, true)
+		document.addEventListener('keydown', onDocKey, true)
+		onCleanup(() => {
+			root?.removeEventListener('pointerdown', onShadowDown, true)
+			document.removeEventListener('pointerdown', onDocDown, true)
+			document.removeEventListener('keydown', onDocKey, true)
+		})
+	})
+
+	// A run starting mid-open (control becomes disabled) closes the panel.
+	createEffect(() => {
+		if (props.disabled && open()) close()
+	})
+
+	function onKeyDown(e: KeyboardEvent) {
+		if (!open()) {
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				e.preventDefault()
+				if (!props.disabled) openMenu()
+			}
+			return
+		}
+		const count = rows().length
+		if (e.key === 'ArrowDown') {
+			e.preventDefault()
+			setActive(i => (i + 1) % count)
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault()
+			setActive(i => (i - 1 + count) % count)
+		} else if (e.key === 'Home') {
+			e.preventDefault()
+			setActive(0)
+		} else if (e.key === 'End') {
+			e.preventDefault()
+			setActive(count - 1)
+		} else if (e.key === 'Enter' || e.key === ' ') {
+			// preventDefault also cancels the focused trigger's native
+			// activation, so this can't double-fire as a toggle click.
+			e.preventDefault()
+			const row = rows()[active()]
+			if (row) choose(row.id)
+		} else if (e.key === 'Escape') {
+			e.preventDefault()
+			close()
+		}
+	}
+
 	return (
 		<Show when={props.options().length > 0}>
 			<div class="vg-agent">
 				<span class="vg-agent__label">Model</span>
-				<select
-					class="vg-model-select"
-					aria-label="Solver model"
-					disabled={props.disabled}
-					value={props.value()}
-					on:change={e => props.onChange((e.currentTarget as HTMLSelectElement).value)}
-				>
-					<option value="">Auto</option>
-					<For each={props.options()}>
-						{model => (
-							<option value={model.id} selected={props.value() === model.id}>
-								{model.label}
-							</option>
-						)}
-					</For>
-				</select>
+				<div class="vg-model" ref={rootEl} on:keydown={onKeyDown}>
+					<button
+						type="button"
+						ref={triggerEl}
+						class={`vg-model__trigger${open() ? ' is-open' : ''}`}
+						aria-label="Solver model"
+						aria-haspopup="listbox"
+						aria-expanded={open()}
+						disabled={props.disabled}
+						on:click={() => (open() ? close() : openMenu())}
+					>
+						<span class="vg-model__value">{currentLabel()}</span>
+						<span class="vg-model__chevron" aria-hidden="true">
+							<svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+								<path
+									d="M1 1l4 4 4-4"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</span>
+					</button>
+					<Show when={open()}>
+						{/* biome-ignore lint/a11y/useSemanticElements: a native <select> is the bug this control replaces — its popup never opens inside the closed shadow root on macOS Chromium */}
+						<div
+							role="listbox"
+							tabIndex={-1}
+							class={`vg-model__menu vg-model__menu--${dropUp() ? 'up' : 'down'}`}
+							aria-label="Solver model options"
+							style={{ 'max-height': `${maxHeight()}px` }}
+						>
+							<For each={rows()}>
+								{(row, i) => (
+									// biome-ignore lint/a11y/useSemanticElements: rows of the custom listbox above — native <option> requires the native <select> this replaces
+									<button
+										role="option"
+										type="button"
+										tabindex="-1"
+										class={`vg-model__option${i() === active() ? ' is-active' : ''}${
+											row.id === props.value() ? ' is-selected' : ''
+										}`}
+										aria-selected={row.id === props.value()}
+										on:click={() => choose(row.id)}
+										on:mousemove={() => setActive(i())}
+									>
+										<span class="vg-model__option-label">{row.label}</span>
+										<Show when={row.id === props.value()}>
+											<span class="vg-model__check" aria-hidden="true">
+												<svg width="10" height="8" viewBox="0 0 10 8" aria-hidden="true">
+													<path
+														d="M1 4l2.6 2.6L9 1"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="1.6"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+													/>
+												</svg>
+											</span>
+										</Show>
+									</button>
+								)}
+							</For>
+						</div>
+					</Show>
+				</div>
 			</div>
 		</Show>
 	)

@@ -217,15 +217,19 @@ export const WIDGET_STYLES = `
 		border: 1px solid var(--vg-border);
 		border-radius: var(--vg-radius-ctl);
 	}
-	.vg-model-select {
-		appearance: none;
-		-webkit-appearance: none;
+	/* Custom model dropdown — native <select> popups don't open inside the
+	   closed shadow root on macOS Chromium, so the panel is ours. Trigger
+	   mirrors the old select; panel follows the menu spec (surface bg,
+	   hairline, ctl radius, card shadow, 28px rows). */
+	.vg-model { position: relative; display: flex; justify-content: flex-end; min-width: 0; }
+	.vg-model__trigger {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
 		height: 30px;
-		padding: 0 28px 0 10px;
-		background-color: rgba(255, 255, 255, 0.05);
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b6f77' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 10px center;
+		max-width: 210px;
+		padding: 0 10px;
+		background: rgba(255, 255, 255, 0.05);
 		border: 1px solid var(--vg-border);
 		border-radius: var(--vg-radius-ctl);
 		color: var(--vg-text);
@@ -235,10 +239,73 @@ export const WIDGET_STYLES = `
 		cursor: pointer;
 		outline: none;
 	}
-	.vg-model-select:hover { border-color: var(--vg-border-strong); }
-	.vg-model-select:focus { border-color: var(--vg-accent); }
-	.vg-model-select:disabled { cursor: default; opacity: 0.5; }
-	.vg-model-select option { background: var(--vg-surface); color: var(--vg-text); }
+	.vg-model__trigger:hover { border-color: var(--vg-border-strong); }
+	.vg-model__trigger:focus-visible { border-color: var(--vg-accent); }
+	.vg-model__trigger.is-open { border-color: var(--vg-accent); }
+	.vg-model__trigger:disabled { cursor: default; opacity: 0.5; }
+	.vg-model__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.vg-model__chevron {
+		flex-shrink: 0;
+		display: inline-flex;
+		color: var(--vg-text-faint);
+		transition: transform 120ms ease-out;
+	}
+	.vg-model__trigger.is-open .vg-model__chevron { transform: rotate(180deg); }
+	.vg-model__menu {
+		position: absolute;
+		right: 0;
+		z-index: 10;
+		min-width: 100%;
+		width: max-content;
+		max-width: 240px;
+		padding: 4px;
+		background: var(--vg-surface);
+		border: 1px solid var(--vg-border);
+		border-radius: var(--vg-radius-ctl);
+		box-shadow: var(--vg-shadow);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+	.vg-model__menu--down { top: calc(100% + 4px); animation: vg-menu-down 120ms ease-out; }
+	.vg-model__menu--up { bottom: calc(100% + 4px); animation: vg-menu-up 120ms ease-out; }
+	@keyframes vg-menu-down {
+		from { opacity: 0; transform: translateY(4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	@keyframes vg-menu-up {
+		from { opacity: 0; transform: translateY(-4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.vg-model__menu::-webkit-scrollbar { width: 8px; }
+	.vg-model__menu::-webkit-scrollbar-thumb {
+		background: rgba(255, 255, 255, 0.14);
+		border-radius: 4px;
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+	.vg-model__option {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+		height: 28px;
+		padding: 0 8px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--vg-text);
+		font-family: var(--vg-font);
+		font-size: 12px;
+		font-weight: 500;
+		cursor: pointer;
+		text-align: left;
+		white-space: nowrap;
+	}
+	.vg-model__option.is-active { background: var(--vg-overlay); }
+	.vg-model__option.is-selected { color: var(--vg-accent); font-weight: 600; }
+	.vg-model__option-label { overflow: hidden; text-overflow: ellipsis; }
+	.vg-model__check { flex-shrink: 0; display: inline-flex; color: var(--vg-accent); }
 	.vg-agent__option {
 		height: 24px;
 		border: 0;
