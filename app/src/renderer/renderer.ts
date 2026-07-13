@@ -171,6 +171,30 @@ function applyTabTitle(label: HTMLSpanElement, raw: string): string {
 	return text
 }
 
+// Vertical inset flexes so the grid packs the MAXIMUM rows that fit (§3.14):
+// with a fixed 14px inset pair, the integer-row remainder (0..cellHeight-1)
+// stacked on the bottom inset left up to ~31px blank below the last line —
+// more than a whole row, which read as "one line is missing". Rows are now
+// computed against the minimum inset (6px); the leftover splits into
+// top/bottom insets capped at the nominal 14px (any excess beyond that stays
+// at the bottom, exactly like the old remainder).
+const TERM_VINSET_NOMINAL = 14
+const TERM_VINSET_MIN = 6
+
+/** xterm core render service (same private seam FitAddon reads/uses). */
+interface CoreRenderAccess {
+	_core: {
+		_renderService: {
+			dimensions: { css: { cell: { height: number } } }
+			clear(): void
+		}
+	}
+}
+
+function cellHeightOf(term: Terminal): number {
+	return (term as unknown as CoreRenderAccess)._core._renderService.dimensions.css.cell.height
+}
+
 function fitTab(tab: Tab): void {
 	// Hidden/zero-size holders measure 0x0 — fitting then would clamp the grid
 	// to FitAddon's 2x1 floor. DEFER instead of silently skipping: retry on the
@@ -182,7 +206,29 @@ function fitTab(tab: Tab): void {
 		scheduleFitRetry(tab)
 		return
 	}
-	tab.fit.fit()
+	// Cols come from FitAddon (width math unchanged — vertical padding never
+	// affects the mount's width); rows are packed against the flexed inset.
+	const proposal = tab.fit.proposeDimensions()
+	const cellHeight = cellHeightOf(tab.term)
+	if (!proposal || Number.isNaN(proposal.cols) || !(cellHeight > 0)) {
+		scheduleFitRetry(tab) // renderer metrics not ready yet (fresh open)
+		return
+	}
+	// clientHeight = padding box (border-box, no border): the full pane height.
+	const paneHeight = tab.holder.clientHeight
+	const rows = Math.max(2, Math.floor((paneHeight - 2 * TERM_VINSET_MIN) / cellHeight))
+	const leftover = Math.max(0, paneHeight - Math.ceil(rows * cellHeight))
+	const padTop = Math.max(TERM_VINSET_MIN, Math.min(TERM_VINSET_NOMINAL, Math.floor(leftover / 2)))
+	const padBottom = Math.max(TERM_VINSET_MIN, leftover - padTop)
+	tab.holder.style.paddingTop = `${padTop}px`
+	tab.holder.style.paddingBottom = `${padBottom}px`
+	const cols = Math.max(2, proposal.cols)
+	if (tab.term.cols !== cols || tab.term.rows !== rows) {
+		// Mirror FitAddon.fit(): clear the renderer before resizing, else the
+		// DOM renderer can leave artifacts of the old grid.
+		;(tab.term as unknown as CoreRenderAccess)._core._renderService.clear()
+		tab.term.resize(cols, rows)
+	}
 	scheduleScrollbarSync(tab)
 }
 
