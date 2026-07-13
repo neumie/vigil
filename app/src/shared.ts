@@ -13,6 +13,8 @@ export interface RestoredSession {
 	sessionId: string
 	/** Last OSC title seen for the tab, or null (renderer falls back to "zsh"). */
 	title: string | null
+	/** Manual rename pin — wins over `title`, never overwritten by OSC. */
+	customName: string | null
 	/** Parked when the previous run ended — restores headless into the background popover. */
 	parked: boolean
 }
@@ -39,6 +41,8 @@ export interface SessionsApi {
 	list(): Promise<RestoredSession[]>
 	/** Persist the tab title so a restored tab gets its label back. */
 	setTitle(sessionId: string, title: string): void
+	/** Persist (or clear, with null) the manual rename pin. */
+	setCustomName(sessionId: string, name: string | null): void
 	/** Persist the parked flag so background terminals relaunch as background. */
 	setParked(sessionId: string, parked: boolean): void
 	/**
@@ -78,6 +82,9 @@ export interface ConfigApi {
  * `background-park` parks the ACTIVE tab (after any --term-cmd output landed) so
  * a relaunch can verify parked snapshot restore; `background-restore` restores
  * the first startup-parked session back to a tab (popover row click analog).
+ * `rename-edit` opens the inline tab-rename editor on the active tab (input
+ * styling + select-all shot); `rename` commits the fixed pin "deploy watch" on
+ * the active tab through the same commit path (relaunch verifies pin restore).
  */
 export type UiPreview =
 	| 'list'
@@ -88,6 +95,8 @@ export type UiPreview =
 	| 'background-strip'
 	| 'background-park'
 	| 'background-restore'
+	| 'rename'
+	| 'rename-edit'
 
 /** Menu accelerators (cmd+t / cmd+w / cmd+shift+b) fire in main; renderer subscribes here. */
 export interface TabsApi {
@@ -146,4 +155,7 @@ export interface HelmApi {
 	/** Screenshot-harness only: `--term-scroll=<top|middle>` — scroll the active
 	 *  terminal before capture (verifies scrollbar extremes/mid-travel). */
 	termScroll: 'top' | 'middle' | null
+	/** Test override (`HELM_TITLE_STICKY_MS`, like `HELM_CLOSE_GRACE_MS`) for the
+	 *  restored-title stickiness window; null = TITLE_STICKY_WINDOW_MS default. */
+	titleStickyMs: number | null
 }

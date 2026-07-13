@@ -648,30 +648,34 @@ ipcMain.handle('session:undo-close', (_event, sessionId: unknown) => {
 ipcMain.handle('sessions:list', async () => {
 	const support = getSessionSupport()
 	if (!support) return []
-	const live = await sessions.listLiveSessions()
-	const liveIds = new Set(live.map(s => s.sessionId))
-	// Buffer-snapshot orphan sweep: keep snapshots for live sessions plus parked
-	// registry entries (a parked session whose socket probed 'unknown' this
-	// launch keeps its snapshot for the next attempt); everything else — killed
-	// while the app was closed, dead-socket GC — is deleted with its session.
-	// Computed BEFORE prune(), which drops non-live registry entries.
-	const keepSnapshots = new Set(liveIds)
+	const { live, unknownIds } = await sessions.scanSessions()
+	// Retention = live ∪ unknown-probe: a probe timeout must not cost a live
+	// session its registry metadata (title/customName/parked) — that was a real
+	// loss path: prune-on-unknown left long-lived sessions restoring as "zsh".
+	const retainIds = new Set([...live.map(s => s.sessionId), ...unknownIds])
+	// Buffer-snapshot orphan sweep: keep snapshots for retained sessions plus
+	// parked registry entries; everything else — killed while the app was
+	// closed, dead-socket GC — is deleted with its session. Computed BEFORE
+	// prune(), which drops non-retained registry entries.
+	const keepSnapshots = new Set(retainIds)
 	for (const id of support.registry.ids()) {
 		if (support.registry.get(id)?.parked === true) keepSnapshots.add(id)
 	}
 	support.buffers.removeOrphans(keepSnapshots)
-	support.registry.prune(liveIds)
+	support.registry.prune(retainIds)
 	return live
 		.map(s => ({
 			sessionId: s.sessionId,
 			title: support.registry.get(s.sessionId)?.lastTitle ?? null,
+			// Manual rename pin — wins over lastTitle in the renderer, OSC-immune.
+			customName: support.registry.get(s.sessionId)?.customName ?? null,
 			// Parked sessions restore as parked (popover rows), never as strip tabs.
 			parked: support.registry.get(s.sessionId)?.parked === true,
 			// Registry createdAt (original spawn) beats socket birthtime for ordering.
 			createdAt: support.registry.get(s.sessionId)?.createdAt ?? s.createdAt,
 		}))
 		.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-		.map(({ sessionId, title, parked }) => ({ sessionId, title, parked }))
+		.map(({ sessionId, title, customName, parked }) => ({ sessionId, title, customName, parked }))
 })
 
 // Park/unpark a session in the registry so background terminals survive a
@@ -684,6 +688,12 @@ ipcMain.on('session:set-parked', (_event, sessionId: unknown, parked: unknown) =
 ipcMain.on('session:title', (_event, sessionId: unknown, title: unknown) => {
 	if (!sessions.isValidSessionId(sessionId) || typeof title !== 'string') return
 	getSessionSupport()?.registry.setTitle(sessionId, title)
+})
+
+// Manual rename pin: persist so the name survives relaunch/park; null clears.
+ipcMain.on('session:set-custom-name', (_event, sessionId: unknown, name: unknown) => {
+	if (!sessions.isValidSessionId(sessionId) || (name !== null && typeof name !== 'string')) return
+	getSessionSupport()?.registry.setCustomName(sessionId, name)
 })
 
 // --- Terminal buffer snapshots (app/src/buffers.ts) ------------------------------

@@ -35,10 +35,15 @@ export interface SettingsStore {
 	dirty: boolean
 	saving: boolean
 	loadError: string | null
+	/** Saved but not applied (runs active / no launchd): the daemon's message. */
+	pendingRestart: string | null
+	restarting: boolean
 	update: (path: string[], value: unknown) => void
 	addListItem: (control: ConfigEditListControl) => void
 	removeListItem: (control: ConfigEditListControl, index: number) => void
 	save: () => Promise<void>
+	/** "Restart now" on the pending-restart notice → POST /api/daemon/restart. */
+	restartNow: () => Promise<void>
 }
 
 /** Owned by SidebarRoot while any settings route is on the stack. */
@@ -48,6 +53,8 @@ export function useSettingsStore(active: boolean): SettingsStore {
 	const [dirty, setDirty] = useState(false)
 	const [saving, setSaving] = useState(false)
 	const [loadError, setLoadError] = useState<string | null>(null)
+	const [pendingRestart, setPendingRestart] = useState<string | null>(null)
+	const [restarting, setRestarting] = useState(false)
 
 	useEffect(() => {
 		if (!active) {
@@ -56,6 +63,7 @@ export function useSettingsStore(active: boolean): SettingsStore {
 			setDraft(null)
 			setDirty(false)
 			setLoadError(null)
+			setPendingRestart(null)
 			return
 		}
 		let alive = true
@@ -113,23 +121,70 @@ export function useSettingsStore(active: boolean): SettingsStore {
 			if (result.error !== undefined) showToast({ message: 'Save failed', detail: result.error, ttlMs: 6000 })
 			else {
 				setDirty(false)
-				showToast({ message: 'Settings saved', detail: result.data.message })
+				if (result.data.applied) {
+					// The daemon restarts itself to load the change (~2s blip the
+					// bridge rides out on last-known data) — the save IS applied.
+					setPendingRestart(null)
+					showToast({ message: 'Settings applied' })
+				} else {
+					// Saved to disk but the daemon still runs the old config —
+					// keep a persistent notice with the way out (§3.12).
+					setPendingRestart(result.data.message)
+				}
 			}
 		} finally {
 			setSaving(false)
 		}
 	}, [draft])
 
-	return { doc, draft, dirty, saving, loadError, update, addListItem, removeListItem, save }
+	const restartNow = useCallback(async () => {
+		setRestarting(true)
+		try {
+			const result = await window.helm.daemon.restartDaemon()
+			if (result.error !== undefined) {
+				showToast({ message: 'Restart failed', detail: result.error, ttlMs: 6000 })
+			} else {
+				setPendingRestart(null)
+				showToast({ message: 'Daemon restarting', detail: 'Settings apply in a few seconds.' })
+			}
+		} finally {
+			setRestarting(false)
+		}
+	}, [])
+
+	return {
+		doc,
+		draft,
+		dirty,
+		saving,
+		loadError,
+		pendingRestart,
+		restarting,
+		update,
+		addListItem,
+		removeListItem,
+		save,
+		restartNow,
+	}
 }
 
 function SaveBar({ store }: { store: SettingsStore }) {
-	if (!store.dirty) return null
+	if (!store.dirty && !store.pendingRestart) return null
 	return (
-		<div className="action-bar">
-			<Btn tone="primary" block busy={store.saving} onClick={() => void store.save()}>
-				{store.saving ? 'Saving' : 'Save changes'}
-			</Btn>
+		<div className="action-bar action-bar-stack">
+			{store.pendingRestart && (
+				<output className="restart-notice">
+					<span className="restart-notice-text">{store.pendingRestart}</span>
+					<Btn sm busy={store.restarting} onClick={() => void store.restartNow()}>
+						{store.restarting ? 'Restarting' : 'Restart now'}
+					</Btn>
+				</output>
+			)}
+			{store.dirty && (
+				<Btn tone="primary" block busy={store.saving} onClick={() => void store.save()}>
+					{store.saving ? 'Saving' : 'Save changes'}
+				</Btn>
+			)}
 		</div>
 	)
 }

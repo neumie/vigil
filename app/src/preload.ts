@@ -18,6 +18,8 @@ const UI_PREVIEWS: readonly UiPreview[] = [
 	'background-strip',
 	'background-park',
 	'background-restore',
+	'rename',
+	'rename-edit',
 ]
 const uiPreview: UiPreview | null = UI_PREVIEWS.find(page => page === uiPreviewArg) ?? null
 
@@ -40,6 +42,11 @@ const termCmd = decodeTermCmd()
 // --term-scroll=<top|middle>: screenshot runs verify scrollbar travel extremes.
 const termScrollArg = process.argv.find(arg => arg.startsWith('--term-scroll='))?.slice('--term-scroll='.length)
 const termScroll = termScrollArg === 'top' || termScrollArg === 'middle' ? termScrollArg : null
+
+// HELM_TITLE_STICKY_MS: test override for the restored-title stickiness window
+// (same convention as HELM_CLOSE_GRACE_MS in sessions.ts).
+const titleStickyEnv = Number(process.env.HELM_TITLE_STICKY_MS)
+const titleStickyMs = Number.isFinite(titleStickyEnv) && titleStickyEnv > 0 ? titleStickyEnv : null
 
 function subscribe<Args extends unknown[]>(channel: string, listener: (...args: Args) => void): () => void {
 	const handler = (_event: IpcRendererEvent, ...args: unknown[]) => listener(...(args as Args))
@@ -66,6 +73,7 @@ const api: HelmApi = {
 	sessions: {
 		list: () => ipcRenderer.invoke('sessions:list') as Promise<RestoredSession[]>,
 		setTitle: (sessionId, title) => ipcRenderer.send('session:title', sessionId, title),
+		setCustomName: (sessionId, name) => ipcRenderer.send('session:set-custom-name', sessionId, name),
 		setParked: (sessionId, parked) => ipcRenderer.send('session:set-parked', sessionId, parked),
 		closeWithGrace: ptyId => ipcRenderer.invoke('session:close-with-grace', ptyId) as Promise<GraceClose | null>,
 		undoClose: sessionId => ipcRenderer.invoke('session:undo-close', sessionId) as Promise<boolean>,
@@ -95,6 +103,7 @@ const api: HelmApi = {
 		setStatus: (id, status) => invokeHelm('daemon:setStatus', id, status),
 		config: () => invokeHelm('daemon:config'),
 		updateConfig: body => invokeHelm('daemon:updateConfig', body),
+		restartDaemon: () => invokeHelm('daemon:restart'),
 		pauseToggle: () => invokeHelm('daemon:pauseToggle'),
 		poll: () => invokeHelm('daemon:poll'),
 	} satisfies DaemonApi,
@@ -115,6 +124,7 @@ const api: HelmApi = {
 	uiTheme,
 	termCmd,
 	termScroll,
+	titleStickyMs,
 }
 
 contextBridge.exposeInMainWorld('helm', api)

@@ -317,6 +317,25 @@ export interface ConfigDocument {
 	secretRedaction: string
 }
 
+/**
+ * PUT /api/config response. `applied: true` means the save was written AND the
+ * daemon is restarting itself (launchd KeepAlive respawn) to load it — expect
+ * a ~2s unreachable blip. `applied: false` means the save was written but a
+ * restart is still needed: `pendingRuns` carries the active-run count when
+ * that's the reason (absent when the daemon isn't launchd-managed).
+ */
+export interface ConfigSaveResult {
+	message: string
+	applied: boolean
+	pendingRuns?: number
+}
+
+/** POST /api/daemon/restart response (guard failures arrive as `{ error }`). */
+export interface DaemonRestartResult {
+	message: string
+	applied: boolean
+}
+
 // ---------------------------------------------------------------------------
 // HelmBridge wire shapes (helm-specific, not copied from web/).
 
@@ -368,7 +387,9 @@ export interface DaemonApi {
 	sourceTask(id: string): Promise<HelmResult<DashboardItem>>
 	setStatus(id: string, status: ItemStatus): Promise<HelmResult<DashboardItem>>
 	config(): Promise<HelmResult<ConfigDocument>>
-	updateConfig(body: Record<string, unknown>): Promise<HelmResult<{ message: string }>>
+	updateConfig(body: Record<string, unknown>): Promise<HelmResult<ConfigSaveResult>>
+	/** Deferred config apply: restart the (idle, launchd-managed) daemon. */
+	restartDaemon(): Promise<HelmResult<DaemonRestartResult>>
 	/** Pause when running, resume when paused (reads the latest snapshot). */
 	pauseToggle(): Promise<HelmResult<{ paused: boolean }>>
 	poll(): Promise<HelmResult<{ message: string }>>

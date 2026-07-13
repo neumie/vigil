@@ -195,6 +195,11 @@ export class HelmBridge {
 			return result
 		})
 
+		// Deferred config apply: on success the daemon exits ~300ms after
+		// answering and launchd respawns it, so no kick — the poll loop rides
+		// out the blip (last-known snapshot data is kept through an outage).
+		ipcMain.handle('daemon:restart', () => this.request('POST', '/daemon/restart'))
+
 		ipcMain.handle('daemon:pauseToggle', async () => {
 			const paused = this.snapshot.status?.queue.paused ?? false
 			const result = await this.request('POST', paused ? '/queue/resume' : '/queue/pause')

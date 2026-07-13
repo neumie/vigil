@@ -41,6 +41,8 @@ import type { SpawnerName } from '../../spawner/registry.js'
 import type { Spawner } from '../../spawner/spawner.js'
 import { isCancellation } from '../../util/errors.js'
 import { log } from '../../util/logger.js'
+import { defaultDaemonControl, scheduleDaemonRestart } from '../restart.js'
+import type { DaemonControl } from '../restart.js'
 
 function buildItemPlanReadmeBody(item: ItemRecord, branchName: string, planDirName: string): string {
 	return [
@@ -136,6 +138,9 @@ export function apiRoutes(
 	// Injected only by tests so the manual AI-pass route can run without a real
 	// model; production leaves it undefined and the passes use the real one-shot.
 	aiOneShot?: (opts: OneShotOptions) => Promise<string | null>,
+	// Injected only by tests so config-save/restart routes can prove the exit
+	// path without killing the test runner; production uses the launchd control.
+	daemonControl: DaemonControl = defaultDaemonControl,
 ) {
 	const api = new Hono()
 	const itemCommands = new ItemCommands(db.items, config)
@@ -919,7 +924,15 @@ export function apiRoutes(
 		}
 	})
 
-	// Update config (validates and writes to disk)
+	/** "2 runs" / "1 run" — active-run phrasing shared by save + restart copy. */
+	const activeRunsPhrase = (count: number) => (count === 1 ? '1 run' : `${count} runs`)
+
+	// Update config (validates and writes to disk). The daemon only loads config
+	// at startup, so a bare save would silently not apply: when it's safe (no
+	// active runs, launchd-managed — KeepAlive respawns a clean exit with fresh
+	// config), the daemon restarts itself right after the response flushes.
+	// Killing run tracking mid-solve is worse than a stale config, so active
+	// runs always defer; dev runs (npm run dev, no launchd) never self-exit.
 	api.put('/config', async c => {
 		const body = await c.req.json()
 		const currentConfig = (() => {
@@ -936,10 +949,42 @@ export function apiRoutes(
 		}
 		try {
 			writeFileSync(configPath, JSON.stringify(result.data, null, '\t'), 'utf-8')
-			return c.json({ data: { message: 'Config saved. Restart Helm for changes to take effect.' } })
 		} catch (err) {
 			return c.json({ error: `Failed to write config: ${err instanceof Error ? err.message : err}` }, 500)
 		}
+		const activeRuns = queue.getStatus().active
+		if (activeRuns > 0) {
+			return c.json({
+				data: {
+					message: `Saved. Restart the daemon to apply — ${activeRunsPhrase(activeRuns)} active.`,
+					applied: false,
+					pendingRuns: activeRuns,
+				},
+			})
+		}
+		if (!daemonControl.isManaged()) {
+			return c.json({ data: { message: 'Saved. Restart the daemon to apply.', applied: false } })
+		}
+		scheduleDaemonRestart(daemonControl)
+		return c.json({ data: { message: 'Saved — restarting to apply…', applied: true } })
+	})
+
+	// Explicit deferred restart (same guards as the config-save self-restart):
+	// clients call this when a save answered { applied: false }.
+	api.post('/daemon/restart', c => {
+		const activeRuns = queue.getStatus().active
+		if (activeRuns > 0) {
+			const pronoun = activeRuns === 1 ? 'it' : 'them'
+			return c.json(
+				{ error: `${activeRunsPhrase(activeRuns)} active — wait for ${pronoun} to finish.`, pendingRuns: activeRuns },
+				409,
+			)
+		}
+		if (!daemonControl.isManaged()) {
+			return c.json({ error: 'Daemon is not running under launchd — restart it manually.' }, 400)
+		}
+		scheduleDaemonRestart(daemonControl)
+		return c.json({ data: { message: 'Restarting…', applied: true } })
 	})
 
 	// Pause/resume queue

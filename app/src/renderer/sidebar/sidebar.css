@@ -996,6 +996,34 @@
 .action-bar .btn-block {
 	flex: 1;
 }
+/* Stacked variant: an inline notice row above the primary action (§3.11/§3.12). */
+.action-bar-stack {
+	height: auto;
+	min-height: 48px;
+	flex-direction: column;
+	align-items: stretch;
+}
+
+/* Settings' pending-restart notice: §3.12 info banner + one quiet action. */
+.restart-notice {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	background: var(--fill-subtle);
+	color: var(--text-1);
+	font-size: calc(12px * var(--ui-scale));
+	line-height: 1.5;
+	letter-spacing: -0.01em;
+	word-break: break-word;
+}
+.restart-notice-text {
+	flex: 1;
+}
+.restart-notice .btn {
+	flex: none;
+}
 
 /* ---------- plan & task sub-pages ---------- */
 

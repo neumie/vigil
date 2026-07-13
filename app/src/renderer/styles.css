@@ -188,6 +188,30 @@ button:focus-visible,
 	text-overflow: ellipsis;
 }
 
+/* Inline tab rename (double-click / context-menu "Rename…", §3.14): a §3.7
+ * field compacted into the 28px tab — accent border IS the focus signal
+ * (fields never get the outer ring). Enter/blur commit, Esc cancels; empty
+ * commit clears the pin. */
+.tab-rename {
+	width: 120px;
+	height: 20px;
+	padding: 0 6px;
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	background: var(--fill-subtle);
+	color: var(--text-0);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1;
+	outline: none;
+	user-select: text;
+	-webkit-app-region: no-drag;
+}
+
+.tab-rename::placeholder {
+	color: var(--text-2);
+}
+
 .tab-close {
 	flex: none;
 	display: flex;

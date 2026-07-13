@@ -139,6 +139,10 @@ export function load(): void {
 	if (process.env.PATH) {
 		env.PATH = process.env.PATH
 	}
+	// Tells the daemon it runs under launchd (KeepAlive=true), so a config save
+	// may self-restart via a clean exit (src/server/restart.ts). The ppid===1
+	// fallback there covers plists written before this flag existed.
+	env.HELM_LAUNCHD = '1'
 	// HELM_CONFIG preferred; VIGIL_CONFIG still honored (legacy compat).
 	if (process.env.HELM_CONFIG) {
 		env.HELM_CONFIG = process.env.HELM_CONFIG
