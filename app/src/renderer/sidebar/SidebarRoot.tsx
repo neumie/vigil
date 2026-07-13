@@ -18,7 +18,7 @@ import { ListPage } from './ListPage'
 import { NewItemSheet } from './NewItemSheet'
 import { SettingsPage, SettingsSectionPage, useSettingsStore } from './SettingsPage'
 import type { Route } from './model'
-import { attachSwipeBack } from './swipe'
+import { type SwipeBackControl, attachSwipeBack } from './swipe'
 import { PushHeader } from './ui'
 
 const PUSH_MS = 150
@@ -166,11 +166,13 @@ export function SidebarRoot() {
 
 	// Two-finger swipe-back (§3.10 gestures): interactive edge-tracking pop.
 	// The controller lives outside React (inline transforms on the page
-	// elements); refs feed it the current stack/sheet state.
+	// elements); refs feed it the current stack/sheet state. The control ref
+	// lets the Go channel run the native/wheel single-owner check.
+	const swipeControl = useRef<SwipeBackControl | null>(null)
 	useEffect(() => {
 		const viewport = viewportRef.current
 		if (!viewport) return
-		return attachSwipeBack(viewport, {
+		const control = attachSwipeBack(viewport, {
 			canPop: () =>
 				navRef.current.stack.length > 1 &&
 				navRef.current.phase === null &&
@@ -185,16 +187,26 @@ export function SidebarRoot() {
 			commitPop: popInstant,
 			reducedMotion: () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 		})
+		swipeControl.current = control
+		return () => {
+			swipeControl.current = null
+			control.dispose()
+		}
 	}, [popInstant, navRef])
 
 	// Back/forward from main — native three-finger swipe, the Go menu
-	// (cmd+[ / cmd+]), and app-command mouse buttons share one channel.
+	// (cmd+[ / cmd+]), and app-command mouse buttons share one channel. With
+	// the "two or three fingers" system setting, ONE physical gesture can
+	// arrive both as wheel deltas and as a native 'swipe' event, so back
+	// defers to the wheel controller's single-owner check before popping.
 	useEffect(
 		() =>
 			window.helm.nav.onGo(direction => {
 				if (newItemOpenRef.current) return
-				if (direction === 'back') pop()
-				else goForward()
+				if (direction === 'back') {
+					if (swipeControl.current?.interceptNativeNav()) return
+					pop()
+				} else goForward()
 			}),
 		[pop, goForward],
 	)
