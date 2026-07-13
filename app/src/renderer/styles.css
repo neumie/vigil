@@ -504,9 +504,14 @@ body.dragging {
 
 /* xterm.css hardcodes .xterm-viewport background #000; with a correct fit the
  * sub-cell remainder gap below/right of the grid would show it as a black seam
- * against --term-bg. Transparent lets the themed well paint the remainder. */
+ * against --term-bg. Transparent lets the themed well paint the remainder.
+ * overflow:hidden kills its NATIVE scrollbar: xterm 6 keeps the element only
+ * as an overview-ruler container (the monaco widget scrolls instead), but
+ * xterm.css still sets overflow-y:scroll on it — left unstyled, the default
+ * webkit track/corner renders as a gray sliver at the pane's bottom-right. */
 .term-holder .xterm-viewport {
 	background-color: transparent !important;
+	overflow: hidden !important;
 }
 
 /* xterm 6 scrolls through a monaco SmoothScrollableElement (VS Code widget),
@@ -530,7 +535,7 @@ body.dragging {
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: 9px;
+	width: 12px;
 	z-index: 2;
 }
 
@@ -538,21 +543,23 @@ body.dragging {
 	display: none;
 }
 
-/* macOS-style pill: 5px wide, fully rounded, 2px in from the pane edge; no
- * track fill, no buttons, no corner. Height/translateY set from buffer state
- * by renderer.ts (syncScrollbar). */
+/* macOS-style pill: 7px wide, fully rounded, 2px in from the pane edge; no
+ * track fill, no buttons, no corner. Hover/drag widens it to 9px (Apple's
+ * overlay expands under the pointer) and brightens the fill. Height/translateY
+ * set from buffer state by renderer.ts (syncScrollbar). */
 .term-scrollbar-thumb {
 	position: absolute;
 	top: 0;
 	right: 2px;
-	width: 5px;
+	width: 7px;
 	border-radius: 999px;
 	background: var(--term-scroll-thumb);
-	transition: background-color 140ms ease-out;
+	transition: background-color 140ms ease-out, width 140ms ease-out;
 }
 
-.term-scrollbar-thumb:hover,
+.term-scrollbar:hover .term-scrollbar-thumb,
 .term-scrollbar-thumb.active {
+	width: 9px;
 	background: var(--term-scroll-thumb-hover);
 }
 
