@@ -8,6 +8,7 @@ import type { HelmApi, RestoredSession } from '../shared'
 import { appearance } from './appearance'
 import { mountSidebar } from './sidebar/SidebarRoot'
 import { decideTabTitle, isShellDefaultTitle, normalizeTabTitle } from './tab-title'
+import { terminalShortcut } from './terminal-keybindings'
 import { showToast } from './toast'
 
 declare global {
@@ -954,6 +955,14 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 		attachClearHeld: '',
 	}
 	attachScrollbarInput(tab)
+	term.attachCustomKeyEventHandler(event => {
+		const shortcut = terminalShortcut(helm.platform, event)
+		if (!shortcut) return true
+		if (event.type === 'keydown' && tab.ptyId !== null) {
+			helm.pty.write(tab.ptyId, shortcut.input)
+		}
+		return !shortcut.suppress
+	})
 	// Restored tabs keep the label persisted from the previous run until the
 	// reattached shell emits a fresh OSC title (normalized too — older runs
 	// persisted raw "user@host:cwd" titles). A pinned name wins over both.
