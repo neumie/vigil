@@ -18,7 +18,8 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
 3. **Source** - external origin for poller-created Items. Source is optional;
    dashboard/API-created Items are first-class without it.
 4. **Inbox** - Automatic/source-backed solve Items start `inbox`; approve moves
-   them to Queue (`ready`), reject cancels them. Every manually added Item,
+   them to Queue (`ready`), reject cancels them; work already completed elsewhere
+   can go directly from Inbox to Done through the detail overflow. Every manually added Item,
    including Plan-intent creation, starts directly in Queue. A Queue Item is
    ownership-undecided: start an agent (`workMode: agent`) or take it manually
    (`status: active`, `workMode: manual`); manual Active work is never scheduled.
@@ -31,7 +32,8 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
    or local/GitHub ticket counts as plan artifacts evolve. The same planned solve
    Item can then start either a normal agent run or an Almanac loop; both reuse that
    worktree. **Start loop** runs the complete agent-ready queue in AFK mode using
-   the Item's selected agent/model overrides, falling back to daemon defaults.
+   the Item's selected agent/model/effort overrides, falling back to daemon or
+   agent defaults.
 7. **Dispatch** - solve Items record a pre-shipped PR when the agent already
    shipped one; otherwise Helm can push the branch, open a PR, and post a
    provider comment when config allows it.

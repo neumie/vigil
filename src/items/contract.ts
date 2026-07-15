@@ -5,7 +5,7 @@ import { itemExecutionMode } from './execution.js'
 import type { ItemExecutionMode } from './execution.js'
 import { emptyRunObservation } from './observation.js'
 import type { RunObservation } from './observation.js'
-import type { ItemRecord, PlanStatus } from './schema.js'
+import type { ItemRecord, PlanStatus, SolverEffort } from './schema.js'
 
 export type DashboardTone = 'gray' | 'blue' | 'green' | 'amber' | 'red'
 export type DashboardActionTone = 'primary' | 'muted' | 'danger'
@@ -87,6 +87,7 @@ export interface DashboardItem {
 	/** Stored per-item solve selections (`null` = follow daemon defaults). Solve only. */
 	solverAgent: 'claude' | 'codex' | null
 	solverModel: string | null
+	solverEffort: SolverEffort | null
 	solverWorkspace: SolverWorkspace | null
 	errorMessage: string | null
 	errorPhase: string | null
@@ -295,6 +296,7 @@ export function toDashboardItem(
 		solveInputSnapshot: item.solveInputSnapshot,
 		solverAgent: item.payload.kind === 'solve' ? (item.payload.solverAgent ?? null) : null,
 		solverModel: item.payload.kind === 'solve' ? (item.payload.solverModel ?? null) : null,
+		solverEffort: item.payload.kind === 'solve' ? (item.payload.solverEffort ?? null) : null,
 		solverWorkspace: item.payload.kind === 'solve' ? (item.payload.solverWorkspace ?? null) : null,
 		errorMessage: item.errorMessage,
 		errorPhase: item.errorPhase,

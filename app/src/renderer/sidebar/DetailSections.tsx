@@ -121,7 +121,9 @@ export function WorkCard({
 	onlySetup?: boolean
 }) {
 	if (onlySetup)
-		return <ActionRow nav label="Run setup" value="Agent, model, workspace" onClick={onSetup} disabled={disabled} />
+		return (
+			<ActionRow nav label="Run setup" value="Agent, model, effort, workspace" onClick={onSetup} disabled={disabled} />
+		)
 	const hasTask = Boolean(item.source || item.captured || item.sourceTask)
 	const hasRun =
 		item.workMode === 'agent' &&

@@ -17,6 +17,7 @@ import type {
 	PlanStatus,
 	RunOutcome,
 	SolveExecution,
+	SolverEffort,
 } from './schema.js'
 import type { ItemStore } from './store.js'
 
@@ -201,6 +202,16 @@ export class ItemCommands {
 			throw new Error('Only an active planned Item can select its executor')
 		}
 		return this.store.updatePayload(id, { ...item.payload, execution })
+	}
+
+	/** Per-item loop reasoning effort; null clears it back to the agent default. */
+	setSolveItemEffort(id: string, solverEffort: SolverEffort | null): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items can store a selected solver effort')
+		}
+		const { solverEffort: _prev, ...payload } = item.payload
+		return this.store.updatePayload(id, solverEffort ? { ...payload, solverEffort } : payload)
 	}
 
 	/** Per-item model override for the next solve run; null clears it. */

@@ -2,6 +2,7 @@ import type { DashboardAction, DashboardActionId, DashboardItem, ItemStatus } fr
 
 export interface LifecycleActionPlan {
 	markDone: boolean
+	completeInOverflow: boolean
 	primary: DashboardAction | null
 	rest: DashboardAction[]
 }
@@ -61,13 +62,16 @@ export function lifecycleActionPresentation(
 
 /** Review and human-active work share the explicit completion handoff. */
 export function lifecycleActionPlan(status: ItemStatus, actions: readonly DashboardAction[]): LifecycleActionPlan {
-	if (status === 'review' || status === 'active') return { markDone: true, primary: null, rest: [...actions] }
+	if (status === 'review' || status === 'active') {
+		return { markDone: true, completeInOverflow: false, primary: null, rest: [...actions] }
+	}
 	// Destructive actions remain in overflow. A running Item has only Cancel,
 	// so its pinned bar becomes a quiet live-state readout instead of a trap.
 	const primary =
 		actions.find(action => action.tone === 'primary') ?? actions.find(action => action.tone === 'muted') ?? null
 	return {
 		markDone: false,
+		completeInOverflow: status === 'inbox',
 		primary: primary ?? null,
 		rest: primary ? actions.filter(action => action !== primary) : [...actions],
 	}

@@ -415,6 +415,14 @@ export function RunSetupPage({
 	if (!item) return null
 	const selection = effectiveRunSelection(item, config, draft)
 	const catalog = config?.modelCatalog?.[selection.agent] ?? []
+	const effortOptions = [
+		{ value: '', label: 'Default (agent)' },
+		{ value: 'low', label: 'Low' },
+		{ value: 'medium', label: 'Medium' },
+		{ value: 'high', label: 'High' },
+		{ value: 'xhigh', label: 'Extra high' },
+		...(selection.agent === 'claude' ? [{ value: 'max', label: 'Max' }] : []),
+	]
 	return (
 		<div className="page-frame">
 			<PushHeader title="Run setup" onBack={onBack} />
@@ -457,6 +465,29 @@ export function RunSetupPage({
 									...catalog.map(model => ({ value: model.id, label: model.label })),
 								]}
 							/>
+						</div>
+						<div>
+							<div className="run-field-head">
+								<FieldLabel htmlFor="run-effort">Effort</FieldLabel>
+								{(draft.effort !== undefined || item.solverEffort !== null) && (
+									<button
+										className="field-reset"
+										type="button"
+										onClick={() => onDraftChange({ ...draft, effort: null })}
+									>
+										Default
+									</button>
+								)}
+							</div>
+							<SelectInput
+								id="run-effort"
+								value={selection.effort ?? ''}
+								onChange={effort =>
+									onDraftChange({ ...draft, effort: (effort || null) as RunSelectionDraft['effort'] })
+								}
+								options={effortOptions}
+							/>
+							<p className="run-caption">Used by Start loop.</p>
 						</div>
 						<div>
 							<div className="run-field-head">

@@ -125,7 +125,12 @@ test('extension API passes selected solver agent to Item actions that can start 
 
 	try {
 		await api.itemAction('item-1', 'approve', { solverAgent: 'codex', solverWorkspace: 'main' })
-		await api.itemAction('item-1', 'start', { solverAgent: 'codex', solverModel: 'gpt-5.5', solverWorkspace: null })
+		await api.itemAction('item-1', 'start', {
+			solverAgent: 'codex',
+			solverModel: 'gpt-5.5',
+			solverEffort: 'xhigh',
+			solverWorkspace: null,
+		})
 		await api.itemAction('item-1', 'retry', { solverAgent: 'codex' })
 
 		// solverWorkspace mirrors solverModel: a value rides along, explicit null
@@ -134,7 +139,7 @@ test('extension API passes selected solver agent to Item actions that can start 
 			calls.map(call => JSON.parse(String(call.init?.body))),
 			[
 				{ solverAgent: 'codex', solverWorkspace: 'main' },
-				{ solverAgent: 'codex', solverModel: 'gpt-5.5', solverWorkspace: null },
+				{ solverAgent: 'codex', solverModel: 'gpt-5.5', solverEffort: 'xhigh', solverWorkspace: null },
 				{ solverAgent: 'codex' },
 			],
 		)

@@ -102,7 +102,12 @@ export function DetailPage(props: DetailPageProps) {
 		const label = executionMode === 'loop' ? 'Start loop' : 'Start agent'
 		return run(label, () => window.helm.daemon.itemAction(item.id, 'start', { ...buildRunBody(draft), executionMode }))
 	}
-	const { markDone: hasMarkDone, primary, rest } = lifecycleActionPlan(item.status, item.allowedActions)
+	const {
+		markDone: hasMarkDone,
+		completeInOverflow,
+		primary,
+		rest,
+	} = lifecycleActionPlan(item.status, item.allowedActions)
 	const statusOptions = manualStatusOptions(item.status)
 	const statusEntries = statusOptions.map(option => ({
 		label: option.label,
@@ -143,6 +148,17 @@ export function DetailPage(props: DetailPageProps) {
 	const overflow = [
 		...rest.map(menuAction),
 		...(primary?.tone === 'danger' ? [menuAction(primary)] : []),
+		...(completeInOverflow
+			? [
+					{
+						label: 'Set as done',
+						icon: GLYPH.check,
+						group: true,
+						disabled,
+						onSelect: () => void markDone(),
+					},
+				]
+			: []),
 		...(canPlan
 			? [
 					{

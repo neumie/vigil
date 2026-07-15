@@ -3579,6 +3579,17 @@ test('setItemStatus is a guarded manual override', () => {
 		assert.equal(done.workMode, 'manual')
 		assert.ok(done.completedAt)
 
+		const inbox = db.items.create({
+			kind: 'solve',
+			status: 'inbox',
+			projectSlug: 'helm',
+			title: 'Already completed',
+			source: { provider: 'test', externalId: 'done-elsewhere' },
+			baseRef: 'main',
+			payload: { kind: 'solve', prompt: 'No work required.' },
+		})
+		assert.equal(commands.setItemStatus(inbox.id, 'done').status, 'done')
+
 		const requeued = commands.setItemStatus(item.id, 'ready')
 		assert.equal(requeued.status, 'ready')
 		assert.equal(requeued.workMode, null)
@@ -4066,10 +4077,16 @@ test('planned loop uses the detected queue size and per-Item agent/model overrid
 			const res = await api.request(`/items/${item.id}/start`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ executionMode: 'loop', solverAgent: 'codex', solverModel: 'gpt-5.5' }),
+				body: JSON.stringify({
+					executionMode: 'loop',
+					solverAgent: 'codex',
+					solverModel: 'gpt-5.5',
+					solverEffort: 'xhigh',
+				}),
 			})
 			assert.equal(res.status, 200)
 			const payload = solvePayload(db, item.id)
+			assert.equal(payload.solverEffort, 'xhigh')
 			assert.equal(payload.execution?.mode, 'loop')
 			if (payload.execution?.mode !== 'loop') throw new Error('Expected loop execution payload')
 			assert.deepEqual(payload.execution.options, {
@@ -4077,6 +4094,7 @@ test('planned loop uses the detected queue size and per-Item agent/model overrid
 				iterations: 5,
 				provider: 'codex',
 				model: 'gpt-5.5',
+				effort: 'xhigh',
 			})
 		} finally {
 			rmSync(worktreePath, { recursive: true, force: true })

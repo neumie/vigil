@@ -11,11 +11,13 @@ const start = { id: 'start', label: 'Start', tone: 'primary' } as const
 test('review and human-active Items promote Set as done', () => {
 	assert.deepEqual(lifecycleActionPlan('review', [retry]), {
 		markDone: true,
+		completeInOverflow: false,
 		primary: null,
 		rest: [retry],
 	})
 	assert.deepEqual(lifecycleActionPlan('active', []), {
 		markDone: true,
+		completeInOverflow: false,
 		primary: null,
 		rest: [],
 	})
@@ -24,9 +26,11 @@ test('review and human-active Items promote Set as done', () => {
 test('other Item statuses preserve server-owned primary action', () => {
 	assert.deepEqual(lifecycleActionPlan('ready', [start]), {
 		markDone: false,
+		completeInOverflow: false,
 		primary: start,
 		rest: [],
 	})
+	assert.equal(lifecycleActionPlan('inbox', [start]).completeInOverflow, true)
 })
 
 test('bottom actions use concise labels and semantic icons', () => {

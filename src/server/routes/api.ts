@@ -27,8 +27,8 @@ import type { ItemEnricher } from '../../items/enricher.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../../items/naming.js'
 import { observeItemRun } from '../../items/observation.js'
-import { itemStatusSchema } from '../../items/schema.js'
-import type { ItemRecord } from '../../items/schema.js'
+import { itemStatusSchema, solverEffortSchema } from '../../items/schema.js'
+import type { ItemRecord, SolverEffort } from '../../items/schema.js'
 import { PlanWorkspace } from '../../plan/workspace.js'
 import type { Poller } from '../../poller/poller.js'
 import { DAEMON_BUILD_ID, DAEMON_PROTOCOL_VERSION } from '../../protocol.js'
@@ -194,6 +194,8 @@ export function apiRoutes(
 		solverAgentInvalid: boolean
 		solverModel: string | null | undefined
 		solverModelInvalid: boolean
+		solverEffort: SolverEffort | null | undefined
+		solverEffortInvalid: boolean
 		solverWorkspace: SolverWorkspace | null | undefined
 		solverWorkspaceInvalid: boolean
 	}
@@ -202,6 +204,7 @@ export function apiRoutes(
 		const body = (await bodyPromise.catch(() => ({}))) as {
 			solverAgent?: unknown
 			solverModel?: unknown
+			solverEffort?: unknown
 			solverWorkspace?: unknown
 		}
 		let solverAgent: SolveSelection['solverAgent']
@@ -222,6 +225,15 @@ export function apiRoutes(
 				solverModelInvalid = true
 			}
 		}
+		let solverEffort: SolveSelection['solverEffort']
+		let solverEffortInvalid = false
+		if (body.solverEffort === null) {
+			solverEffort = null
+		} else if (body.solverEffort !== undefined) {
+			const parsed = solverEffortSchema.safeParse(body.solverEffort)
+			if (parsed.success) solverEffort = parsed.data
+			else solverEffortInvalid = true
+		}
 		let solverWorkspace: SolveSelection['solverWorkspace']
 		let solverWorkspaceInvalid = false
 		if (body.solverWorkspace === null) {
@@ -231,7 +243,16 @@ export function apiRoutes(
 			if (parsed.success) solverWorkspace = parsed.data
 			else solverWorkspaceInvalid = true
 		}
-		return { solverAgent, solverAgentInvalid, solverModel, solverModelInvalid, solverWorkspace, solverWorkspaceInvalid }
+		return {
+			solverAgent,
+			solverAgentInvalid,
+			solverModel,
+			solverModelInvalid,
+			solverEffort,
+			solverEffortInvalid,
+			solverWorkspace,
+			solverWorkspaceInvalid,
+		}
 	}
 
 	function invalidSelection(c: Context, selection: SolveSelection) {
@@ -240,6 +261,12 @@ export function apiRoutes(
 		}
 		if (selection.solverModelInvalid) {
 			return c.json({ error: 'Invalid solverModel. Must be a non-empty string (max 100 chars) or null.' }, 400)
+		}
+		if (selection.solverEffortInvalid) {
+			return c.json(
+				{ error: `Invalid solverEffort. Must be one of: ${solverEffortSchema.options.join(', ')} — or null.` },
+				400,
+			)
 		}
 		if (selection.solverWorkspaceInvalid) {
 			return c.json(
@@ -255,6 +282,7 @@ export function apiRoutes(
 		let updated = item
 		if (selection.solverAgent) updated = itemCommands.setSolveItemAgent(item.id, selection.solverAgent)
 		if (selection.solverModel !== undefined) updated = itemCommands.setSolveItemModel(item.id, selection.solverModel)
+		if (selection.solverEffort !== undefined) updated = itemCommands.setSolveItemEffort(item.id, selection.solverEffort)
 		if (selection.solverWorkspace !== undefined) {
 			updated = itemCommands.setSolveItemWorkspace(item.id, selection.solverWorkspace)
 		}
@@ -709,6 +737,7 @@ export function apiRoutes(
 						iterations: agentReadyTickets > 0 ? agentReadyTickets : 10,
 						provider: selectedItem.payload.solverAgent ?? config.solver.agent,
 						model: selectedItem.payload.solverModel ?? config.solver.model,
+						effort: selectedItem.payload.solverEffort,
 					},
 				})
 			} else {

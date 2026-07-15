@@ -9,6 +9,7 @@ export function normalizeDashboardItem(item: DashboardItem): DashboardItem {
 	const legacyTriage = (item.status as string) === 'triage'
 	const workMode = item.workMode ?? (item.startedAt ? 'agent' : null)
 	const executionMode = item.executionMode ?? (item.kind === 'loop' ? 'loop' : 'solve')
+	const solverEffort = item.solverEffort ?? null
 	const emptyTickets = { total: 0, open: 0, readyForAgent: 0, readyForHuman: 0 }
 	const planStatus =
 		item.planStatus ??
@@ -26,6 +27,7 @@ export function normalizeDashboardItem(item: DashboardItem): DashboardItem {
 		!legacyTriage &&
 		item.workMode === workMode &&
 		item.executionMode === executionMode &&
+		item.solverEffort === solverEffort &&
 		item.planStatus === planStatus
 	)
 		return item
@@ -34,6 +36,7 @@ export function normalizeDashboardItem(item: DashboardItem): DashboardItem {
 		status: legacyTriage ? 'inbox' : item.status,
 		workMode,
 		executionMode,
+		solverEffort,
 		planStatus,
 		card: legacyTriage
 			? {

@@ -18,6 +18,7 @@ export interface Assessment {
 }
 export type ItemStatus = 'inbox' | 'ready' | 'active' | 'running' | 'review' | 'done' | 'failed' | 'cancelled'
 export type WorkMode = 'agent' | 'manual'
+export type SolverEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export const ITEM_STATUSES: ItemStatus[] = [
 	'inbox',
@@ -183,6 +184,7 @@ export interface DashboardItem {
 	/** Stored per-item solve selections (`null` = follow daemon defaults). Solve only. */
 	solverAgent: 'claude' | 'codex' | null
 	solverModel: string | null
+	solverEffort: SolverEffort | null
 	solverWorkspace: SolverWorkspace | null
 	errorMessage: string | null
 	errorPhase: string | null
@@ -389,12 +391,13 @@ export type SolverWorkspace = 'worktree' | 'main'
 
 /**
  * Optional body for item action / plan routes. approve/start/retry/plan accept
- * a solver agent, a model override (`null` clears a stored per-item model), and
- * an execution-workspace override (`null` clears it back to the config default).
+ * a solver agent, model/effort overrides (`null` clears a stored per-item
+ * override), and an execution-workspace override (`null` = config default).
  */
 export interface SolverAgentBody {
 	solverAgent?: 'claude' | 'codex'
 	solverModel?: string | null
+	solverEffort?: SolverEffort | null
 	solverWorkspace?: SolverWorkspace | null
 	executionMode?: 'agent' | 'loop'
 }

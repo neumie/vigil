@@ -145,6 +145,11 @@ test('automatic Inbox Items lead with the approval decision', () => {
 
 test('danger actions are overflow-only while review owns Set as done', () => {
 	const cancel = { id: 'cancel', label: 'Cancel', tone: 'danger' } as const
-	assert.deepEqual(lifecycleActionPlan('running', [cancel]), { markDone: false, primary: null, rest: [cancel] })
+	assert.deepEqual(lifecycleActionPlan('running', [cancel]), {
+		markDone: false,
+		completeInOverflow: false,
+		primary: null,
+		rest: [cancel],
+	})
 	assert.equal(lifecycleActionPlan('review', []).markDone, true)
 })
