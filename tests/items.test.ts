@@ -27,7 +27,7 @@ import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
 import { resolveItemWorkspace } from '../src/items/identity.js'
 import { observeItemRun } from '../src/items/observation.js'
 import type { ItemPayload } from '../src/items/schema.js'
-import { PlanStatusWatcher } from '../src/plan/status-watcher.js'
+import { PlanStatusWatcher, parseGithubPlanQueues } from '../src/plan/status-watcher.js'
 import { PlanWorkspace } from '../src/plan/workspace.js'
 import { Poller } from '../src/poller/poller.js'
 import { Drainer } from '../src/queue/drainer.js'
@@ -4201,6 +4201,36 @@ test('PlanStatusWatcher caches local and GitHub ticket readiness without lifecyc
 			rmSync(worktreePath, { recursive: true, force: true })
 		}
 	}))
+
+test('GitHub ticket bodies link concise queue labels to Helm plan directories', () => {
+	const queues = parseGithubPlanQueues(
+		JSON.stringify([
+			{
+				state: 'OPEN',
+				labels: [{ name: 'ready-for-agent' }, { name: 'ralph(short-queue-name)' }],
+				body: '## Spec\n\n`docs/plans/2026-07-15-stable-item-name/spec.md`',
+			},
+			{
+				state: 'OPEN',
+				labels: [{ name: 'ready-for-human' }, { name: 'loop(label-only-plan)' }],
+				body: 'No spec path in this legacy ticket.',
+			},
+		]),
+	)
+	assert.deepEqual(queues.get('2026-07-15-stable-item-name'), {
+		total: 1,
+		open: 1,
+		readyForAgent: 1,
+		readyForHuman: 0,
+	})
+	assert.deepEqual(queues.get('label-only-plan'), {
+		total: 1,
+		open: 1,
+		readyForAgent: 0,
+		readyForHuman: 1,
+	})
+	assert.equal(queues.has('short-queue-name'), false, 'body path is authoritative over the display label')
+})
 
 test('PlanWorkspace.listArtifacts truncates a pathologically large plan file for the preview', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'helm-plan-big-'))

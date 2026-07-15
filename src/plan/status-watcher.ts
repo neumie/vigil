@@ -14,11 +14,12 @@ const DEFAULT_INTERVAL_MS = 15_000
 interface GhIssue {
 	state?: string
 	labels?: Array<{ name?: string }>
+	body?: string
 }
 
 const emptyQueue = (): TicketQueueSummary => ({ total: 0, open: 0, readyForAgent: 0, readyForHuman: 0 })
 
-function parseGithubPlanQueues(stdout: string): Map<string, TicketQueueSummary> {
+export function parseGithubPlanQueues(stdout: string): Map<string, TicketQueueSummary> {
 	let decoded: unknown
 	try {
 		decoded = JSON.parse(stdout)
@@ -30,8 +31,11 @@ function parseGithubPlanQueues(stdout: string): Map<string, TicketQueueSummary> 
 	const queues = new Map<string, TicketQueueSummary>()
 	for (const issue of issues) {
 		const labels = (issue.labels ?? []).map(label => label.name ?? '')
+		const specPath = /docs\/plans\/([^/`\s]+)\/(?:spec|prd)\.md/.exec(issue.body ?? '')
 		const queueLabel = labels.map(label => /^(?:loop|ralph)\((.+)\)$/.exec(label)).find(match => match !== null)
-		const planDirName = queueLabel?.[1]
+		// The issue body owns the canonical association: `/to-tickets` can choose
+		// a concise queue label that differs from Helm's stable plan directory.
+		const planDirName = specPath?.[1] ?? queueLabel?.[1]
 		if (!planDirName) continue
 		const summary = queues.get(planDirName) ?? emptyQueue()
 		summary.total += 1
@@ -48,8 +52,8 @@ function parseGithubPlanQueues(stdout: string): Map<string, TicketQueueSummary> 
 export async function fetchGithubPlanQueues(repoPath: string): Promise<Map<string, TicketQueueSummary>> {
 	const { stdout } = await execFileAsync(
 		'gh',
-		['issue', 'list', '--state', 'all', '--limit', '1000', '--json', 'state,labels'],
-		{ cwd: repoPath, timeout: 10_000, maxBuffer: 5 * 1024 * 1024 },
+		['issue', 'list', '--state', 'all', '--limit', '1000', '--json', 'state,labels,body'],
+		{ cwd: repoPath, timeout: 10_000, maxBuffer: 20 * 1024 * 1024 },
 	)
 	return parseGithubPlanQueues(stdout)
 }
