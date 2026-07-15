@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
@@ -1908,6 +1908,9 @@ test('AlmanacLoopRunner cancellation writes loop stop signal and preserves workt
 	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-cancel-worktree-'))
 	const fakeBin = mkdtempSync(join(tmpdir(), 'helm-fake-almanac-'))
 	const outputLogPath = join(worktreePath, 'loop.log')
+	const loopPlanDir = join(worktreePath, 'docs', 'plans', 'afk-rework')
+	mkdirSync(loopPlanDir, { recursive: true })
+	writeFileSync(join(loopPlanDir, 'prompt.md'), '# Loop prompt', 'utf-8')
 	const almanacPath = join(fakeBin, 'almanac')
 	writeFileSync(
 		almanacPath,
@@ -1957,11 +1960,76 @@ test('AlmanacLoopRunner cancellation writes loop stop signal and preserves workt
 		assert.equal(runId, 'loop-cancel-test')
 		assert.equal(existsSync(join(worktreePath, '.loop-stop')), true)
 		assert.equal(existsSync(worktreePath), true)
+		assert.match(readFileSync(join(loopPlanDir, 'prompt.md'), 'utf-8'), /HELM GITHUB QUEUE ASSOCIATION/)
 		assert.match(readFileSync(outputLogPath, 'utf-8'), /stop seen/)
 	} finally {
 		process.env.PATH = oldPath
 		rmSync(worktreePath, { recursive: true, force: true })
 		rmSync(fakeBin, { recursive: true, force: true })
+	}
+})
+
+test('AlmanacLoopRunner generates a missing loop prompt before launch', async () => {
+	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-prompt-worktree-'))
+	const fakeBin = mkdtempSync(join(tmpdir(), 'helm-fake-almanac-bin-'))
+	const fakeHome = mkdtempSync(join(tmpdir(), 'helm-fake-almanac-home-'))
+	const specName = 'prepared-spec'
+	const planDir = join(worktreePath, 'docs', 'plans', specName)
+	const promptScript = join(fakeHome, 'skills', 'loop', 'loop', 'scripts', 'prompt.sh')
+	const outputLogPath = join(worktreePath, 'loop.log')
+	mkdirSync(planDir, { recursive: true })
+	mkdirSync(dirname(promptScript), { recursive: true })
+	writeFileSync(join(planDir, 'spec.md'), '# Spec', 'utf-8')
+	writeFileSync(
+		promptScript,
+		[
+			'#!/bin/sh',
+			'mkdir -p "docs/plans/$1"',
+			'echo "# Generated loop prompt" > "docs/plans/$1/prompt.md"',
+			'echo "Generated prompt"',
+		].join('\n'),
+		'utf-8',
+	)
+	chmodSync(promptScript, 0o755)
+	const almanacPath = join(fakeBin, 'almanac')
+	writeFileSync(almanacPath, ['#!/bin/sh', 'echo "Run ID: loop-prompt-test"'].join('\n'), 'utf-8')
+	chmodSync(almanacPath, 0o755)
+
+	const oldPath = process.env.PATH
+	const oldHome = process.env.ALMANAC_HOME
+	process.env.PATH = `${fakeBin}:${oldPath ?? ''}`
+	process.env.ALMANAC_HOME = fakeHome
+	try {
+		const result = await new AlmanacLoopRunner().runLoop({
+			projectConfig: config.projects[0],
+			solverConfig: config.solver,
+			itemId: 'item-loop-prompt',
+			itemTitle: 'Prepare loop prompt',
+			payload: {
+				kind: 'loop',
+				prdPath: `docs/plans/${specName}/spec.md`,
+				mode: 'once',
+				provider: 'codex',
+			},
+			worktreePath,
+			branchName: 'helm/item/prepare-loop',
+			planDirName: specName,
+			outputLogPath,
+			onRunId() {},
+		})
+		assert.equal(result.runId, 'loop-prompt-test')
+		assert.equal(existsSync(join(planDir, 'prompt.md')), true)
+		const prompt = readFileSync(join(planDir, 'prompt.md'), 'utf-8')
+		assert.match(prompt, /HELM GITHUB QUEUE ASSOCIATION/)
+		assert.match(prompt, new RegExp(`docs/plans/${specName}/spec\\.md`))
+		assert.match(readFileSync(outputLogPath, 'utf-8'), /Generated prompt/)
+	} finally {
+		process.env.PATH = oldPath
+		if (oldHome === undefined) Reflect.deleteProperty(process.env, 'ALMANAC_HOME')
+		else process.env.ALMANAC_HOME = oldHome
+		rmSync(worktreePath, { recursive: true, force: true })
+		rmSync(fakeBin, { recursive: true, force: true })
+		rmSync(fakeHome, { recursive: true, force: true })
 	}
 })
 

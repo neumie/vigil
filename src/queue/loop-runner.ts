@@ -1,9 +1,14 @@
-import { spawn } from 'node:child_process'
-import { createWriteStream, writeFileSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { execFile, spawn } from 'node:child_process'
+import { createWriteStream, existsSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import { promisify } from 'node:util'
 import type { HelmConfig, ProjectConfig } from '../config.js'
 import type { ItemPayload } from '../items/schema.js'
+import { PlanWorkspace } from '../plan/workspace.js'
 import { isCancellation, phaseError, taskCancelled } from '../util/errors.js'
+
+const execFileAsync = promisify(execFile)
 
 export type LoopPayload = Extract<ItemPayload, { kind: 'loop' }>
 
@@ -73,6 +78,40 @@ function almanacArgs(payload: LoopPayload, solverConfig: HelmConfig['solver']): 
 	return loopArgs(payload, solverConfig)
 }
 
+async function ensureLoopPrompt(params: LoopRunParams): Promise<{ stdout: string; stderr: string } | null> {
+	const specName = prdNameFromPath(params.payload.prdPath)
+	const workspace = new PlanWorkspace(params.worktreePath, specName)
+	let output: { stdout: string; stderr: string } | null = null
+	if (!workspace.loopPromptExists()) {
+		const almanacHome = process.env.ALMANAC_HOME ?? join(homedir(), '.almanac')
+		const promptScript = join(almanacHome, 'skills', 'loop', 'loop', 'scripts', 'prompt.sh')
+		if (!existsSync(promptScript)) {
+			throw phaseError('loop', `Almanac prompt generator not found at ${promptScript}. Run almanac install first.`)
+		}
+		output = await execFileAsync('bash', [promptScript, specName], {
+			cwd: params.worktreePath,
+			encoding: 'utf-8',
+			env: process.env,
+			signal: params.signal,
+			maxBuffer: 1024 * 1024,
+		})
+		if (!workspace.loopPromptExists()) {
+			throw phaseError('loop', `Almanac did not create ${workspace.rel.loopPrompt}`)
+		}
+	}
+
+	const marker = '<!-- helm-github-queue-association -->'
+	workspace.appendLoopPromptOnce(
+		marker,
+		`${marker}
+# HELM GITHUB QUEUE ASSOCIATION
+
+This run is tied to \`${workspace.rel.dir}/spec.md\` (legacy fallback: \`${workspace.rel.dir}/prd.md\`).
+When detecting the GitHub task queue, treat every open issue whose body references either exact path as this spec's explicit queue, even when its \`loop(...)\` or legacy \`ralph(...)\` label uses a shorter alias. Query open issues with body + labels, filter by the exact spec path, then apply the normal ready-for-agent / ready-for-human and blocker rules. Do not decompose the spec again when matching issues exist.`,
+	)
+	return output
+}
+
 export class AlmanacLoopRunner implements LoopRunner {
 	async runLoop(params: LoopRunParams): Promise<LoopRunResult> {
 		if (params.signal?.aborted) throw taskCancelled()
@@ -96,6 +135,9 @@ export class AlmanacLoopRunner implements LoopRunner {
 		let stdoutBuffer = ''
 
 		try {
+			const prepared = await ensureLoopPrompt(params)
+			if (prepared?.stdout) logStream.write(prepared.stdout)
+			if (prepared?.stderr) logStream.write(prepared.stderr)
 			const child = spawn('almanac', args, {
 				cwd: params.worktreePath,
 				env: process.env,

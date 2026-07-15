@@ -23,6 +23,7 @@ export function planPaths(planDirName: string) {
 		dir,
 		context: `${dir}/context.md`,
 		planningPrompt: `${dir}/.planning-prompt.txt`,
+		loopPrompt: `${dir}/prompt.md`,
 		result: `${dir}/solver-result.json`,
 		readme: `${dir}/README.md`,
 	}
@@ -58,6 +59,9 @@ export class PlanWorkspace {
 	get planningPromptPath(): string {
 		return join(this.worktreePath, this.rel.planningPrompt)
 	}
+	get loopPromptPath(): string {
+		return join(this.worktreePath, this.rel.loopPrompt)
+	}
 	get resultPath(): string {
 		return join(this.worktreePath, this.rel.result)
 	}
@@ -78,9 +82,19 @@ export class PlanWorkspace {
 		this.ensureDir()
 		writeFileSync(this.planningPromptPath, content, 'utf-8')
 	}
+	appendLoopPromptOnce(marker: string, content: string): void {
+		if (!this.loopPromptExists()) throw new Error(`Loop prompt not found: ${this.loopPromptPath}`)
+		const current = readFileSync(this.loopPromptPath, 'utf-8')
+		if (current.includes(marker)) return
+		writeFileSync(this.loopPromptPath, `${current.trimEnd()}\n\n${content.trim()}\n`, 'utf-8')
+	}
 	writeReadme(content: string): void {
 		this.ensureDir()
 		writeFileSync(this.readmePath, content, 'utf-8')
+	}
+
+	loopPromptExists(): boolean {
+		return existsSync(this.loopPromptPath)
 	}
 
 	resultExists(): boolean {
