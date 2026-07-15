@@ -25,9 +25,10 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
 5. **Lane** - Drainer has separate solve and loop lanes. Solve capacity follows
    `solver.concurrency`; loop capacity is currently 1. Each lane runs oldest
    queued Item first.
-6. **Spawner** - interactive planning seam. Plan creates or reuses an Item
-   worktree, writes plan files under `docs/plans/<planDirName>/`, and execution
-   later reuses that worktree.
+6. **Spawner** - interactive planning seam. Plan moves the Item to human-owned
+   Active work, creates or reuses its worktree, and writes plan files under
+   `docs/plans/<planDirName>/`. The same planned solve Item can then start either
+   a normal agent run or an Almanac loop; both reuse that worktree.
 7. **Dispatch** - solve Items record a pre-shipped PR when the agent already
    shipped one; otherwise Helm can push the branch, open a PR, and post a
    provider comment when config allows it.

@@ -1,6 +1,7 @@
 import type { HelmConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import { ItemCommands } from '../items/commands.js'
+import { itemExecutionMode } from '../items/execution.js'
 import type { ItemRecord } from '../items/schema.js'
 import type { TaskProvider } from '../providers/provider.js'
 import type { Solver } from '../solver/solver.js'
@@ -18,7 +19,11 @@ const MAX_ATTEMPTS = 3
 const RETRY_BACKOFF_MS = 30_000
 
 function isStartableItem(item: ItemRecord): boolean {
-	return item.status === 'ready' || item.status === 'inbox'
+	return (
+		item.status === 'ready' ||
+		item.status === 'inbox' ||
+		(item.status === 'active' && item.workMode === 'manual' && item.plannedAt != null)
+	)
 }
 
 /** Transient failures worth auto-retrying (network/okena/worktree), vs real solve bugs. */
@@ -92,9 +97,7 @@ export class Drainer {
 	processOneItem(itemId: string): boolean {
 		const item = this.db.items.get(itemId)
 		if (!item) return false
-		if (item.kind === 'solve') return this.startSolveItem(itemId)
-		if (item.kind === 'loop') return this.startLoopItem(itemId)
-		return false
+		return itemExecutionMode(item) === 'loop' ? this.startLoopItem(itemId) : this.startSolveItem(itemId)
 	}
 
 	retryItem(itemId: string): ItemRecord {
@@ -119,8 +122,9 @@ export class Drainer {
 	}
 
 	getStatus(): QueueStatus {
-		const solvePending = this.itemCommands.countQueuedItems('solve')
-		const loopPending = this.itemCommands.countQueuedItems('loop')
+		const queued = this.itemCommands.nextQueuedAgentItems(10_000)
+		const solvePending = queued.filter(item => itemExecutionMode(item) === 'solve').length
+		const loopPending = queued.filter(item => itemExecutionMode(item) === 'loop').length
 		const activeSolve = this.activeSolveCount()
 		const activeLoop = this.activeLoopCount()
 		return {
@@ -180,7 +184,7 @@ export class Drainer {
 	private startSolveItem(itemId: string): boolean {
 		if (this.activeSolveItems.has(itemId)) return false
 		const item = this.db.items.get(itemId)
-		if (!item || item.kind !== 'solve') return false
+		if (!item || itemExecutionMode(item) !== 'solve') return false
 		if (!isStartableItem(item)) return false
 
 		const controller = new AbortController()
@@ -231,7 +235,7 @@ export class Drainer {
 	private startLoopItem(itemId: string): boolean {
 		if (this.activeLoopItems.has(itemId)) return false
 		const item = this.db.items.get(itemId)
-		if (!item || item.kind !== 'loop') return false
+		if (!item || itemExecutionMode(item) !== 'loop') return false
 		if (!isStartableItem(item)) return false
 
 		const controller = new AbortController()
@@ -249,22 +253,19 @@ export class Drainer {
 	private nextQueuedSolveItem(): ItemRecord | null {
 		const activeIds = new Set(this.activeSolveItems.keys())
 		return (
-			this.itemCommands.nextQueuedItems('solve', this.solveCapacity() + activeIds.size + 5).find(item => {
-				return !activeIds.has(item.id)
-			}) ?? null
+			this.itemCommands
+				.nextQueuedAgentItems()
+				.find(item => itemExecutionMode(item) === 'solve' && !activeIds.has(item.id)) ?? null
 		)
 	}
 
 	private nextQueuedLoopItem(): ItemRecord | null {
 		const activeIds = new Set(this.activeLoopItems.keys())
-		const limit = this.loopCapacity() + activeIds.size + 5
-		const candidates = this.itemCommands.nextQueuedItems('loop', limit).filter(item => !activeIds.has(item.id))
-		candidates.sort((a, b) => {
-			const queued = (a.queuedAt ?? a.createdAt).localeCompare(b.queuedAt ?? b.createdAt)
-			if (queued !== 0) return queued
-			return a.createdAt.localeCompare(b.createdAt)
-		})
-		return candidates[0] ?? null
+		return (
+			this.itemCommands
+				.nextQueuedAgentItems()
+				.find(item => itemExecutionMode(item) === 'loop' && !activeIds.has(item.id)) ?? null
+		)
 	}
 
 	private activeSolveCount(): number {

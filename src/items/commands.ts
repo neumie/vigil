@@ -6,8 +6,9 @@ import { solverAgentSchema } from '../solver/agent.js'
 import type { SolverAgent } from '../solver/agent.js'
 import type { SolverWorkspace } from '../solver/workspace.js'
 import type { ErrorPhase } from '../types.js'
+import { itemExecutionMode } from './execution.js'
 import { itemSourceSchema } from './schema.js'
-import type { Assessment, DeployState, ItemKind, ItemRecord, ItemSource, RunOutcome } from './schema.js'
+import type { Assessment, DeployState, ItemKind, ItemRecord, ItemSource, RunOutcome, SolveExecution } from './schema.js'
 import type { ItemStore } from './store.js'
 
 const createSolveItemInputSchema = z
@@ -81,6 +82,8 @@ const RESERVED_EVENT_TYPES = new Set([
 	'solve_completed',
 	'almanac_run_started',
 	'loop_completed',
+	'planning_started',
+	'planning_failed',
 	'plan_prepared',
 	'pr_created',
 	'comment_posted',
@@ -178,6 +181,17 @@ export class ItemCommands {
 		}
 		const { solverWorkspace: _prev, ...payload } = item.payload
 		return this.store.updatePayload(id, solverWorkspace ? { ...payload, solverWorkspace } : payload)
+	}
+
+	setSolveExecution(id: string, execution: SolveExecution): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items can select planned execution')
+		}
+		if (item.status !== 'active' || item.workMode !== 'manual' || !item.plannedAt || !item.worktreePath) {
+			throw new Error('Only an active planned Item can select its executor')
+		}
+		return this.store.updatePayload(id, { ...item.payload, execution })
 	}
 
 	/** Per-item model override for the next solve run; null clears it. */
@@ -288,7 +302,10 @@ export class ItemCommands {
 
 	startItem(id: string): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.status !== 'ready' && item.status !== 'inbox') throw new Error('Only ready or Inbox Items can be started')
+		const plannedActive = item.status === 'active' && item.workMode === 'manual' && item.plannedAt != null
+		if (item.status !== 'ready' && item.status !== 'inbox' && !plannedActive) {
+			throw new Error('Only ready, Inbox, or active planned Items can be started')
+		}
 
 		const started = this.store.update(id, {
 			status: 'running',
@@ -487,7 +504,7 @@ export class ItemCommands {
 
 	recordAlmanacRunId(id: string, runId: string): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.kind !== 'loop') throw new Error('Only loop Items can record AlmanacRunId')
+		if (itemExecutionMode(item) !== 'loop') throw new Error('Only loop executions can record AlmanacRunId')
 		if (item.status !== 'running') throw new Error('Only running loop Items can record AlmanacRunId')
 		if (item.almanacRunId === runId) return item
 
@@ -498,11 +515,13 @@ export class ItemCommands {
 
 	completeLoopItem(id: string, fields: { resultSummary: string }): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.kind !== 'loop') throw new Error('Only loop Items can complete through almanac')
-		if (item.status !== 'running') throw new Error('Only running loop Items can complete through almanac')
+		if (itemExecutionMode(item) !== 'loop') throw new Error('Only loop executions can complete through almanac')
+		if (item.status !== 'running') throw new Error('Only running loop executions can complete through almanac')
 
 		const completed = this.store.update(id, {
-			status: 'done',
+			// A source-task solve keeps its review handoff even when Almanac executed it;
+			// standalone Loop Items remain terminal when their loop completes.
+			status: item.kind === 'solve' ? 'review' : 'done',
 			completedAt: new Date().toISOString(),
 			resultSummary: fields.resultSummary,
 			errorMessage: null,
@@ -596,6 +615,44 @@ export class ItemCommands {
 		return this.store.update(id, fields)
 	}
 
+	beginPlanning(id: string): ItemRecord {
+		const item = this.requireItem(id)
+		if (!['inbox', 'ready', 'active'].includes(item.status)) {
+			throw new Error('Only Inbox, Queue, or active Items can begin planning')
+		}
+		if (item.status === 'active' && item.workMode !== 'manual') {
+			throw new Error('Only human-owned active Items can be re-planned')
+		}
+		const started = this.store.update(id, {
+			status: 'active',
+			workMode: 'manual',
+			startedAt: item.startedAt ?? new Date().toISOString(),
+			completedAt: null,
+			errorMessage: null,
+			errorPhase: null,
+		})
+		this.store.insertEvent(id, 'planning_started', { from: item.status, to: started.status })
+		return started
+	}
+
+	abortPlanning(
+		id: string,
+		previous: Pick<ItemRecord, 'status' | 'workMode' | 'startedAt' | 'completedAt' | 'errorMessage' | 'errorPhase'>,
+	): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.status !== 'active' || item.workMode !== 'manual') return item
+		const restored = this.store.update(id, {
+			status: previous.status,
+			workMode: previous.workMode,
+			startedAt: previous.startedAt,
+			completedAt: previous.completedAt,
+			errorMessage: previous.errorMessage,
+			errorPhase: previous.errorPhase,
+		})
+		this.store.insertEvent(id, 'planning_failed', { from: item.status, to: restored.status })
+		return restored
+	}
+
 	recordPlanPrepared(
 		id: string,
 		fields: {
@@ -608,7 +665,9 @@ export class ItemCommands {
 		},
 	): ItemRecord {
 		const item = this.requireItem(id)
-		if (item.status === 'running') throw new Error('Running Items cannot be planned')
+		if (item.status !== 'active' || item.workMode !== 'manual') {
+			throw new Error('Only an active planning Item can record a prepared plan')
+		}
 
 		const planned = this.store.update(id, {
 			worktreePath: fields.worktreePath,
@@ -746,6 +805,10 @@ export class ItemCommands {
 		const item = this.requireItem(id)
 		this.requireGenericEventLifecycle(item, eventType)
 		this.store.insertEvent(id, eventType, payload)
+	}
+
+	nextQueuedAgentItems(limit?: number): ItemRecord[] {
+		return this.store.listQueuedAgentItems(limit)
 	}
 
 	nextQueuedItems(kind: ItemKind, limit?: number): ItemRecord[] {

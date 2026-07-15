@@ -248,7 +248,7 @@ export function SidebarRoot() {
 	const previewDone = useRef(false)
 	useEffect(() => {
 		if (previewDone.current) return
-		const preview = window.helm.uiPreview
+		const preview: string | null = window.helm.uiPreview
 		if (preview === 'settings') {
 			previewDone.current = true
 			push({ kind: 'settings' })
@@ -259,7 +259,13 @@ export function SidebarRoot() {
 			reset([{ kind: 'list' }, { kind: 'settings' }, { kind: 'appearance' }])
 			return
 		}
-		if (preview !== 'detail' && preview !== 'queue-detail' && preview !== 'archive-detail' && preview !== 'task') {
+		if (
+			preview !== 'detail' &&
+			preview !== 'queue-detail' &&
+			preview !== 'planned-detail' &&
+			preview !== 'archive-detail' &&
+			preview !== 'task'
+		) {
 			previewDone.current = true
 			return
 		}
@@ -272,6 +278,7 @@ export function SidebarRoot() {
 		let pick = items[0]
 		if (preview === 'task') pick = items.find(i => i.source || i.captured) ?? items[0]
 		else if (preview === 'queue-detail') pick = items.find(i => i.status === 'ready') ?? items[0]
+		else if (preview === 'planned-detail') pick = items.find(i => i.status === 'active' && i.plannedAt) ?? items[0]
 		else if (preview === 'archive-detail')
 			pick = items.find(i => i.status === 'done' || i.status === 'cancelled') ?? items[0]
 		else

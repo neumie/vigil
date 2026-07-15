@@ -316,6 +316,18 @@ export class ItemStore {
 		}))
 	}
 
+	listQueuedAgentItems(limit = 100): ItemRecord[] {
+		const rows = this.db
+			.prepare(
+				`SELECT * FROM items
+				 WHERE status = 'ready' AND work_mode = 'agent'
+				 ORDER BY queued_at ASC, created_at ASC
+				 LIMIT ?`,
+			)
+			.all(limit) as Record<string, unknown>[]
+		return rows.map(row => this.rowToItem(row))
+	}
+
 	listQueuedByKind(kind: ItemKind, limit = 50): ItemRecord[] {
 		const rows = this.db
 			.prepare(

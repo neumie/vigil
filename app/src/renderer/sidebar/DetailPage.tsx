@@ -91,13 +91,17 @@ export function DetailPage(props: DetailPageProps) {
 	const sourceTask = () => run('Create source task', () => window.helm.daemon.sourceTask(item.id))
 	const setManualStatus = (status: ItemStatus, label: string) =>
 		run(
-			`Status: ${label}`,
+			['Status', label].join(': '),
 			() => window.helm.daemon.setStatus(item.id, status),
 			status === 'done' || status === 'cancelled' ? onBack : undefined,
 		)
 	const markDone = () => run('Set as done', () => window.helm.daemon.setStatus(item.id, 'done'), onBack)
 	const workManually = () => run('Work manually', () => window.helm.daemon.setStatus(item.id, 'active'))
 	const returnToQueue = () => run('Return to Queue', () => window.helm.daemon.setStatus(item.id, 'ready'))
+	const startPlanned = (executionMode: 'agent' | 'loop') => {
+		const label = executionMode === 'loop' ? 'Start loop' : 'Start agent'
+		return run(label, () => window.helm.daemon.itemAction(item.id, 'start', { ...buildRunBody(draft), executionMode }))
+	}
 	const { markDone: hasMarkDone, primary, rest } = lifecycleActionPlan(item.status, item.allowedActions)
 	const statusOptions = manualStatusOptions(item.status)
 	const statusEntries = statusOptions.map(option => ({
@@ -107,7 +111,7 @@ export function DetailPage(props: DetailPageProps) {
 		group: option.status === 'done',
 		onSelect: () => void setManualStatus(option.status, option.label),
 	}))
-	const canPlan = item.status !== 'running'
+	const canPlan = ['inbox', 'ready', 'active'].includes(item.status)
 	const askOrRun = (action: DashboardAction) => {
 		if (action.id === 'cancel' && item.status === 'running') {
 			setConfirm({
@@ -127,7 +131,7 @@ export function DetailPage(props: DetailPageProps) {
 		void actionCall(action)()
 	}
 	const menuAction = (action: DashboardAction) => {
-		const presentation = lifecycleActionPresentation(action.id, action.label, item.kind)
+		const presentation = lifecycleActionPresentation(action.id, action.label, item.kind, item.executionMode)
 		return {
 			label: presentation.label,
 			icon: GLYPH[presentation.icon],
@@ -154,9 +158,11 @@ export function DetailPage(props: DetailPageProps) {
 			? [{ label: 'Create source task', icon: GLYPH.plus, disabled, onSelect: () => void sourceTask() }]
 			: []),
 	]
+	const plannedActive = item.status === 'active' && item.plannedAt != null
+	const plannedSolve = plannedActive && item.kind === 'solve'
 	const primaryAction = primary?.tone === 'danger' ? null : primary
 	const primaryPresentation = primaryAction
-		? lifecycleActionPresentation(primaryAction.id, primaryAction.label, item.kind)
+		? lifecycleActionPresentation(primaryAction.id, primaryAction.label, item.kind, item.executionMode)
 		: null
 	const content = (section: ReturnType<typeof detailState>['sections'][number]) => {
 		switch (section) {
@@ -286,7 +292,40 @@ export function DetailPage(props: DetailPageProps) {
 			</output>
 			<div className="action-bar" aria-busy={disabled}>
 				<div className="action-bar-main">
-					{item.status === 'active' ? (
+					{plannedSolve ? (
+						<>
+							<Btn
+								tone="quiet"
+								busy={busy === 'Start agent'}
+								disabled={disabled}
+								onClick={() => void startPlanned('agent')}
+							>
+								{GLYPH.agent}
+								Start agent
+							</Btn>
+							<Btn
+								tone="primary"
+								block
+								busy={busy === 'Start loop'}
+								disabled={disabled}
+								onClick={() => void startPlanned('loop')}
+							>
+								{GLYPH.retry}
+								Start loop
+							</Btn>
+						</>
+					) : plannedActive && primaryAction ? (
+						<Btn
+							tone="primary"
+							block
+							busy={busy === primaryAction.label}
+							disabled={disabled}
+							onClick={() => askOrRun(primaryAction)}
+						>
+							{GLYPH.retry}
+							Start loop
+						</Btn>
+					) : item.status === 'active' ? (
 						<>
 							<Btn
 								tone="quiet"

@@ -1,6 +1,8 @@
 import { PlanWorkspace } from '../plan/workspace.js'
 import type { TaskContext } from '../providers/provider.js'
 import type { SolverWorkspace } from '../solver/workspace.js'
+import { itemExecutionMode } from './execution.js'
+import type { ItemExecutionMode } from './execution.js'
 import { emptyRunObservation } from './observation.js'
 import type { RunObservation } from './observation.js'
 import type { ItemRecord } from './schema.js'
@@ -51,6 +53,7 @@ export interface DashboardPlan {
 export interface DashboardItem {
 	id: string
 	kind: ItemRecord['kind']
+	executionMode: ItemExecutionMode
 	status: ItemRecord['status']
 	/** Agent-owned, human-owned, or undecided while waiting in Queue. */
 	workMode: ItemRecord['workMode']
@@ -141,6 +144,7 @@ function actionsForStatus(
 	status: ItemRecord['status'],
 	kind: ItemRecord['kind'],
 	hasSource: boolean,
+	planned: boolean,
 ): DashboardAction[] {
 	switch (status) {
 		case 'inbox':
@@ -150,7 +154,7 @@ function actionsForStatus(
 		case 'ready':
 			return [ACTIONS.start, ACTIONS.cancel]
 		case 'active':
-			return []
+			return planned ? [ACTIONS.start] : []
 		case 'running':
 			return [ACTIONS.cancel]
 		case 'review':
@@ -255,6 +259,7 @@ export function toDashboardItem(
 	return {
 		id: item.id,
 		kind: item.kind,
+		executionMode: itemExecutionMode(item),
 		status: item.status,
 		workMode: item.workMode,
 		projectSlug: item.projectSlug,
@@ -285,7 +290,7 @@ export function toDashboardItem(
 			statusTone: STATUS_TONE[item.status],
 			pulse: item.status === 'running',
 		},
-		allowedActions: actionsForStatus(item.status, item.kind, item.source != null),
+		allowedActions: actionsForStatus(item.status, item.kind, item.source != null, item.plannedAt != null),
 		runObservation,
 		links: linksForItem(item),
 		createdAt: item.createdAt,

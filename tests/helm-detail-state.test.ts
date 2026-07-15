@@ -9,6 +9,7 @@ const { lifecycleActionPlan } = actionModule as typeof import('../app/src/render
 const base = {
 	id: 'x',
 	kind: 'solve',
+	executionMode: 'solve',
 	workMode: null,
 	projectSlug: 'p',
 	title: 'Task',
@@ -75,6 +76,18 @@ test('human-owned Active Items rely on status and work details without filler co
 	assert.equal(active.headline, null)
 	assert.equal(active.direction, null)
 	assert.deepEqual(active.sections, ['work'])
+})
+
+test('planned Active Items expose the executor choice', () => {
+	const active = detailState({
+		...base,
+		status: 'active',
+		workMode: 'manual',
+		plannedAt: '2026-01-02T00:00:00Z',
+	})
+	assert.equal(active.headline, 'Plan ready')
+	assert.equal(active.direction, 'Continue planning, or choose how to run this work.')
+	assert.deepEqual(active.sections, ['work', 'run-setup'])
 })
 
 test('automatic Inbox Items lead with the approval decision', () => {

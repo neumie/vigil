@@ -142,6 +142,7 @@ export interface RunObservation {
 export interface DashboardItem {
 	id: string
 	kind: 'solve' | 'loop'
+	executionMode: 'solve' | 'loop'
 	status: ItemStatus
 	workMode: WorkMode | null
 	projectSlug: string
@@ -378,6 +379,7 @@ export interface SolverAgentBody {
 	solverAgent?: 'claude' | 'codex'
 	solverModel?: string | null
 	solverWorkspace?: SolverWorkspace | null
+	executionMode?: 'agent' | 'loop'
 }
 
 /**

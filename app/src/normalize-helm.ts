@@ -8,11 +8,13 @@ import type { DashboardItem, HelmResult } from './shared-helm'
 export function normalizeDashboardItem(item: DashboardItem): DashboardItem {
 	const legacyTriage = (item.status as string) === 'triage'
 	const workMode = item.workMode ?? (item.startedAt ? 'agent' : null)
-	if (!legacyTriage && item.workMode === workMode) return item
+	const executionMode = item.executionMode ?? (item.kind === 'loop' ? 'loop' : 'solve')
+	if (!legacyTriage && item.workMode === workMode && item.executionMode === executionMode) return item
 	return {
 		...item,
 		status: legacyTriage ? 'inbox' : item.status,
 		workMode,
+		executionMode,
 		card: legacyTriage
 			? {
 					...item.card,

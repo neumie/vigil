@@ -52,6 +52,15 @@ import { createWorktree, withRepoLock } from '../src/worktree/manager.js'
 // tests don't ingest, so a no-op enqueue stub is enough.
 const fakeEnricher = { enqueue() {} }
 
+function recordPreparedPlan(
+	commands: ItemCommands,
+	id: string,
+	fields: Parameters<ItemCommands['recordPlanPrepared']>[1],
+) {
+	commands.beginPlanning(id)
+	return commands.recordPlanPrepared(id, fields)
+}
+
 function withTempDb(fn: (db: DB) => Promise<void> | void) {
 	const dir = mkdtempSync(join(tmpdir(), 'helm-items-'))
 	const db = new DB(join(dir, 'helm.db'))
@@ -267,6 +276,50 @@ VALUES (?, 'solve', 'triage', 'helm', ?, ?, 'main', ?, '2026-07-14T00:00:00.000Z
 			to: 'inbox',
 			status: 'inbox',
 		})
+	} finally {
+		db.close()
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('DB migration moves previously planned waiting Items into human-owned Active work', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'helm-planned-active-migration-'))
+	const dbPath = join(dir, 'helm.db')
+	const legacy = new Database(dbPath)
+	try {
+		for (const migration of MIGRATIONS.filter(entry => entry.version <= 22)) {
+			legacy.exec(migration.sql)
+			legacy.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(migration.version)
+		}
+		legacy
+			.prepare(`
+INSERT INTO items (
+  id, kind, status, work_mode, project_slug, title, source, base_ref, payload,
+  worktree_path, branch_name, plan_dir_name, planned_at, created_at, updated_at
+) VALUES (?, 'solve', 'inbox', NULL, 'helm', ?, ?, 'main', ?, ?, ?, ?, ?, ?, ?)
+`)
+			.run(
+				'planned-before-active',
+				'Planned task',
+				JSON.stringify({ provider: 'contember', externalId: 'planned-task' }),
+				JSON.stringify({ kind: 'solve', prompt: 'planned' }),
+				'/tmp/planned-before-active',
+				'feat/planned-task',
+				'2026-07-15-planned-task',
+				'2026-07-15T10:00:00.000Z',
+				'2026-07-15T09:00:00.000Z',
+				'2026-07-15T10:00:00.000Z',
+			)
+	} finally {
+		legacy.close()
+	}
+
+	const db = new DB(dbPath)
+	try {
+		const item = db.items.get('planned-before-active')
+		assert.equal(item?.status, 'active')
+		assert.equal(item?.workMode, 'manual')
+		assert.equal(item?.startedAt, '2026-07-15T10:00:00.000Z')
 	} finally {
 		db.close()
 		rmSync(dir, { recursive: true, force: true })
@@ -866,7 +919,7 @@ test('ItemCommands only completes processing Items through execution completion 
 		assert.equal(db.items.get(solve.id)?.status, 'ready')
 		assert.throws(
 			() => commands.completeLoopItem(loop.id, { resultSummary: 'Should not complete' }),
-			/Only running loop Items can complete through almanac/,
+			/Only running loop executions can complete through almanac/,
 		)
 		assert.equal(db.items.get(loop.id)?.status, 'ready')
 
@@ -1083,6 +1136,8 @@ test('ItemCommands rejects reserved lifecycle events through generic recordEvent
 			'solve_completed',
 			'almanac_run_started',
 			'loop_completed',
+			'planning_started',
+			'planning_failed',
 			'plan_prepared',
 			'pr_created',
 			'comment_posted',
@@ -1108,7 +1163,7 @@ test('ItemCommands records plan preparation through the planning lifecycle path'
 			projectSlug: 'helm',
 			prompt: 'Keep planning lifecycle writes behind ItemCommands.',
 		})
-		const planned = commands.recordPlanPrepared(item.id, {
+		const planned = recordPreparedPlan(commands, item.id, {
 			worktreePath: '/tmp/helm-plan-command',
 			branchName: 'helm/item/plan-command',
 			planDirName: 'plan-command',
@@ -1118,23 +1173,52 @@ test('ItemCommands records plan preparation through the planning lifecycle path'
 		assert.equal(planned.worktreePath, '/tmp/helm-plan-command')
 		assert.equal(planned.branchName, 'helm/item/plan-command')
 		assert.equal(planned.planDirName, 'plan-command')
+		assert.equal(planned.status, 'active')
+		assert.equal(planned.workMode, 'manual')
 		assert.deepEqual(
 			db.items.getEvents(item.id).map(event => event.eventType),
-			['plan_prepared'],
+			['planning_started', 'plan_prepared'],
 		)
 
 		commands.startItem(item.id)
 		assert.throws(
 			() =>
-				commands.recordPlanPrepared(item.id, {
+				recordPreparedPlan(commands, item.id, {
 					worktreePath: '/tmp/helm-plan-command-2',
 					branchName: 'helm/item/plan-command-2',
 					planDirName: 'plan-command-2',
 					spawner: 'default',
 				}),
-			/Running Items cannot be planned/,
+			/Only Inbox, Queue, or active Items can begin planning/,
 		)
 		assert.equal(db.items.get(item.id)?.worktreePath, '/tmp/helm-plan-command')
+	})
+})
+
+test('ItemCommands restores lifecycle ownership when planning fails to launch', async () => {
+	await withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = db.items.create({
+			kind: 'solve',
+			status: 'inbox',
+			projectSlug: 'helm',
+			title: 'Planning launch fails',
+			source: { provider: 'contember', externalId: 'planning-fails' },
+			baseRef: 'main',
+			payload: { kind: 'solve', prompt: 'Plan this.' },
+		})
+
+		const planning = commands.beginPlanning(item.id)
+		assert.equal(planning.status, 'active')
+		assert.equal(planning.workMode, 'manual')
+		const restored = commands.abortPlanning(item.id, item)
+		assert.equal(restored.status, 'inbox')
+		assert.equal(restored.workMode, null)
+		assert.equal(restored.startedAt, null)
+		assert.deepEqual(
+			db.items.getEvents(item.id).map(event => event.eventType),
+			['planning_started', 'planning_failed'],
+		)
 	})
 })
 
@@ -1416,7 +1500,7 @@ test('server creates a new Item forked from an existing Item branch', async () =
 			projectSlug: 'helm',
 			prompt: 'Build the first attempt.',
 		})
-		const baseWithBranch = commands.recordPlanPrepared(base.id, {
+		const baseWithBranch = recordPreparedPlan(commands, base.id, {
 			worktreePath: '/tmp/helm-base-attempt',
 			branchName: 'helm/item/base-attempt',
 			planDirName: 'base-attempt',
@@ -1677,12 +1761,13 @@ test('Drainer runs queued loop Items through the loop lane and captures AlmanacR
 			provider: 'codex',
 		})
 		db.items.update(item.id, { workMode: 'agent' })
-		commands.recordPlanPrepared(item.id, {
+		recordPreparedPlan(commands, item.id, {
 			worktreePath,
 			branchName: 'helm/item/loop',
 			planDirName: 'afk-rework',
 			spawner: 'default',
 		})
+		db.items.update(item.id, { status: 'ready', workMode: 'agent' })
 		const solver = new FakeSolveSolver(worktreePath)
 		const loopRunner = new FakeLoopRunner(10, 'loop-afk-rework-1')
 		const drainer = new Drainer(config, db, provider, solver, loopRunner)
@@ -1702,8 +1787,56 @@ test('Drainer runs queued loop Items through the loop lane and captures AlmanacR
 			assert.equal(db.items.get(item.id)?.resultSummary, 'almanac loop run completed')
 			assert.deepEqual(
 				db.items.getEvents(item.id).map(event => event.eventType),
-				['plan_prepared', 'item_started', 'almanac_run_started', 'loop_completed'],
+				['planning_started', 'plan_prepared', 'item_started', 'almanac_run_started', 'loop_completed'],
 			)
+		} finally {
+			drainer.stop()
+			rmSync(worktreePath, { recursive: true, force: true })
+		}
+	})
+})
+
+test('planned solve Items can run Almanac on the same Item and worktree', async () => {
+	await withTempDb(async db => {
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-planned-solve-loop-'))
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Execute prepared plan',
+			projectSlug: 'helm',
+			prompt: 'Implement the prepared plan.',
+		})
+		const planDirName = '2026-07-15-prepared-plan'
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
+		workspace.ensureDir()
+		writeFileSync(join(workspace.dir, 'spec.md'), '# Prepared spec', 'utf-8')
+		recordPreparedPlan(commands, item.id, {
+			worktreePath,
+			branchName: 'helm/item/prepared-plan',
+			planDirName,
+			spawner: 'default',
+		})
+		commands.setSolveExecution(item.id, {
+			mode: 'loop',
+			prdPath: workspace.loopArtifactPath(),
+			options: { mode: 'once' },
+		})
+		const solver = new FakeSolveSolver(worktreePath)
+		const loopRunner = new FakeLoopRunner(0, 'planned-loop-run')
+		const drainer = new Drainer(config, db, provider, solver, loopRunner)
+
+		try {
+			assert.equal(drainer.processOneItem(item.id), true)
+			await waitFor(() => db.items.get(item.id)?.status === 'review', 'planned solve loop did not finish')
+
+			const completed = db.items.get(item.id)
+			assert(completed)
+			assert.equal(completed.kind, 'solve')
+			assert.equal(completed?.worktreePath, worktreePath)
+			assert.equal(completed?.almanacRunId, 'planned-loop-run')
+			assert.equal(completed?.runOutcome, 'ok')
+			assert.equal(solver.calls.length, 0)
+			assert.equal(loopRunner.loopCalls[0].payload.prdPath, `${workspace.rel.dir}/spec.md`)
+			assert.equal(toDashboardItem(completed).executionMode, 'loop')
 		} finally {
 			drainer.stop()
 			rmSync(worktreePath, { recursive: true, force: true })
@@ -1731,18 +1864,20 @@ test('Drainer runs loop Items oldest-first', async () => {
 		})
 		db.items.update(newerLoop.id, { queuedAt: '2026-06-19T12:00:02.000Z', workMode: 'agent' })
 		db.items.update(olderLoop.id, { queuedAt: '2026-06-19T12:00:01.000Z', workMode: 'agent' })
-		commands.recordPlanPrepared(newerLoop.id, {
+		recordPreparedPlan(commands, newerLoop.id, {
 			worktreePath: newerWorktree,
 			branchName: 'helm/item/newer-loop',
 			planDirName: 'newer-loop',
 			spawner: 'default',
 		})
-		commands.recordPlanPrepared(olderLoop.id, {
+		recordPreparedPlan(commands, olderLoop.id, {
 			worktreePath: olderWorktree,
 			branchName: 'helm/item/older-loop',
 			planDirName: 'older-loop',
 			spawner: 'default',
 		})
+		db.items.update(newerLoop.id, { status: 'ready', workMode: 'agent' })
+		db.items.update(olderLoop.id, { status: 'ready', workMode: 'agent' })
 		const solver = new FakeSolveSolver(worktreeRoot)
 		const loopRunner = new FakeLoopRunner(10, 'loop-order-run')
 		const drainer = new Drainer(config, db, provider, solver, loopRunner)
@@ -1838,12 +1973,13 @@ test('processLoopItem records loop runner failures through ItemCommands', async 
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		commands.recordPlanPrepared(item.id, {
+		recordPreparedPlan(commands, item.id, {
 			worktreePath,
 			branchName: 'helm/item/fail-loop',
 			planDirName: 'fail-loop',
 			spawner: 'default',
 		})
+		db.items.update(item.id, { status: 'ready', workMode: 'agent' })
 
 		try {
 			await processLoopItem(item.id, config, db, new FailingLoopRunner())
@@ -1855,7 +1991,7 @@ test('processLoopItem records loop runner failures through ItemCommands', async 
 			assert.equal(failed?.errorMessage, 'loop runner failed')
 			assert.deepEqual(
 				db.items.getEvents(item.id).map(event => event.eventType),
-				['plan_prepared', 'item_started', 'almanac_run_started', 'item_failed'],
+				['planning_started', 'plan_prepared', 'item_started', 'almanac_run_started', 'item_failed'],
 			)
 		} finally {
 			rmSync(worktreePath, { recursive: true, force: true })
@@ -2056,7 +2192,7 @@ test('solve Items display the immutable prompt snapshot captured before invocati
 		mkdirSync(worktreePath, { recursive: true })
 		const workspace = new PlanWorkspace(worktreePath, planDirName)
 		workspace.writeReadme('BEFORE snapshot artifact')
-		commands.recordPlanPrepared(item.id, {
+		recordPreparedPlan(commands, item.id, {
 			worktreePath,
 			branchName: 'helm/item/snapshot-solve',
 			planDirName,
@@ -2815,9 +2951,11 @@ test('server plans Items through Spawner and records reusable Item workspace ide
 			assert.equal(stored?.worktreePath, first.data.worktreePath)
 			assert.equal(stored?.branchName, first.data.branchName)
 			assert.equal(stored?.planDirName, first.data.planDirName)
+			assert.equal(stored?.status, 'active')
+			assert.equal(stored?.workMode, 'manual')
 			assert.deepEqual(
 				db.items.getEvents(item.id).map(event => event.eventType),
-				['plan_prepared'],
+				['planning_started', 'plan_prepared'],
 			)
 
 			const secondRes = await api.request(`/items/${item.id}/plan`, { method: 'POST' })
@@ -2973,7 +3111,8 @@ test('server plans Items with the per-Item selected Spawner', async () => {
 			assert.equal(defaultSpawner.calls.length, 0)
 			assert.equal(selectedSpawner.calls.length, 1)
 			assert.equal(db.items.get(item.id)?.spawner, 'okena')
-			const [event] = db.items.getEvents(item.id)
+			const event = db.items.getEvents(item.id).find(candidate => candidate.eventType === 'plan_prepared')
+			assert(event)
 			assert.equal(JSON.parse(event.payload ?? '{}').spawner, 'okena')
 		} finally {
 			rmSync(worktreeRoot, { recursive: true, force: true })
@@ -3145,7 +3284,7 @@ test('Dashboard Contract exposes persisted Item plan identity', async () => {
 			projectSlug: 'helm',
 			prdPath: 'docs/plans/afk-rework/prd.md',
 		})
-		const planned = commands.recordPlanPrepared(item.id, {
+		const planned = recordPreparedPlan(commands, item.id, {
 			worktreePath: '/tmp/helm-planned-item',
 			branchName: 'helm/item/resume-planned',
 			planDirName: 'resume-planned-item',
@@ -3821,6 +3960,62 @@ test('server start and cancel Item action routes return dashboard contract', asy
 	})
 })
 
+test('server starts a planned solve as a loop using its existing plan artifact', async () => {
+	await withTempDb(async db => {
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-api-planned-loop-'))
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({ title: 'Planned loop', projectSlug: 'helm', prompt: 'Implement it.' })
+		const planDirName = '2026-07-15-planned-loop'
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
+		workspace.ensureDir()
+		writeFileSync(join(workspace.dir, 'spec.md'), '# Plan', 'utf-8')
+		recordPreparedPlan(commands, item.id, {
+			worktreePath,
+			branchName: 'helm/item/planned-loop',
+			planDirName,
+			spawner: 'default',
+		})
+		const routeQueue = {
+			...queue,
+			processOneItem: (id: string) => {
+				const current = commands.getItem(id)
+				assert(current?.payload.kind === 'solve')
+				assert.equal(current.payload.execution?.mode, 'loop')
+				commands.startItem(id)
+				return true
+			},
+		}
+		const api = apiRoutes(
+			config,
+			'helm.config.json',
+			db,
+			routeQueue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+		)
+
+		try {
+			const res = await api.request(`/items/${item.id}/start`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ executionMode: 'loop' }),
+			})
+			assert.equal(res.status, 200)
+			const body = (await res.json()) as { data: ReturnType<typeof toDashboardItem> }
+			assert.equal(body.data.status, 'running')
+			assert.equal(body.data.executionMode, 'loop')
+			const payload = solvePayload(db, item.id)
+			assert.equal(payload.execution?.mode, 'loop')
+			if (payload.execution?.mode !== 'loop') throw new Error('Expected loop execution payload')
+			assert.equal(payload.execution.prdPath, `${workspace.rel.dir}/spec.md`)
+		} finally {
+			rmSync(worktreePath, { recursive: true, force: true })
+		}
+	})
+})
+
 test('server Item work-start routes persist selected solve agent before queue handoff', async () => {
 	await withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)
@@ -3900,7 +4095,7 @@ test('recordPlanPrepared stamps plannedAt (the "planned" signal) and re-plan pre
 		const item = commands.createSolveItem({ title: 'Plan me', projectSlug: 'helm', prompt: 'do it' })
 		assert.equal(item.plannedAt, null) // a fresh item is unplanned
 
-		const planned = commands.recordPlanPrepared(item.id, {
+		const planned = recordPreparedPlan(commands, item.id, {
 			worktreePath: '/tmp/wt',
 			branchName: 'feat/x',
 			planDirName: '2026-06-30-x',
@@ -3910,7 +4105,7 @@ test('recordPlanPrepared stamps plannedAt (the "planned" signal) and re-plan pre
 		assert.equal(toDashboardItem(planned).plannedAt, planned.plannedAt) // contract surfaces it (free in list)
 
 		// Re-planning keeps the first-planned time (don't reset the historical fact).
-		const replanned = commands.recordPlanPrepared(item.id, {
+		const replanned = recordPreparedPlan(commands, item.id, {
 			worktreePath: '/tmp/wt',
 			branchName: 'feat/x',
 			planDirName: '2026-06-30-x',
@@ -3932,6 +4127,21 @@ test('PlanWorkspace.listArtifacts returns each .md file with content and skips n
 		assert.deepEqual(arts.map(a => a.name).sort(), ['context.md', 'prd.md'])
 		assert.equal(arts.find(a => a.name === 'prd.md')?.content, '# PRD\nDecision: do X')
 		assert.ok(!arts.some(a => a.name.endsWith('.txt'))) // non-markdown excluded
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('PlanWorkspace resolves the runnable loop artifact deterministically', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'helm-plan-loop-'))
+	try {
+		const ws = new PlanWorkspace(dir, '2026-06-30-loop')
+		ws.ensureDir()
+		writeFileSync(join(ws.dir, 'context.md'), 'context', 'utf-8')
+		writeFileSync(join(ws.dir, 'spec.md'), '# Spec', 'utf-8')
+		assert.equal(ws.loopArtifactPath(), 'docs/plans/2026-06-30-loop/spec.md')
+		writeFileSync(join(ws.dir, 'prd.md'), '# PRD', 'utf-8')
+		assert.equal(ws.loopArtifactPath(), 'docs/plans/2026-06-30-loop/prd.md')
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}

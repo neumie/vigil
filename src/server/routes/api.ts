@@ -658,7 +658,8 @@ export function apiRoutes(
 	})
 
 	api.post('/items/:id/start', async c => {
-		const selection = await readSolveSelection(c.req.json())
+		const body = await c.req.json().catch(() => ({}))
+		const selection = await readSolveSelection(Promise.resolve(body))
 		const invalid = invalidSelection(c, selection)
 		if (invalid) return invalid
 		const item = itemCommands.getItem(c.req.param('id'))
@@ -666,8 +667,43 @@ export function apiRoutes(
 		if (item.kind !== 'solve' && item.kind !== 'loop') {
 			return c.json({ error: 'Only solve or loop Items can be started by this drainer' }, 400)
 		}
-		if (item.status !== 'ready' && item.status !== 'inbox') return c.json({ error: 'Item is not ready to start' }, 400)
+		const plannedActive = item.status === 'active' && item.workMode === 'manual' && item.plannedAt != null
+		if (item.status !== 'ready' && item.status !== 'inbox' && !plannedActive) {
+			return c.json({ error: 'Item is not ready to start' }, 400)
+		}
 		recordSolveSelection(item, selection)
+		const selectedItem = itemCommands.getItem(item.id) ?? item
+		if (plannedActive && selectedItem.payload.kind === 'solve') {
+			const requested = (body as { executionMode?: unknown }).executionMode
+			if (requested !== 'agent' && requested !== 'loop') {
+				return c.json({ error: 'Planned Items require executionMode: agent or loop' }, 400)
+			}
+			if (requested === 'loop') {
+				if ((selectedItem.payload.solverWorkspace ?? config.solver.workspace) === 'main') {
+					return c.json({ error: 'Loops require an isolated worktree; switch Workspace to Worktree.' }, 400)
+				}
+				if (!selectedItem.worktreePath || !selectedItem.planDirName || !existsSync(selectedItem.worktreePath)) {
+					return c.json({ error: 'Planned worktree is missing. Re-plan the Item before starting a loop.' }, 400)
+				}
+				let prdPath: string
+				try {
+					prdPath = new PlanWorkspace(selectedItem.worktreePath, selectedItem.planDirName).loopArtifactPath()
+				} catch (err) {
+					return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+				}
+				itemCommands.setSolveExecution(item.id, {
+					mode: 'loop',
+					prdPath,
+					options: {
+						mode: 'once',
+						provider: selectedItem.payload.solverAgent ?? config.solver.agent,
+						model: selectedItem.payload.solverModel ?? config.solver.model,
+					},
+				})
+			} else {
+				itemCommands.setSolveExecution(item.id, { mode: 'solver' })
+			}
+		}
 		const started = queue.processOneItem(item.id)
 		if (!started) return c.json({ error: 'Could not start Item' }, 500)
 		return c.json({ data: await dashboardItem(itemCommands.getItem(item.id) ?? item) })
@@ -752,15 +788,29 @@ export function apiRoutes(
 			return c.json({ error: `Project checkout does not exist: ${projectConfig.repoPath}` }, 400)
 		}
 
+		const planningPrevious = item
+		try {
+			itemCommands.beginPlanning(item.id)
+		} catch (err) {
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+		}
+		const abortPlanning = () => {
+			itemCommands.abortPlanning(item.id, planningPrevious)
+		}
+
 		let sourceContext: TaskContext | null = null
 		if (item.payload.kind === 'solve' && (item.capturedContext || item.source)) {
 			try {
 				sourceContext = await resolveItemSourceContext(item, provider)
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
+				abortPlanning()
 				return c.json({ error: `Item source context failed to load: ${msg}` }, 502)
 			}
-			if (!sourceContext) return c.json({ error: 'Item source not found in source system' }, 502)
+			if (!sourceContext) {
+				abortPlanning()
+				return c.json({ error: 'Item source not found in source system' }, 502)
+			}
 		}
 		// For a captured (email) Item, rewrite attachment URLs to worktree-local
 		// paths so the planning agent's context.md points at the local copies (placed
@@ -791,6 +841,7 @@ export function apiRoutes(
 					deps: aiDeps,
 				})
 			} catch (err) {
+				abortPlanning()
 				// Pass the request signal so an error coinciding with a client abort is
 				// classified as cancellation (matching how ensureItemWorkspaceName re-throws),
 				// not mis-reported as a 500.
@@ -805,6 +856,7 @@ export function apiRoutes(
 			itemSpawner = await planningSpawnerForItem(item)
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err)
+			abortPlanning()
 			return c.json({ error: msg }, 400)
 		}
 
@@ -833,6 +885,7 @@ export function apiRoutes(
 			hint = session.hint
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err)
+			abortPlanning()
 			return c.json({ error: `Planning session failed to start: ${msg}` }, 500)
 		}
 

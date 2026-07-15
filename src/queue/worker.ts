@@ -8,6 +8,7 @@ import type { HelmConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import { ItemCommands } from '../items/commands.js'
 import { buildItemTaskContext, localizeCapturedAttachments } from '../items/context.js'
+import { loopPayloadForItem } from '../items/execution.js'
 import { resolveItemWorkspace } from '../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../items/naming.js'
 import type { EnsureItemDisplayNameDeps } from '../items/naming.js'
@@ -308,9 +309,8 @@ export async function processLoopItem(
 	const commands = new ItemCommands(db.items, config)
 	const item = commands.getItem(itemId)
 	if (!item) throw new Error(`Item ${itemId} not found in DB`)
-	if (item.kind !== 'loop' || item.payload.kind !== item.kind) {
-		throw new Error(`Item ${itemId} is ${item.kind}, not a loop Item`)
-	}
+	const loopPayload = loopPayloadForItem(item)
+	if (!loopPayload) throw new Error(`Item ${itemId} is not configured for loop execution`)
 
 	const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
 	if (!projectConfig) throw new Error(`No project config for slug: ${item.projectSlug}`)
@@ -325,6 +325,9 @@ export async function processLoopItem(
 		// AI naming is scoped to solve Items only.
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(item)
 		commands.recordExecutionWorkspaceIdentity(itemId, { planDirName, branchName })
+		if (item.kind === 'solve' && item.plannedAt && !existingWorktreePath) {
+			throw phaseError('solve', 'Planned worktree is missing. Re-plan the Item before starting a loop.')
+		}
 		const worktreePath = await ensureItemWorktree(projectConfig, baseRef, branchName, existingWorktreePath)
 		commands.recordExecutionWorkspaceIdentity(itemId, { worktreePath, branchName, planDirName })
 
@@ -333,7 +336,7 @@ export async function processLoopItem(
 			solverConfig: config.solver,
 			itemId,
 			itemTitle: item.title,
-			payload: item.payload,
+			payload: loopPayload,
 			worktreePath,
 			branchName,
 			planDirName,
@@ -345,8 +348,8 @@ export async function processLoopItem(
 		})
 
 		if (result.runId) commands.recordAlmanacRunId(itemId, result.runId)
-		commands.completeLoopItem(itemId, { resultSummary: `almanac ${item.kind} run completed` })
-		log.success('worker', `${item.kind} Item complete: ${item.title}`)
+		commands.completeLoopItem(itemId, { resultSummary: 'almanac loop run completed' })
+		log.success('worker', `loop execution complete: ${item.title}`)
 	} catch (err) {
 		const error = err as Error
 		const isCancelled = isCancellation(error, signal)

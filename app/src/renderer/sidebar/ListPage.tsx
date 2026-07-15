@@ -54,6 +54,7 @@ export function ListPage({
 }: ListPageProps) {
 	const [bucket, setBucket] = useState<BucketKey>(() => {
 		if (window.helm.uiPreview === 'queue-list') return 'queue'
+		if (window.helm.uiPreview === 'planned-list') return 'active'
 		const saved = localStorage.getItem(BUCKET_KEY)
 		return isBucket(saved) ? saved : 'needs'
 	})
@@ -223,6 +224,7 @@ const ItemRow = memo(function ItemRow({
 }) {
 	const verdict = item.assessment ? VERDICT_META[item.assessment.verdict] : null
 	const showQuickActions = item.status === 'ready' && item.workMode === null
+	const planned = item.plannedAt != null && ['inbox', 'ready', 'active'].includes(item.status)
 	const mode = item.workMode
 	return (
 		<div className={`item-row-shell${showQuickActions ? ' item-row-shell-actions' : ''}`}>
@@ -239,7 +241,12 @@ const ItemRow = memo(function ItemRow({
 				</div>
 				<div className="item-row-line2">
 					<span className="item-row-project">{item.projectSlug}</span>
-					{mode ? (
+					{planned ? (
+						<span className="item-row-mode mode-manual" title="Interactive plan prepared">
+							{GLYPH.plan}
+							Planned
+						</span>
+					) : mode ? (
 						<span className={`item-row-mode mode-${mode}`}>
 							{GLYPH[mode]}
 							{mode === 'agent' ? 'Agent' : 'Manual'}

@@ -108,6 +108,7 @@ export interface RunObservation {
 export interface DashboardItem {
 	id: string
 	kind: 'solve' | 'loop'
+	executionMode: 'solve' | 'loop'
 	status: string
 	workMode: 'agent' | 'manual' | null
 	projectSlug: string

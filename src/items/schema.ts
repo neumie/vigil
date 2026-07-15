@@ -79,6 +79,28 @@ export const deployStateSchema = z
 	})
 	.strict()
 
+export const loopOptionsSchema = z
+	.object({
+		mode: z.enum(['once', 'afk']).optional(),
+		provider: z.enum(['claude', 'codex']).optional(),
+		model: z.string().min(1).optional(),
+		effort: z.string().min(1).optional(),
+		iterations: z.number().int().positive().optional(),
+		noOversee: z.boolean().optional(),
+	})
+	.strict()
+
+export const solveExecutionSchema = z.discriminatedUnion('mode', [
+	z.object({ mode: z.literal('solver') }).strict(),
+	z
+		.object({
+			mode: z.literal('loop'),
+			prdPath: z.string().min(1),
+			options: loopOptionsSchema.optional(),
+		})
+		.strict(),
+])
+
 export const solveItemPayloadSchema = z
 	.object({
 		kind: z.literal('solve'),
@@ -90,19 +112,16 @@ export const solveItemPayloadSchema = z
 		// Per-item execution workspace override; wins over config.solver.workspace.
 		// 'main' runs the agent directly in the project's canonical checkout.
 		solverWorkspace: solverWorkspaceSchema.optional(),
+		// A planned solve keeps its source identity but may execute through either
+		// the normal Solver or Almanac loop runner in the same worktree.
+		execution: solveExecutionSchema.optional(),
 	})
 	.strict()
 
-export const loopItemPayloadSchema = z
-	.object({
+export const loopItemPayloadSchema = loopOptionsSchema
+	.extend({
 		kind: z.literal('loop'),
 		prdPath: z.string().min(1),
-		mode: z.enum(['once', 'afk']).optional(),
-		provider: z.enum(['claude', 'codex']).optional(),
-		model: z.string().min(1).optional(),
-		effort: z.string().min(1).optional(),
-		iterations: z.number().int().positive().optional(),
-		noOversee: z.boolean().optional(),
 	})
 	.strict()
 
@@ -159,5 +178,7 @@ export type Assessment = z.infer<typeof assessmentSchema>
 export type DeploymentEntry = z.infer<typeof deploymentEntrySchema>
 export type DeployState = z.infer<typeof deployStateSchema>
 export type ItemSource = z.infer<typeof itemSourceSchema>
+export type LoopOptions = z.infer<typeof loopOptionsSchema>
+export type SolveExecution = z.infer<typeof solveExecutionSchema>
 export type ItemPayload = z.infer<typeof itemPayloadSchema>
 export type ItemRecord = z.infer<typeof itemRecordSchema>

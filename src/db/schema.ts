@@ -342,4 +342,18 @@ ALTER TABLE items ADD COLUMN work_mode TEXT;
 UPDATE items SET work_mode = 'agent' WHERE started_at IS NOT NULL;
 `,
 	},
+	{
+		// Interactive planning is human-owned active work. Backfill plans prepared
+		// before this lifecycle rule so they become visible in Active immediately.
+		version: 23,
+		sql: `
+UPDATE items
+SET status = 'active',
+    work_mode = 'manual',
+    started_at = COALESCE(started_at, planned_at)
+WHERE planned_at IS NOT NULL
+  AND worktree_path IS NOT NULL
+  AND status IN ('inbox', 'ready');
+`,
+	},
 ]

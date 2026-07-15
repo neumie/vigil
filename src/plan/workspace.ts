@@ -99,6 +99,32 @@ export class PlanWorkspace {
 	}
 
 	/**
+	 * Resolve the plan file Almanac should execute. Prefer the conventional PRD,
+	 * then spec.md; otherwise accept exactly one user-authored markdown file.
+	 */
+	loopArtifactPath(): string {
+		const ignored = new Set(['README.md', 'context.md'])
+		const names = existsSync(this.dir)
+			? readdirSync(this.dir).filter(name => name.endsWith('.md') && !ignored.has(name))
+			: []
+		const selected = names.includes('prd.md')
+			? 'prd.md'
+			: names.includes('spec.md')
+				? 'spec.md'
+				: names.length === 1
+					? names[0]
+					: null
+		if (!selected) {
+			throw new Error(
+				names.length === 0
+					? 'No runnable plan artifact found. Create prd.md or spec.md in the plan.'
+					: 'Multiple plan artifacts found. Add prd.md or spec.md to choose what the loop should run.',
+			)
+		}
+		return `${this.rel.dir}/${selected}`
+	}
+
+	/**
 	 * Each `*.md` artifact in the plan dir as `{ name, content }` (oldest-first by
 	 * mtime) for the dashboard plan preview. Empty if the dir is absent/empty.
 	 * Unlike `readArtifacts`, this keeps files separate (no `<plan_artifact>`

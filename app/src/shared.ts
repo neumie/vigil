@@ -92,8 +92,10 @@ export interface ConfigApi {
 export type UiPreview =
 	| 'list'
 	| 'queue-list'
+	| 'planned-list'
 	| 'detail'
 	| 'queue-detail'
+	| 'planned-detail'
 	| 'archive-detail'
 	| 'task'
 	| 'settings'

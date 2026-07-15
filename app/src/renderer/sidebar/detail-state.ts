@@ -76,13 +76,21 @@ export function detailState(item: DashboardItem): {
 				sections: ['queue', 'run-setup', 'work'],
 			}
 		case 'active':
-			return {
-				headline: null,
-				direction: null,
-				chipTone: chipTone(item),
-				attention,
-				sections: ['work'],
-			}
+			return item.plannedAt
+				? {
+						headline: 'Plan ready',
+						direction: 'Continue planning, or choose how to run this work.',
+						chipTone: chipTone(item),
+						attention,
+						sections: ['work', 'run-setup'],
+					}
+				: {
+						headline: null,
+						direction: null,
+						chipTone: chipTone(item),
+						attention,
+						sections: ['work'],
+					}
 		case 'running':
 			return {
 				headline: 'Work is in progress',

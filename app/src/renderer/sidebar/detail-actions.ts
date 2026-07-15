@@ -38,16 +38,18 @@ export function lifecycleActionPresentation(
 	actionId: DashboardActionId,
 	fallbackLabel: string,
 	kind: DashboardItem['kind'],
+	executionMode: DashboardItem['executionMode'] = kind === 'loop' ? 'loop' : 'solve',
 ): LifecycleActionPresentation {
+	const loop = executionMode === 'loop'
 	switch (actionId) {
 		case 'approve':
 			return { label: 'Approve and queue', icon: 'queue' }
 		case 'start':
-			return { label: kind === 'loop' ? 'Start loop' : 'Start agent', icon: 'play' }
+			return { label: loop ? 'Start loop' : 'Start agent', icon: 'play' }
 		case 'retry':
-			return { label: kind === 'loop' ? 'Queue loop retry' : 'Queue retry', icon: 'retry' }
+			return { label: loop ? 'Queue loop retry' : 'Queue retry', icon: 'retry' }
 		case 'cancel':
-			return { label: kind === 'loop' ? 'Cancel loop' : 'Cancel run', icon: 'stop' }
+			return { label: loop ? 'Cancel loop' : 'Cancel run', icon: 'stop' }
 		case 'reject':
 			return { label: 'Reject', icon: 'close' }
 		case 'reopen':

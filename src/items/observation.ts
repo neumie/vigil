@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { itemExecutionMode } from './execution.js'
 import type { ItemRecord } from './schema.js'
 import type { ItemEvent, ItemStore } from './store.js'
 
@@ -75,9 +76,7 @@ const STATE_LABEL: Record<RunObservationState, string> = {
 }
 
 function sourceForItem(item: ItemRecord): RunObservationSource {
-	if (item.kind === 'solve') return 'solve'
-	if (item.kind === 'loop') return 'loop'
-	return 'none'
+	return itemExecutionMode(item) === 'loop' ? 'loop' : 'solve'
 }
 
 function stateFromItem(item: ItemRecord): RunObservationState {
@@ -290,7 +289,7 @@ function readTsvRecord(path: string): Record<string, string> | null {
 }
 
 function readAlmanac(item: ItemRecord): RunObservationAlmanac {
-	if (item.kind !== 'loop') {
+	if (itemExecutionMode(item) !== 'loop') {
 		return { runId: null, statusPath: null, status: null, round: null, summary: null, failureReason: null }
 	}
 	if (!item.almanacRunId || !item.worktreePath) {
