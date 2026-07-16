@@ -40,8 +40,8 @@ export function planStatusLabel(item: DashboardItem): string | null {
 	if (status.stage === 'plan_ready') return 'Plan ready'
 	const total = planTicketTotal(item)
 	const open = status.localTickets.open + status.githubTickets.open
-	if (open === 0) return `${total} ${total === 1 ? 'ticket' : 'tickets'} complete`
-	return `${total} ${total === 1 ? 'ticket' : 'tickets'} ready`
+	const completed = Math.max(0, total - open)
+	return `${completed} of ${total} ${total === 1 ? 'ticket' : 'tickets'} complete`
 }
 
 export function planStatusDetail(item: DashboardItem): string | null {
@@ -55,12 +55,13 @@ export function planStatusDetail(item: DashboardItem): string | null {
 	}
 	const total = planTicketTotal(item)
 	const open = status.localTickets.open + status.githubTickets.open
+	const completed = Math.max(0, total - open)
 	const agent = status.localTickets.readyForAgent + status.githubTickets.readyForAgent
 	const human = status.localTickets.readyForHuman + status.githubTickets.readyForHuman
 	const sources = [status.localTickets.total > 0 ? 'local' : null, status.githubTickets.total > 0 ? 'GitHub' : null]
 		.filter(Boolean)
 		.join(' + ')
-	return `${total} ${total === 1 ? 'ticket' : 'tickets'} in ${sources}. ${open} open; ${agent} agent-ready, ${human} human-ready.`
+	return `${completed} of ${total} ${total === 1 ? 'ticket' : 'tickets'} complete in ${sources}. ${open} open; ${agent} agent-ready, ${human} human-ready.`
 }
 
 /** `review` + `failed` are the "needs you" pile (same rule as the web dashboard). */

@@ -2,7 +2,14 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { phaseError } from '../../util/errors.js'
 import { log } from '../../util/logger.js'
-import { excludeHelmFiles, localBranchExists, resolveWorktreeStartPoint, withRepoLock } from '../../worktree/manager.js'
+import {
+	excludeHelmFiles,
+	inspectRemoteBranch,
+	localBranchExists,
+	resolveWorktreeStartPoint,
+	withRepoLock,
+	worktreeRegistrationForBranch,
+} from '../../worktree/manager.js'
 import type { OkenaClient } from './client.js'
 
 interface CreateWorktreeResponse {
@@ -16,6 +23,70 @@ export interface EnsuredOkenaWorktree {
 	wtProjectId: string
 	/** A terminal created as a side effect of worktree creation, if any. */
 	autoTerminalId: string | null
+}
+
+export type OkenaBranchSource = 'local' | 'remote' | 'new' | 'unavailable'
+
+export async function inspectOkenaBranchSource(repoPath: string, branchName: string): Promise<OkenaBranchSource> {
+	if (await localBranchExists(repoPath, branchName)) return 'local'
+	const remote = await inspectRemoteBranch(repoPath, branchName)
+	if (remote === 'exists') return 'remote'
+	return remote === 'absent' ? 'new' : 'unavailable'
+}
+
+interface OkenaBranchPreparationDeps {
+	localBranchExists: typeof localBranchExists
+	inspectRemoteBranch: typeof inspectRemoteBranch
+	worktreeRegistrationForBranch: typeof worktreeRegistrationForBranch
+	execGit: (args: string[], options: { cwd: string; timeout: number }) => Promise<void>
+}
+
+const defaultBranchPreparationDeps: OkenaBranchPreparationDeps = {
+	localBranchExists,
+	inspectRemoteBranch,
+	worktreeRegistrationForBranch,
+	execGit: async (args, options) => {
+		await promisify(execFile)('git', args, options)
+	},
+}
+
+export async function prepareExistingOkenaBranch(
+	repoPath: string,
+	branchName: string,
+	deps: OkenaBranchPreparationDeps = defaultBranchPreparationDeps,
+): Promise<boolean> {
+	if (await deps.localBranchExists(repoPath, branchName)) {
+		return withRepoLock(repoPath, async () => {
+			const registration = await deps.worktreeRegistrationForBranch(repoPath, branchName)
+			if (registration && !registration.exists) {
+				await deps.execGit(['worktree', 'prune'], { cwd: repoPath, timeout: 10_000 })
+			}
+			return true
+		})
+	}
+	const remote = await deps.inspectRemoteBranch(repoPath, branchName)
+	if (remote === 'unavailable') throw phaseError('worktree', `Could not check origin for branch ${branchName}`)
+	if (remote === 'absent') return false
+
+	return withRepoLock(repoPath, async () => {
+		if (await deps.localBranchExists(repoPath, branchName)) return true
+		const remoteRef = `refs/remotes/origin/${branchName}`
+		await deps.execGit(['fetch', 'origin', `+refs/heads/${branchName}:${remoteRef}`], {
+			cwd: repoPath,
+			timeout: 30_000,
+		})
+		if (!(await deps.localBranchExists(repoPath, branchName))) {
+			try {
+				await deps.execGit(['branch', '--track', branchName, remoteRef], {
+					cwd: repoPath,
+					timeout: 10_000,
+				})
+			} catch (err) {
+				if (!(await deps.localBranchExists(repoPath, branchName))) throw err
+			}
+		}
+		return true
+	})
 }
 
 export async function createOkenaWorktreeForBranch(
@@ -142,7 +213,7 @@ export class OkenaWorktreeManager {
 		let wt: CreateWorktreeResponse
 		try {
 			wt = await createOkenaWorktreeForBranch(this.client, okenaProject.id, branchName, () =>
-				localBranchExists(repoPath, branchName),
+				prepareExistingOkenaBranch(repoPath, branchName),
 			)
 		} catch (err) {
 			throw phaseError('worktree', `Okena worktree creation failed: ${err instanceof Error ? err.message : err}`)

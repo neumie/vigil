@@ -128,8 +128,8 @@ test('planned Active Items distinguish planning from a ticket queue', () => {
 			checkedAt: '2026-01-02T00:00:00Z',
 		},
 	})
-	assert.equal(tickets.headline, '3 tickets ready')
-	assert.equal(tickets.direction, '3 tickets in local. 3 open; 2 agent-ready, 1 human-ready.')
+	assert.equal(tickets.headline, '0 of 3 tickets complete')
+	assert.equal(tickets.direction, '0 of 3 tickets complete in local. 3 open; 2 agent-ready, 1 human-ready.')
 })
 
 test('automatic Inbox Items lead with the approval decision', () => {

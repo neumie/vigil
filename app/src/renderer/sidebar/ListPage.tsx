@@ -233,7 +233,7 @@ const ItemRow = memo(function ItemRow({
 }) {
 	const verdict = item.assessment ? VERDICT_META[item.assessment.verdict] : null
 	const showQuickActions = item.status === 'ready' && item.workMode === null
-	const planningStatus = ['inbox', 'ready', 'active'].includes(item.status) ? planStatusLabel(item) : null
+	const planningStatus = planStatusLabel(item)
 	const mode = item.workMode
 	return (
 		<div className={`item-row-shell${showQuickActions ? ' item-row-shell-actions' : ''}`}>

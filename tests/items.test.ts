@@ -2629,9 +2629,23 @@ test('server opens every Item in Okena and persists a newly-created workspace wi
 					activated: true,
 				}
 			},
+			async params => ({
+				state: 'create',
+				label: 'Create branch & workspace',
+				detail: params.branchName,
+				branchName: params.branchName,
+			}),
 		)
 
 		try {
+			const detailResponse = await api.request(`/items/${item.id}`)
+			assert.equal(detailResponse.status, 200)
+			const detail = (await detailResponse.json()) as {
+				data: { okenaWorkspace: { state: string; label: string } }
+			}
+			assert.equal(detail.data.okenaWorkspace.state, 'create')
+			assert.equal(detail.data.okenaWorkspace.label, 'Create branch & workspace')
+
 			const response = await api.request(`/items/${item.id}/open-okena`, { method: 'POST' })
 			assert.equal(response.status, 200)
 			const body = (await response.json()) as {
@@ -2653,6 +2667,50 @@ test('server opens every Item in Okena and persists a newly-created workspace wi
 		} finally {
 			rmSync(worktreePath, { recursive: true, force: true })
 		}
+	})
+})
+
+test('Okena detail preview uses the configured main workspace default', async () => {
+	await withTempDb(async db => {
+		const mainConfig = configSchema.parse({
+			...config,
+			solver: { ...config.solver, workspace: 'main' },
+		})
+		const commands = new ItemCommands(db.items, mainConfig)
+		const item = commands.createSolveItem({ title: 'Main preview', projectSlug: 'helm', prompt: 'Inspect.' })
+		let inspectedWorkspace: string | undefined
+		const api = apiRoutes(
+			mainConfig,
+			'helm.config.json',
+			db,
+			queue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+			createSpawner,
+			undefined,
+			undefined,
+			async () => {
+				throw new Error('not called')
+			},
+			async params => {
+				inspectedWorkspace = params.workspaceMode
+				return {
+					state: 'main',
+					label: 'Focus main checkout',
+					detail: 'Main',
+					branchName: params.branchName,
+					worktreePath: mainConfig.projects[0].repoPath,
+				}
+			},
+		)
+
+		const response = await api.request(`/items/${item.id}`)
+		assert.equal(response.status, 200)
+		assert.equal(inspectedWorkspace, 'main')
+		const body = (await response.json()) as { data: { okenaWorkspace: { state: string } } }
+		assert.equal(body.data.okenaWorkspace.state, 'main')
 	})
 })
 
@@ -3050,11 +3108,14 @@ test('server exposes created Items through the dashboard contract', async () => 
 
 		const readRes = await api.request(`/items/${created.data.id}`)
 		assert.equal(readRes.status, 200)
-		const read = (await readRes.json()) as { data: ReturnType<typeof toDashboardItem> }
-		// The detail route enriches with the live source-task content (null here:
-		// this Item is source-less) and the plan preview (empty: not planned).
-		// Otherwise it matches the creation contract.
-		assert.deepEqual(read.data, { ...created.data, sourceTask: null, planArtifacts: [] })
+		const read = (await readRes.json()) as {
+			data: ReturnType<typeof toDashboardItem> & { okenaWorkspace?: unknown }
+		}
+		// The detail route enriches with source/plan content and a best-effort,
+		// environment-dependent Okena preview. Excluding that preview, it matches
+		// the deterministic creation contract.
+		const { okenaWorkspace: _okenaWorkspace, ...stableDetail } = read.data
+		assert.deepEqual(stableDetail, { ...created.data, sourceTask: null, planArtifacts: [] })
 	})
 })
 

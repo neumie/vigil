@@ -49,12 +49,11 @@ export function DetailPage(props: DetailPageProps) {
 	const state = detailState(item)
 	const effectiveWorkspace =
 		item.kind === 'solve' ? (item.solverWorkspace ?? snapshot?.config?.solver?.workspace) : 'worktree'
-	const okenaWorkspaceValue =
-		effectiveWorkspace === 'main'
-			? 'Okena · main checkout'
-			: item.branchName
-				? `Okena · ${item.branchName}`
-				: 'Okena · create workspace'
+	const okenaWorkspaceValue = item.okenaWorkspace
+		? `Okena · ${item.okenaWorkspace.label}`
+		: effectiveWorkspace === 'main'
+			? 'Okena · Inspecting main checkout…'
+			: 'Okena · Inspecting workspace…'
 	const disabled = busy !== null
 	const run = async (
 		label: string,

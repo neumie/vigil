@@ -47,20 +47,63 @@ export async function localBranchExists(repoPath: string, branchName: string): P
 	return gitRefExists(repoPath, `refs/heads/${branchName}`)
 }
 
-/**
- * True if the branch exists on origin — checks the fetched remote-tracking ref
- * first (fast) then falls back to an authoritative `git ls-remote` (covers a
- * remote branch never fetched locally). A network/no-origin failure is treated as
- * "absent" so this can't block naming.
- */
-export async function remoteBranchExists(repoPath: string, branchName: string): Promise<boolean> {
-	if (await gitRefExists(repoPath, `refs/remotes/origin/${branchName}`)) return true
+export interface BranchWorktreeRegistration {
+	path: string
+	exists: boolean
+}
+
+/** Git's linked-worktree registration for a local branch, including stale paths. */
+export async function worktreeRegistrationForBranch(
+	repoPath: string,
+	branchName: string,
+): Promise<BranchWorktreeRegistration | null> {
 	try {
-		await execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branchName], { cwd: repoPath })
-		return true
+		const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
+			cwd: repoPath,
+			timeout: 10_000,
+		})
+		const branchRef = `branch refs/heads/${branchName}`
+		for (const block of stdout.split(/\n\s*\n/)) {
+			const lines = block.split('\n')
+			if (!lines.includes(branchRef)) continue
+			const path = lines.find(line => line.startsWith('worktree '))?.slice('worktree '.length)
+			if (path) return { path, exists: existsSync(path) }
+		}
 	} catch {
-		return false
+		// Preview/reuse discovery is best-effort; ordinary branch logic remains.
 	}
+	return null
+}
+
+/** Existing on-disk linked worktree that currently checks out this branch. */
+export async function worktreePathForBranch(repoPath: string, branchName: string): Promise<string | null> {
+	const registration = await worktreeRegistrationForBranch(repoPath, branchName)
+	return registration?.exists ? registration.path : null
+}
+
+export type RemoteBranchStatus = 'exists' | 'absent' | 'unavailable'
+
+/** Read-only origin lookup that distinguishes absence from network/auth failure. */
+export async function inspectRemoteBranch(
+	repoPath: string,
+	branchName: string,
+	timeout = 5_000,
+): Promise<RemoteBranchStatus> {
+	if (await gitRefExists(repoPath, `refs/remotes/origin/${branchName}`)) return 'exists'
+	try {
+		await execFileAsync('git', ['ls-remote', '--exit-code', '--heads', 'origin', branchName], {
+			cwd: repoPath,
+			timeout,
+		})
+		return 'exists'
+	} catch (err) {
+		return (err as { code?: number }).code === 2 ? 'absent' : 'unavailable'
+	}
+}
+
+/** Best-effort boolean used by branch naming, where lookup failure must degrade. */
+export async function remoteBranchExists(repoPath: string, branchName: string): Promise<boolean> {
+	return (await inspectRemoteBranch(repoPath, branchName)) === 'exists'
 }
 
 export async function resolveWorktreeStartPoint(repoPath: string, baseRef: string): Promise<string> {

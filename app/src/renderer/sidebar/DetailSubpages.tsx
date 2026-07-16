@@ -71,8 +71,9 @@ function TaskImage({
 
 function ticketSummary(total: number, open: number, agent: number, human: number): string {
 	if (total === 0) return 'None'
-	if (open === 0) return `${total} complete`
-	return `${total} total · ${open} open · ${agent} agent · ${human} human`
+	const completed = Math.max(0, total - open)
+	if (open === 0) return `${completed} of ${total} complete`
+	return `${completed} of ${total} complete · ${open} open · ${agent} agent · ${human} human`
 }
 
 export function PlanPage({ id, snapshot, onBack }: DetailSubpageProps) {

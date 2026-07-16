@@ -4,8 +4,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import type { ProjectConfig } from '../../config.js'
 import type { SolverWorkspace } from '../../solver/workspace.js'
+import { worktreePathForBranch } from '../../worktree/manager.js'
 import { OkenaClient, type OkenaLayoutNode, type OkenaState } from './client.js'
-import { OkenaWorktreeManager } from './worktree.js'
+import { OkenaWorktreeManager, inspectOkenaBranchSource } from './worktree.js'
 
 const execFileAsync = promisify(execFile)
 const FOCUS_RETRY_DELAYS_MS = [0, 100, 250]
@@ -28,9 +29,28 @@ export interface OpenItemInOkenaResult {
 	activated: boolean
 }
 
+export type OkenaWorkspacePreviewState =
+	| 'open'
+	| 'main'
+	| 'register'
+	| 'local'
+	| 'remote'
+	| 'create'
+	| 'standalone'
+	| 'unavailable'
+
+export interface OkenaWorkspacePreview {
+	state: OkenaWorkspacePreviewState
+	label: string
+	detail: string
+	branchName: string
+	worktreePath?: string
+}
+
 interface OkenaItemOpenerDeps {
 	client?: OkenaClient
 	activateApp?: () => Promise<boolean>
+	inspectBranchSource?: typeof inspectOkenaBranchSource
 }
 
 type OkenaProject = OkenaState['projects'][number]
@@ -80,6 +100,116 @@ async function focusTerminal(
 	return { terminalId, focused: false }
 }
 
+export async function inspectItemOkenaWorkspace(
+	params: OpenItemInOkenaParams,
+	deps: Pick<OkenaItemOpenerDeps, 'client' | 'inspectBranchSource'> = {},
+): Promise<OkenaWorkspacePreview> {
+	const client = deps.client ?? new OkenaClient()
+	const branchName = params.branchName
+	if (!(await client.isAvailable())) {
+		return { state: 'unavailable', label: 'Okena unavailable', detail: 'Okena is not running', branchName }
+	}
+
+	const state = await client.getState()
+	const parent = state.projects.find(project => project.path === params.projectConfig.repoPath)
+	if (params.workspaceMode === 'main') {
+		return parent
+			? {
+					state: 'main',
+					label: 'Focus main checkout',
+					detail: parent.name,
+					branchName,
+					worktreePath: params.projectConfig.repoPath,
+				}
+			: {
+					state: 'unavailable',
+					label: 'Parent not open in Okena',
+					detail: params.projectConfig.repoPath,
+					branchName,
+				}
+	}
+	if (!parent) {
+		return {
+			state: 'unavailable',
+			label: 'Parent not open in Okena',
+			detail: params.projectConfig.repoPath,
+			branchName,
+		}
+	}
+
+	const existingWorktreePath =
+		params.existingWorktreePath && existsSync(params.existingWorktreePath)
+			? params.existingWorktreePath
+			: await worktreePathForBranch(params.projectConfig.repoPath, branchName)
+	if (existingWorktreePath && existsSync(existingWorktreePath)) {
+		const child = state.projects.find(
+			project => project.path === existingWorktreePath && project.worktree_info?.parent_project_id === parent.id,
+		)
+		if (child) {
+			return {
+				state: 'open',
+				label: 'Focus open workspace',
+				detail: child.name,
+				branchName,
+				worktreePath: child.path,
+			}
+		}
+		const standalone = state.projects.find(project => project.path === existingWorktreePath)
+		if (standalone) {
+			return {
+				state: 'standalone',
+				label: 'Standalone — remove in Okena first',
+				detail: `${standalone.name} → ${parent.name}`,
+				branchName,
+				worktreePath: standalone.path,
+			}
+		}
+		return {
+			state: 'register',
+			label: 'Register existing worktree',
+			detail: `Under ${parent.name}`,
+			branchName,
+			worktreePath: existingWorktreePath,
+		}
+	}
+
+	const safeBranch = branchName.replace(/\//g, '-')
+	const openChild = state.projects.find(
+		project =>
+			project.worktree_info?.parent_project_id === parent.id &&
+			(project.git_status?.branch === branchName || (project.name === branchName && project.path.includes(safeBranch))),
+	)
+	if (openChild) {
+		return {
+			state: 'open',
+			label: 'Focus open workspace',
+			detail: openChild.name,
+			branchName,
+			worktreePath: openChild.path,
+		}
+	}
+
+	const branchSource = await (deps.inspectBranchSource ?? inspectOkenaBranchSource)(
+		params.projectConfig.repoPath,
+		branchName,
+	)
+	if (branchSource === 'local') {
+		return { state: 'local', label: 'Open local branch', detail: branchName, branchName }
+	}
+	if (branchSource === 'remote') {
+		return { state: 'remote', label: 'Fetch & open remote branch', detail: `origin/${branchName}`, branchName }
+	}
+	if (branchSource === 'unavailable') {
+		return {
+			state: 'unavailable',
+			label: 'Remote branch check unavailable',
+			detail: `Could not inspect origin/${branchName}`,
+			branchName,
+		}
+	}
+	return { state: 'create', label: 'Create branch & workspace', detail: branchName, branchName }
+}
+
 async function activateOkenaApp(): Promise<boolean> {
 	if (process.platform !== 'darwin') return false
 	try {
@@ -107,17 +237,23 @@ export async function openItemInOkena(
 	const client = deps.client ?? new OkenaClient()
 	if (!(await client.isAvailable())) throw new Error('Okena is not running or configured')
 	const worktrees = new OkenaWorktreeManager(client)
+	const existingWorktreePath =
+		params.workspaceMode === 'worktree'
+			? params.existingWorktreePath && existsSync(params.existingWorktreePath)
+				? params.existingWorktreePath
+				: ((await worktreePathForBranch(params.projectConfig.repoPath, params.branchName)) ?? undefined)
+			: undefined
 	let projectId: string
 	let terminalId: string | null = null
 	let worktreePath: string
 	let createdWorkspace = false
 	let workspaceAlreadyOpen = false
 
-	if (params.existingWorktreePath) {
-		if (!existsSync(params.existingWorktreePath)) {
-			throw new Error(`Item worktree does not exist: ${params.existingWorktreePath}`)
+	if (existingWorktreePath) {
+		if (!existsSync(existingWorktreePath)) {
+			throw new Error(`Item worktree does not exist: ${existingWorktreePath}`)
 		}
-		worktreePath = params.existingWorktreePath
+		worktreePath = existingWorktreePath
 		const state = await client.getState()
 		const parent = state.projects.find(project => project.path === params.projectConfig.repoPath)
 		if (!parent) throw new Error(`Parent project is not open in Okena: ${params.projectConfig.repoPath}`)

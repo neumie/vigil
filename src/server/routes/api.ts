@@ -138,13 +138,24 @@ interface OkenaOpenResult {
 	activated: boolean
 }
 
-type OpenItemInOkena = (params: {
+interface OkenaWorkspacePreview {
+	state: 'open' | 'main' | 'register' | 'local' | 'remote' | 'create' | 'standalone' | 'unavailable'
+	label: string
+	detail: string
+	branchName: string
+	worktreePath?: string
+}
+
+type OkenaWorkspaceParams = {
 	projectConfig: HelmConfig['projects'][number]
 	workspaceMode: SolverWorkspace
 	baseRef: string
 	branchName: string
 	existingWorktreePath?: string
-}) => Promise<OkenaOpenResult>
+}
+
+type OpenItemInOkena = (params: OkenaWorkspaceParams) => Promise<OkenaOpenResult>
+type InspectItemOkenaWorkspace = (params: OkenaWorkspaceParams) => Promise<OkenaWorkspacePreview>
 
 function okenaOpenHint(opened: OkenaOpenResult): string {
 	if (!opened.focused) return 'Workspace opened in Okena; its terminal is still becoming ready'
@@ -157,6 +168,11 @@ const defaultOpenItemInOkena: OpenItemInOkena = async params => {
 	// Okena remains an optional extension: core route loading must not require it.
 	const extension = await import('../../extensions/okena/item-opener.js')
 	return extension.openItemInOkena(params)
+}
+
+const defaultInspectItemOkenaWorkspace: InspectItemOkenaWorkspace = async params => {
+	const extension = await import('../../extensions/okena/item-opener.js')
+	return extension.inspectItemOkenaWorkspace(params)
 }
 
 export function apiRoutes(
@@ -177,6 +193,7 @@ export function apiRoutes(
 	daemonControl: DaemonControl = defaultDaemonControl,
 	// Keeps the optional Okena extension dynamically loaded and route-testable.
 	openItemInOkena: OpenItemInOkena = defaultOpenItemInOkena,
+	inspectItemOkenaWorkspace: InspectItemOkenaWorkspace = defaultInspectItemOkenaWorkspace,
 ) {
 	const api = new Hono()
 	const itemCommands = new ItemCommands(db.items, config)
@@ -568,7 +585,31 @@ export function apiRoutes(
 				)
 			}
 		}
-		return c.json({ data: { ...(await dashboardItem(item)), sourceTask, planArtifacts } })
+
+		// Okena preview is detail-only and read-only: it may inspect local/remote
+		// refs and the Okena registry, but never creates/focuses a workspace. The
+		// POST recomputes at click time, so this advisory value can safely go stale.
+		let okenaWorkspace: OkenaWorkspacePreview | null = null
+		const projectConfig = config.projects.find(project => project.slug === item.projectSlug)
+		if (projectConfig) {
+			const identity = resolveItemWorkspace(item)
+			const workspaceMode = item.payload.kind === 'solve' ? effectiveSolverWorkspace(item, undefined) : 'worktree'
+			try {
+				okenaWorkspace = await inspectItemOkenaWorkspace({
+					projectConfig,
+					workspaceMode,
+					baseRef: identity.baseRef,
+					branchName: identity.branchName,
+					existingWorktreePath: workspaceMode === 'main' ? undefined : identity.existingWorktreePath,
+				})
+			} catch (err) {
+				log.warn(
+					'api',
+					`Failed to inspect Okena workspace for Item ${item.id}: ${err instanceof Error ? err.message : err}`,
+				)
+			}
+		}
+		return c.json({ data: { ...(await dashboardItem(item)), sourceTask, planArtifacts, okenaWorkspace } })
 	})
 
 	api.post('/items', async c => {

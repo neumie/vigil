@@ -191,8 +191,9 @@ export interface DashboardItem {
 	runOutcome: RunOutcome | null
 	deployState: DeployState | null
 	sourceTask?: SourceTask | null
-	// Detail-only (omitted from list rows): the user's plan files for the preview.
+	// Detail-only (omitted from list rows): the user's plan files and Okena action preview.
 	planArtifacts?: PlanArtifact[]
+	okenaWorkspace?: OkenaWorkspacePreview | null
 	card: {
 		state: string
 		statusLabel: string
@@ -252,6 +253,14 @@ export interface PlanInfo {
 	spawner: string
 	solverAgent: 'claude' | 'codex'
 	hint: string
+}
+
+export interface OkenaWorkspacePreview {
+	state: 'open' | 'main' | 'register' | 'local' | 'remote' | 'create' | 'standalone' | 'unavailable'
+	label: string
+	detail: string
+	branchName: string
+	worktreePath?: string
 }
 
 export interface OkenaOpenInfo {

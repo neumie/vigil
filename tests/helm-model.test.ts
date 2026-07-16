@@ -16,11 +16,25 @@ import sharedHelmModule from '../app/src/shared-helm.ts'
 type HelmModelModule = typeof import('../app/src/renderer/sidebar/model.ts')
 type NormalizeHelmModule = typeof import('../app/src/normalize-helm.ts')
 type SharedHelmModule = typeof import('../app/src/shared-helm.ts')
-const { partitionWork, statusTone } = helmModelModule as HelmModelModule
+const { partitionWork, planStatusLabel, statusTone } = helmModelModule as HelmModelModule
 const { normalizeDashboardItem } = normalizeHelmModule as NormalizeHelmModule
 const { ITEM_STATUSES } = sharedHelmModule as SharedHelmModule
 
 type DashboardItem = import('../app/src/shared-helm.ts').DashboardItem
+
+test('planned Item labels show completed ticket progress', () => {
+	const item = {
+		planStatus: {
+			stage: 'tickets_ready',
+			specName: 'spec.md',
+			localTickets: { total: 3, open: 1, readyForAgent: 1, readyForHuman: 0 },
+			githubTickets: { total: 2, open: 1, readyForAgent: 0, readyForHuman: 1 },
+			githubAvailable: true,
+			checkedAt: '2026-01-01T00:00:00Z',
+		},
+	} as DashboardItem
+	assert.equal(planStatusLabel(item), '3 of 5 tickets complete')
+})
 
 test('mixed-version legacy triage Items normalize into Inbox before rendering', () => {
 	const legacy = {

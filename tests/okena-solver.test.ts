@@ -5,9 +5,13 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { configSchema } from '../src/config.js'
 import type { OkenaClient } from '../src/extensions/okena/client.js'
-import { openItemInOkena } from '../src/extensions/okena/item-opener.js'
+import { inspectItemOkenaWorkspace, openItemInOkena } from '../src/extensions/okena/item-opener.js'
 import { OkenaSolver } from '../src/extensions/okena/solver.js'
-import { type OkenaWorktreeManager, createOkenaWorktreeForBranch } from '../src/extensions/okena/worktree.js'
+import {
+	type OkenaWorktreeManager,
+	createOkenaWorktreeForBranch,
+	prepareExistingOkenaBranch,
+} from '../src/extensions/okena/worktree.js'
 import { errorPhase } from '../src/util/errors.js'
 
 test('openItemInOkena ignores stale hook terminals and marks the live pane for attention', async () => {
@@ -40,6 +44,19 @@ test('openItemInOkena ignores stale hook terminals and marks the live pane for a
 	})
 
 	try {
+		const preview = await inspectItemOkenaWorkspace(
+			{
+				projectConfig: config.projects[0],
+				workspaceMode: 'worktree',
+				baseRef: 'main',
+				branchName: 'fix/existing',
+				existingWorktreePath: worktreePath,
+			},
+			{ client },
+		)
+		assert.equal(preview.state, 'open')
+		assert.equal(preview.label, 'Focus open workspace')
+
 		const result = await openItemInOkena(
 			{
 				projectConfig: config.projects[0],
@@ -116,6 +133,75 @@ test('openItemInOkena registers an existing worktree beneath its canonical Okena
 	} finally {
 		rmSync(worktreePath, { recursive: true, force: true })
 	}
+})
+
+test('Okena workspace preview distinguishes local, remote, and new branches', async () => {
+	const client = {
+		isAvailable: async () => true,
+		getState: async () => ({ projects: [{ id: 'parent-project', name: 'JVS', path: '/repo' }] }),
+	} as unknown as OkenaClient
+	const config = configSchema.parse({
+		provider: { type: 'contember', apiBaseUrl: 'https://example.test', projectSlug: 'helm', apiToken: 'token' },
+		projects: [{ slug: 'helm', repoPath: '/repo', baseBranch: 'main' }],
+		solver: { type: 'okena', agent: 'claude' },
+	})
+	const params = {
+		projectConfig: config.projects[0],
+		workspaceMode: 'worktree' as const,
+		baseRef: 'main',
+		branchName: 'feat/preview',
+	}
+
+	for (const [source, state, label] of [
+		['local', 'local', 'Open local branch'],
+		['remote', 'remote', 'Fetch & open remote branch'],
+		['new', 'create', 'Create branch & workspace'],
+		['unavailable', 'unavailable', 'Remote branch check unavailable'],
+	] as const) {
+		const preview = await inspectItemOkenaWorkspace(params, {
+			client,
+			inspectBranchSource: async () => source,
+		})
+		assert.equal(preview.state, state)
+		assert.equal(preview.label, label)
+	}
+})
+
+test('Okena remote branch preparation fetches and creates a local tracking branch', async () => {
+	const commands: string[][] = []
+	let localChecks = 0
+	const prepared = await prepareExistingOkenaBranch('/repo', 'feat/remote', {
+		localBranchExists: async () => {
+			localChecks += 1
+			return false
+		},
+		inspectRemoteBranch: async () => 'exists',
+		worktreeRegistrationForBranch: async () => null,
+		execGit: async args => {
+			commands.push(args)
+		},
+	})
+
+	assert.equal(prepared, true)
+	assert.equal(localChecks, 3)
+	assert.deepEqual(commands, [
+		['fetch', 'origin', '+refs/heads/feat/remote:refs/remotes/origin/feat/remote'],
+		['branch', '--track', 'feat/remote', 'refs/remotes/origin/feat/remote'],
+	])
+})
+
+test('Okena branch preparation prunes a stale linked-worktree registration', async () => {
+	const commands: string[][] = []
+	const prepared = await prepareExistingOkenaBranch('/repo', 'feat/stale', {
+		localBranchExists: async () => true,
+		inspectRemoteBranch: async () => 'absent',
+		worktreeRegistrationForBranch: async () => ({ path: '/missing/worktree', exists: false }),
+		execGit: async args => {
+			commands.push(args)
+		},
+	})
+	assert.equal(prepared, true)
+	assert.deepEqual(commands, [['worktree', 'prune']])
 })
 
 test('Okena worktree creation reuses an existing branch without a noisy create attempt', async () => {
