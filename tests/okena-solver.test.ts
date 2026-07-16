@@ -17,12 +17,14 @@ test('openItemInOkena ignores stale hook terminals and marks the live pane for a
 		isAvailable: async () => true,
 		getState: async () => ({
 			projects: [
+				{ id: 'parent-project', name: 'JVS', path: '/repo' },
 				{
 					id: 'project-1',
 					name: 'fix/existing',
 					path: worktreePath,
 					layout: { type: 'terminal', terminal_id: 'terminal-live' },
 					terminal_names: { 'terminal-stale-hook': 'on_worktree_create', 'terminal-live': 'plan' },
+					worktree_info: { parent_project_id: 'parent-project' },
 				},
 			],
 		}),
@@ -66,15 +68,17 @@ test('openItemInOkena ignores stale hook terminals and marks the live pane for a
 	}
 })
 
-test('openItemInOkena registers an existing non-Okena worktree before focusing it', async () => {
+test('openItemInOkena registers an existing worktree beneath its canonical Okena parent', async () => {
 	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-okena-open-register-'))
 	const actions: Record<string, unknown>[] = []
 	const client = {
 		isAvailable: async () => true,
-		getState: async () => ({ projects: [] }),
+		getState: async () => ({ projects: [{ id: 'parent-project', name: 'JVS', path: '/repo' }] }),
 		action: async (payload: Record<string, unknown>) => {
 			actions.push(payload)
-			if (payload.action === 'add_project') return { project_id: 'project-2', terminal_ids: ['terminal-2'] }
+			if (payload.action === 'add_discovered_worktree') {
+				return { project_id: 'project-2', terminal_id: 'terminal-2' }
+			}
 			return {}
 		},
 	} as unknown as OkenaClient
@@ -101,7 +105,12 @@ test('openItemInOkena registers an existing non-Okena worktree before focusing i
 		assert.equal(result.notified, false)
 		assert.equal(result.activated, false)
 		assert.deepEqual(actions, [
-			{ action: 'add_project', name: 'fix/register', path: worktreePath },
+			{
+				action: 'add_discovered_worktree',
+				parent_project_id: 'parent-project',
+				worktree_path: worktreePath,
+				branch: 'fix/register',
+			},
 			{ action: 'focus_terminal', project_id: 'project-2', terminal_id: 'terminal-2', window: 'main' },
 		])
 	} finally {

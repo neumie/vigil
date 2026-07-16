@@ -184,6 +184,7 @@ export interface OkenaState {
 		path: string
 		layout?: OkenaLayoutNode | null
 		terminal_names?: Record<string, string>
+		worktree_info?: { parent_project_id: string } | null
 	}>
 }
 

@@ -119,20 +119,31 @@ export async function openItemInOkena(
 		}
 		worktreePath = params.existingWorktreePath
 		const state = await client.getState()
-		const existing = state.projects.find(project => project.path === worktreePath)
+		const parent = state.projects.find(project => project.path === params.projectConfig.repoPath)
+		if (!parent) throw new Error(`Parent project is not open in Okena: ${params.projectConfig.repoPath}`)
+		const existing = state.projects.find(
+			project => project.path === worktreePath && project.worktree_info?.parent_project_id === parent.id,
+		)
 		if (existing) {
 			projectId = existing.id
 			terminalId = firstTerminalId(existing)
 			workspaceAlreadyOpen = true
 		} else {
-			const added = await client.action<{ project_id?: string; terminal_ids?: string[] }>({
-				action: 'add_project',
-				name: params.branchName,
-				path: worktreePath,
+			const standalone = state.projects.find(project => project.path === worktreePath)
+			if (standalone) {
+				throw new Error(
+					`Okena tracks this worktree as a standalone project (${standalone.name}); remove it before reopening under ${parent.name}`,
+				)
+			}
+			const added = await client.action<{ project_id?: string; terminal_id?: string | null }>({
+				action: 'add_discovered_worktree',
+				parent_project_id: parent.id,
+				worktree_path: worktreePath,
+				branch: params.branchName,
 			})
-			if (!added.project_id) throw new Error('Okena did not return the registered project ID')
+			if (!added.project_id) throw new Error('Okena did not return the registered worktree project ID')
 			projectId = added.project_id
-			terminalId = added.terminal_ids?.[0] ?? null
+			terminalId = added.terminal_id ?? null
 		}
 	} else if (params.workspaceMode === 'main') {
 		const ensured = await worktrees.ensureMainRepoProject(params.projectConfig.repoPath)
