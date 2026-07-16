@@ -127,6 +127,14 @@ export function StatusDot({ tone, pulse }: { tone: StatusTone; pulse?: boolean }
 	return <span className={`status-dot dot-${tone}${pulse ? ' dot-pulse' : ''}`} aria-hidden="true" />
 }
 
+export function ProjectColorMarker({ color }: { color: string | null }) {
+	return (
+		<svg className="project-color-marker" viewBox="0 0 6 6" aria-hidden="true" focusable="false">
+			<circle cx="3" cy="3" r="3" fill={color ?? 'currentColor'} />
+		</svg>
+	)
+}
+
 // ---------------------------------------------------------------------------
 // Menu (overflow / popover) — §3.8
 

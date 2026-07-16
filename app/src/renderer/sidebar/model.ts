@@ -6,7 +6,7 @@
 // absolute after, tabular numerals).
 
 import { useEffect, useState } from 'react'
-import type { AssessmentVerdict, DashboardItem, DashboardTone, ItemStatus } from '../../shared-helm'
+import type { AppConfig, AssessmentVerdict, DashboardItem, DashboardTone, ItemStatus } from '../../shared-helm'
 
 // ---------------------------------------------------------------------------
 // Navigation routes (push stack, §3.10)
@@ -22,6 +22,10 @@ export type Route =
 	| { kind: 'settings' }
 	| { kind: 'settings-section'; sectionId: string }
 	| { kind: 'appearance' }
+
+export function colorForProject(config: AppConfig | null | undefined, slug: string): string | null {
+	return config?.projects?.find(project => project.slug === slug)?.color ?? config?.projectColors?.[slug] ?? null
+}
 
 // ---------------------------------------------------------------------------
 // Work buckets

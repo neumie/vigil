@@ -9,6 +9,7 @@ import type { DashboardItem, HelmSnapshot } from '../../shared-helm'
 import type { BucketKey } from './model'
 import {
 	VERDICT_META,
+	colorForProject,
 	itemTitle,
 	partitionWork,
 	planStatusLabel,
@@ -17,7 +18,7 @@ import {
 	statusTone,
 	useNow,
 } from './model'
-import { Chip, EmptyState, GLYPH, IconBtn, MenuButton, Segmented, StatusDot } from './ui'
+import { Chip, EmptyState, GLYPH, IconBtn, MenuButton, ProjectColorMarker, Segmented, StatusDot } from './ui'
 
 const BUCKET_KEY = 'helm.sidebar.bucket'
 const PROJECT_KEY = 'helm.sidebar.project'
@@ -80,6 +81,7 @@ export function ListPage({
 	const reachable = snapshot?.reachable ?? false
 	const paused = snapshot?.status?.queue.paused ?? false
 
+	const selectedProjectColor = project ? colorForProject(snapshot?.config, project) : null
 	const projectSlugs = useMemo(() => {
 		const fromConfig = (snapshot?.config?.projects ?? []).map(p => p.slug)
 		const fromItems = (items ?? []).map(i => i.projectSlug)
@@ -128,6 +130,7 @@ export function ListPage({
 						align="start"
 						trigger={
 							<>
+								{project && <ProjectColorMarker color={selectedProjectColor} />}
 								<span className="project-trigger-label">{project ?? 'All projects'}</span>
 								{GLYPH.chevronDown}
 							</>
@@ -198,6 +201,7 @@ export function ListPage({
 						<ItemRow
 							key={item.id}
 							item={item}
+							projectColor={colorForProject(snapshot?.config, item.projectSlug)}
 							selected={item.id === selectedId}
 							time={relativeTime(rowTimestamp(item), now)}
 							onOpen={onOpenItem}
@@ -216,6 +220,7 @@ export function ListPage({
 // verdict chip. Memoized — re-renders only when the row's item or time changes.
 const ItemRow = memo(function ItemRow({
 	item,
+	projectColor,
 	selected,
 	time,
 	onOpen,
@@ -224,6 +229,7 @@ const ItemRow = memo(function ItemRow({
 	onWorkManually,
 }: {
 	item: DashboardItem
+	projectColor: string | null
 	selected: boolean
 	time: string
 	onOpen: (id: string) => void
@@ -249,7 +255,10 @@ const ItemRow = memo(function ItemRow({
 					<span className="item-row-time">{time}</span>
 				</div>
 				<div className="item-row-line2">
-					<span className="item-row-project">{item.projectSlug}</span>
+					<span className="item-row-project">
+						<ProjectColorMarker color={projectColor} />
+						<span className="item-row-project-label">{item.projectSlug}</span>
+					</span>
 					{planningStatus ? (
 						<span className="item-row-mode mode-manual" title="Planning readiness">
 							{GLYPH.plan}

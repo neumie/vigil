@@ -41,11 +41,16 @@
 	opacity: 0.55;
 }
 .detail-project {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 	min-width: 0;
-	overflow: hidden;
 	color: var(--text-1);
 	font-size: calc(11px * var(--ui-scale));
 	font-weight: 500;
+}
+.detail-project-label {
+	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }

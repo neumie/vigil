@@ -16,11 +16,17 @@ import sharedHelmModule from '../app/src/shared-helm.ts'
 type HelmModelModule = typeof import('../app/src/renderer/sidebar/model.ts')
 type NormalizeHelmModule = typeof import('../app/src/normalize-helm.ts')
 type SharedHelmModule = typeof import('../app/src/shared-helm.ts')
-const { partitionWork, planStatusLabel, statusTone } = helmModelModule as HelmModelModule
+const { colorForProject, partitionWork, planStatusLabel, statusTone } = helmModelModule as HelmModelModule
 const { normalizeDashboardItem } = normalizeHelmModule as NormalizeHelmModule
 const { ITEM_STATUSES } = sharedHelmModule as SharedHelmModule
 
 type DashboardItem = import('../app/src/shared-helm.ts').DashboardItem
+
+test('project colors resolve from current and legacy dashboard config', () => {
+	assert.equal(colorForProject({ projects: [{ slug: 'jvs', color: '#2a94e5' }] }, 'jvs'), '#2a94e5')
+	assert.equal(colorForProject({ projectColors: { jvs: '#940fd2' } }, 'jvs'), '#940fd2')
+	assert.equal(colorForProject({ projects: [{ slug: 'jvs' }] }, 'jvs'), null)
+})
 
 test('planned Item labels show completed ticket progress', () => {
 	const item = {

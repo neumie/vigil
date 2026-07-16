@@ -14,9 +14,21 @@ import {
 import { lifecycleActionPlan, lifecycleActionPresentation, manualStatusOptions } from './detail-actions'
 import { useItemDetail } from './detail-data'
 import { detailState } from './detail-state'
-import { itemTitle, relativeTime, useNow } from './model'
+import { colorForProject, itemTitle, relativeTime, useNow } from './model'
 import { type RunSelectionDraft, buildPlanBody, buildRunBody } from './run-selection'
-import { Banner, Btn, Card, Chip, EmptyState, GLYPH, MenuButton, PushHeader, Sheet, StatusDot } from './ui'
+import {
+	Banner,
+	Btn,
+	Card,
+	Chip,
+	EmptyState,
+	GLYPH,
+	MenuButton,
+	ProjectColorMarker,
+	PushHeader,
+	Sheet,
+	StatusDot,
+} from './ui'
 
 export interface DetailPageProps {
 	id: string
@@ -47,6 +59,7 @@ export function DetailPage(props: DetailPageProps) {
 
 	if (!item) return <MissingDetail phase={phase} error={error} onBack={onBack} onRetry={refetch} />
 	const state = detailState(item)
+	const projectColor = colorForProject(snapshot?.config, item.projectSlug)
 	const effectiveWorkspace =
 		item.kind === 'solve' ? (item.solverWorkspace ?? snapshot?.config?.solver?.workspace) : 'worktree'
 	const okenaWorkspaceValue = item.okenaWorkspace
@@ -289,7 +302,10 @@ export function DetailPage(props: DetailPageProps) {
 						) : (
 							<Chip tone={state.chipTone}>{item.card.statusLabel}</Chip>
 						)}
-						<span className="detail-project">{item.projectSlug}</span>
+						<span className="detail-project">
+							<ProjectColorMarker color={projectColor} />
+							<span className="detail-project-label">{item.projectSlug}</span>
+						</span>
 						{item.workMode ? (
 							<span className={`detail-work-mode mode-${item.workMode}`}>
 								{GLYPH[item.workMode]}

@@ -281,6 +281,15 @@
 	background: var(--fill-subtle);
 	color: var(--text-0);
 }
+.project-color-marker {
+	flex: none;
+	display: block;
+	width: 6px;
+	height: 6px;
+	color: var(--text-3);
+	overflow: visible;
+	filter: drop-shadow(0 0 0.5px color-mix(in srgb, currentColor 18%, transparent));
+}
 .project-trigger-label {
 	min-width: 0;
 	overflow: hidden;
@@ -442,6 +451,12 @@
 }
 
 .item-row-project {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+}
+.item-row-project-label {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
