@@ -249,16 +249,14 @@ const ItemRow = memo(function ItemRow({
 				className={`item-row${selected ? ' item-row-selected' : ''}`}
 				onClick={() => onOpen(item.id)}
 			>
+				<ProjectColorMarker color={projectColor} rail />
 				<div className="item-row-line1">
 					<StatusDot tone={statusTone(item.status)} pulse={item.card.pulse} />
 					<span className="item-row-title">{itemTitle(item)}</span>
 					<span className="item-row-time">{time}</span>
 				</div>
 				<div className="item-row-line2">
-					<span className="item-row-project">
-						<ProjectColorMarker color={projectColor} />
-						<span className="item-row-project-label">{item.projectSlug}</span>
-					</span>
+					<span className="item-row-project">{item.projectSlug}</span>
 					{planningStatus ? (
 						<span className="item-row-mode mode-manual" title="Planning readiness">
 							{GLYPH.plan}

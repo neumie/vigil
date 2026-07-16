@@ -163,8 +163,8 @@ test('Okena workspace preview distinguishes local, remote, and new branches', as
 	}
 
 	for (const [source, state, label] of [
-		['local', 'local', 'Open local branch'],
-		['remote', 'remote', 'Fetch & open remote branch'],
+		['local', 'local', 'Create workspace from local branch'],
+		['remote', 'remote', 'Fetch branch & create workspace'],
 		['new', 'create', 'Create branch & workspace'],
 		['unavailable', 'unavailable', 'Remote branch check unavailable'],
 	] as const) {

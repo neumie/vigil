@@ -127,8 +127,12 @@ export function StatusDot({ tone, pulse }: { tone: StatusTone; pulse?: boolean }
 	return <span className={`status-dot dot-${tone}${pulse ? ' dot-pulse' : ''}`} aria-hidden="true" />
 }
 
-export function ProjectColorMarker({ color }: { color: string | null }) {
-	return (
+export function ProjectColorMarker({ color, rail = false }: { color: string | null; rail?: boolean }) {
+	return rail ? (
+		<svg className="project-color-rail" viewBox="0 0 2 24" aria-hidden="true" focusable="false">
+			<rect width="2" height="24" rx="1" fill={color ?? 'currentColor'} />
+		</svg>
+	) : (
 		<svg className="project-color-marker" viewBox="0 0 6 6" aria-hidden="true" focusable="false">
 			<circle cx="3" cy="3" r="3" fill={color ?? 'currentColor'} />
 		</svg>

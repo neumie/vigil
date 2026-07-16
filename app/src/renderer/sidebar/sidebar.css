@@ -290,6 +290,14 @@
 	overflow: visible;
 	filter: drop-shadow(0 0 0.5px color-mix(in srgb, currentColor 18%, transparent));
 }
+.project-color-rail {
+	position: absolute;
+	top: 12px;
+	left: 3px;
+	width: 2px;
+	height: 24px;
+	color: var(--text-3);
+}
 .project-trigger-label {
 	min-width: 0;
 	overflow: hidden;
@@ -392,6 +400,7 @@
 }
 
 .item-row {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -451,12 +460,6 @@
 }
 
 .item-row-project {
-	display: inline-flex;
-	align-items: center;
-	gap: 5px;
-	min-width: 0;
-}
-.item-row-project-label {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

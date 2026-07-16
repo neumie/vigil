@@ -205,10 +205,10 @@ export async function inspectItemOkenaWorkspace(
 		branchName,
 	)
 	if (branchSource === 'local') {
-		return { state: 'local', label: 'Open local branch', detail: branchName, branchName }
+		return { state: 'local', label: 'Create workspace from local branch', detail: branchName, branchName }
 	}
 	if (branchSource === 'remote') {
-		return { state: 'remote', label: 'Fetch & open remote branch', detail: `origin/${branchName}`, branchName }
+		return { state: 'remote', label: 'Fetch branch & create workspace', detail: `origin/${branchName}`, branchName }
 	}
 	if (branchSource === 'unavailable') {
 		return {
