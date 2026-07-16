@@ -96,6 +96,16 @@ export function partitionWork(items: DashboardItem[]): WorkBuckets {
 	}
 }
 
+export function groupItemsByProject(items: DashboardItem[]): Array<[string, DashboardItem[]]> {
+	const groups = new Map<string, DashboardItem[]>()
+	for (const item of items) {
+		const group = groups.get(item.projectSlug)
+		if (group) group.push(item)
+		else groups.set(item.projectSlug, [item])
+	}
+	return [...groups]
+}
+
 /** Most meaningful timestamp to age a row by, per state (mirrors the web list). */
 export function rowTimestamp(item: DashboardItem): string {
 	if (item.status === 'active' || item.status === 'running') return item.startedAt ?? item.queuedAt ?? item.createdAt

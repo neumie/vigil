@@ -91,6 +91,7 @@ export interface ConfigApi {
  */
 export type UiPreview =
 	| 'list'
+	| 'project-list'
 	| 'queue-list'
 	| 'planned-list'
 	| 'detail'

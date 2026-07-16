@@ -1,5 +1,5 @@
-// Work list page — header row (project filter menu, New item, overflow),
-// segmented bucket filter with counts (§3.2), 48px rows (§3.3). Selection is
+// Work list page — header row (project scope, organization, New item, overflow),
+// text-index bucket filter with counts (§3.2), dense 48px rows (§3.3). Selection is
 // the action: a row push-navigates to detail. Queue rows also expose two
 // ownership choices (agent/manual) on hover or keyboard focus. Renders purely
 // from the pushed snapshot — no per-row fetches.
@@ -10,6 +10,7 @@ import type { BucketKey } from './model'
 import {
 	VERDICT_META,
 	colorForProject,
+	groupItemsByProject,
 	itemTitle,
 	partitionWork,
 	planStatusLabel,
@@ -22,9 +23,16 @@ import { Chip, EmptyState, GLYPH, IconBtn, MenuButton, ProjectColorText, Segment
 
 const BUCKET_KEY = 'helm.sidebar.bucket'
 const PROJECT_KEY = 'helm.sidebar.project'
+const ORGANIZATION_KEY = 'helm.sidebar.organization'
+
+type ListOrganization = 'flat' | 'project'
 
 function isBucket(value: string | null): value is BucketKey {
 	return value === 'needs' || value === 'active' || value === 'queue' || value === 'inbox'
+}
+
+function isListOrganization(value: string | null): value is ListOrganization {
+	return value === 'flat' || value === 'project'
 }
 
 const EMPTY_COPY: Record<BucketKey, { title: string; detail: string }> = {
@@ -69,12 +77,18 @@ export function ListPage({
 		return isBucket(saved) ? saved : 'needs'
 	})
 	const [project, setProject] = useState<string | null>(() => localStorage.getItem(PROJECT_KEY) || null)
+	const [organization, setOrganization] = useState<ListOrganization>(() => {
+		if (window.helm.uiPreview === 'project-list') return 'project'
+		const saved = localStorage.getItem(ORGANIZATION_KEY)
+		return isListOrganization(saved) ? saved : 'flat'
+	})
 	const [quickBusy, setQuickBusy] = useState<string | null>(null)
 	useEffect(() => localStorage.setItem(BUCKET_KEY, bucket), [bucket])
 	useEffect(() => {
 		if (project) localStorage.setItem(PROJECT_KEY, project)
 		else localStorage.removeItem(PROJECT_KEY)
 	}, [project])
+	useEffect(() => localStorage.setItem(ORGANIZATION_KEY, organization), [organization])
 
 	const now = useNow()
 	const items = snapshot?.items ?? null
@@ -94,6 +108,7 @@ export function ListPage({
 	)
 	const buckets = useMemo(() => partitionWork(filtered), [filtered])
 	const visible = archive ? buckets.archived : buckets[bucket]
+	const groupedVisible = useMemo(() => groupItemsByProject(visible), [visible])
 
 	// Roving Up/Down focus between rows; Enter opens (native button behavior).
 	const listRef = useRef<HTMLDivElement>(null)
@@ -119,6 +134,19 @@ export function ListPage({
 			setQuickBusy(null)
 		}
 	}
+	const renderItemRow = (item: DashboardItem) => (
+		<ItemRow
+			key={item.id}
+			item={item}
+			projectColor={colorForProject(snapshot?.config, item.projectSlug)}
+			selected={item.id === selectedId}
+			time={relativeTime(rowTimestamp(item), now)}
+			onOpen={onOpenItem}
+			quickDisabled={quickBusy !== null || !reachable}
+			onStartAgent={id => runQuick(`agent:${id}`, () => onStartAgent(id))}
+			onWorkManually={id => runQuick(`manual:${id}`, () => onWorkManually(id))}
+		/>
+	)
 
 	return (
 		<div className="page-frame">
@@ -142,6 +170,19 @@ export function ListPage({
 						]}
 					/>
 					<div className="list-toolbar-actions">
+						<MenuButton
+							triggerClass={`icon-btn${organization === 'project' ? ' organization-trigger-active' : ''}`}
+							triggerLabel={`Organize items: ${organization === 'project' ? 'group by project' : 'flat list'}`}
+							trigger={GLYPH.group}
+							entries={[
+								{ label: 'Flat list', checked: organization === 'flat', onSelect: () => setOrganization('flat') },
+								{
+									label: 'Group by project',
+									checked: organization === 'project',
+									onSelect: () => setOrganization('project'),
+								},
+							]}
+						/>
 						<IconBtn label="New item" onClick={onNewItem}>
 							{GLYPH.plus}
 						</IconBtn>
@@ -172,6 +213,7 @@ export function ListPage({
 				<div className="list-filter">
 					<Segmented<BucketKey>
 						label="Work filter"
+						variant="index"
 						value={bucket}
 						onChange={setBucket}
 						options={[
@@ -197,20 +239,18 @@ export function ListPage({
 					) : (
 						<EmptyState title={EMPTY_COPY[bucket].title} detail={EMPTY_COPY[bucket].detail} />
 					)
-				) : (
-					visible.map(item => (
-						<ItemRow
-							key={item.id}
-							item={item}
-							projectColor={colorForProject(snapshot?.config, item.projectSlug)}
-							selected={item.id === selectedId}
-							time={relativeTime(rowTimestamp(item), now)}
-							onOpen={onOpenItem}
-							quickDisabled={quickBusy !== null || !reachable}
-							onStartAgent={id => runQuick(`agent:${id}`, () => onStartAgent(id))}
-							onWorkManually={id => runQuick(`manual:${id}`, () => onWorkManually(id))}
-						/>
+				) : organization === 'project' && !archive ? (
+					groupedVisible.map(([slug, group], index) => (
+						<section className="item-project-group" aria-labelledby={`item-project-group-${index}`} key={slug}>
+							<div className="item-project-group-head" id={`item-project-group-${index}`}>
+								<ProjectColorText color={colorForProject(snapshot?.config, slug)}>{slug}</ProjectColorText>
+								<span>{group.length === 1 ? '1 item' : `${group.length} items`}</span>
+							</div>
+							{group.map(renderItemRow)}
+						</section>
 					))
+				) : (
+					visible.map(renderItemRow)
 				)}
 			</div>
 		</div>

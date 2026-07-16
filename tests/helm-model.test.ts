@@ -16,7 +16,8 @@ import sharedHelmModule from '../app/src/shared-helm.ts'
 type HelmModelModule = typeof import('../app/src/renderer/sidebar/model.ts')
 type NormalizeHelmModule = typeof import('../app/src/normalize-helm.ts')
 type SharedHelmModule = typeof import('../app/src/shared-helm.ts')
-const { colorForProject, partitionWork, planStatusLabel, statusTone } = helmModelModule as HelmModelModule
+const { colorForProject, groupItemsByProject, partitionWork, planStatusLabel, statusTone } =
+	helmModelModule as HelmModelModule
 const { normalizeDashboardItem } = normalizeHelmModule as NormalizeHelmModule
 const { ITEM_STATUSES } = sharedHelmModule as SharedHelmModule
 
@@ -26,6 +27,21 @@ test('project colors resolve from current and legacy dashboard config', () => {
 	assert.equal(colorForProject({ projects: [{ slug: 'jvs', color: '#2a94e5' }] }, 'jvs'), '#2a94e5')
 	assert.equal(colorForProject({ projectColors: { jvs: '#940fd2' } }, 'jvs'), '#940fd2')
 	assert.equal(colorForProject({ projects: [{ slug: 'jvs' }] }, 'jvs'), null)
+})
+
+test('project grouping preserves first-seen project and Item order', () => {
+	const grouped = groupItemsByProject([
+		{ id: 'j1', projectSlug: 'jvs' } as DashboardItem,
+		{ id: 'c1', projectSlug: 'crane' } as DashboardItem,
+		{ id: 'j2', projectSlug: 'jvs' } as DashboardItem,
+	])
+	assert.deepEqual(
+		grouped.map(([slug, items]) => [slug, items.map(item => item.id)]),
+		[
+			['jvs', ['j1', 'j2']],
+			['crane', ['c1']],
+		],
+	)
 })
 
 test('planned Item labels show completed ticket progress', () => {

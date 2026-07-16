@@ -106,6 +106,7 @@ export const GLYPH = {
 	return: glyph('M6.5 4 3 7.5 6.5 11M3.5 7.5H9a4 4 0 0 1 4 4'),
 	plan: glyph('M4 2.5h6l2 2V13.5H4zM10 2.5v2h2M6 7h4M6 9.5h4', 13),
 	archive: glyph('M3 5h10v8H3zM2.5 3h11v2h-11M6.5 8h3'),
+	group: glyph('M3 3.5h10v3H3zM3 9.5h7v3H3z'),
 	settings: glyph(
 		'M8 5.5A2.5 2.5 0 1 0 8 10.5 2.5 2.5 0 0 0 8 5.5M8 2.5v1M8 12.5v1M2.5 8h1M12.5 8h1M4.1 4.1l.7.7M11.2 11.2l.7.7M11.9 4.1l-.7.7M4.8 11.2l-.7.7',
 	),
@@ -153,6 +154,8 @@ export interface MenuEntry {
 	onSelect: () => void
 	danger?: boolean
 	disabled?: boolean
+	/** When present, renders this entry as one choice in a radio-menu group. */
+	checked?: boolean
 	/** Renders a separator ABOVE this entry. */
 	group?: boolean
 }
@@ -299,7 +302,8 @@ export function MenuButton({
 							{entry.group && index > 0 && <div className="menu-separator" aria-hidden="true" />}
 							<button
 								type="button"
-								role="menuitem"
+								role={entry.checked === undefined ? 'menuitem' : 'menuitemradio'}
+								aria-checked={entry.checked}
 								className={`menu-item${entry.danger ? ' menu-item-danger' : ''}${index === activeIndex ? ' menu-item-active' : ''}`}
 								disabled={entry.disabled}
 								ref={node => {
@@ -312,7 +316,11 @@ export function MenuButton({
 									entry.onSelect()
 								}}
 							>
-								{entry.icon ? <span className="menu-item-icon">{entry.icon}</span> : null}
+								{entry.checked !== undefined ? (
+									<span className={`menu-item-icon${entry.checked ? '' : ' menu-item-icon-empty'}`}>{GLYPH.check}</span>
+								) : entry.icon ? (
+									<span className="menu-item-icon">{entry.icon}</span>
+								) : null}
 								<span className="menu-item-label">{entry.label}</span>
 							</button>
 						</div>
@@ -338,6 +346,7 @@ export function Segmented<T extends string>({
 	onChange,
 	label,
 	commit,
+	variant = 'boxed',
 }: {
 	options: SegmentOption<T>[]
 	value: T
@@ -345,7 +354,9 @@ export function Segmented<T extends string>({
 	label: string
 	/** True either/or commit choice (agent picker) — active segment may use accent fill. */
 	commit?: boolean
+	variant?: 'boxed' | 'index'
 }) {
+	const optionRole = variant === 'index' ? 'radio' : 'tab'
 	const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
 		event.preventDefault()
@@ -354,13 +365,13 @@ export function Segmented<T extends string>({
 		const next = options[nextIndex]
 		if (next) {
 			onChange(next.value)
-			event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+			event.currentTarget.querySelectorAll<HTMLButtonElement>(`[role="${optionRole}"]`)[nextIndex]?.focus()
 		}
 	}
 	return (
 		<div
-			className={`segmented${commit ? ' segmented-commit' : ''}`}
-			role="tablist"
+			className={`segmented${commit ? ' segmented-commit' : ''}${variant === 'index' ? ' segmented-index' : ''}`}
+			role={variant === 'index' ? 'radiogroup' : 'tablist'}
 			aria-label={label}
 			style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
 			onKeyDown={onKeyDown}
@@ -371,8 +382,9 @@ export function Segmented<T extends string>({
 					<button
 						key={option.value}
 						type="button"
-						role="tab"
-						aria-selected={active}
+						role={optionRole}
+						aria-selected={variant === 'index' ? undefined : active}
+						aria-checked={variant === 'index' ? active : undefined}
 						tabIndex={active ? 0 : -1}
 						className={`segment${active ? ' segment-active' : ''}`}
 						onClick={() => onChange(option.value)}

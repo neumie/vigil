@@ -251,7 +251,11 @@
 .list-toolbar-actions {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 4px;
+}
+.organization-trigger-active {
+	color: var(--accent);
+	background: var(--accent-soft);
 }
 
 /* Compact project filter: a ghost menu button, not a giant select. Its text
@@ -355,13 +359,47 @@
 	color: var(--on-accent);
 }
 
+/* The work-list lifecycle filter is a text index, not a segmented track. */
+.list-filter:has(.segmented-index) {
+	padding-top: 0;
+	padding-bottom: 0;
+}
+.segmented-index {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	height: 40px;
+	padding: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: inset 0 -1px var(--hairline);
+}
+.segmented-index .segment {
+	flex: none;
+	justify-content: flex-start;
+	height: 40px;
+	padding: 0;
+	border-radius: 0;
+	font-size: calc(11px * var(--ui-scale));
+	font-weight: 500;
+}
+.segmented-index .segment-active {
+	background: none;
+	color: var(--accent);
+}
+.segmented-index .segment-count,
+.segmented-index .segment-active .segment-count {
+	font-size: calc(10px * var(--ui-scale));
+	color: var(--text-2);
+}
+
 /* ---------- list rows (§3.3) ---------- */
 
 .list-scroll {
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 4px 0 12px;
+	padding: 0 0 12px;
 }
 
 .item-row-shell {
@@ -394,6 +432,7 @@
 	height: 48px;
 	padding: 0 12px;
 	border: none;
+	border-bottom: 1px solid var(--hairline);
 	background: none;
 	font-family: inherit;
 	letter-spacing: -0.01em;
@@ -407,6 +446,7 @@
 .item-row-selected,
 .item-row-selected:hover {
 	background: var(--fill-raised);
+	box-shadow: inset 2px 0 var(--accent);
 }
 
 .item-row-line1 {
@@ -429,7 +469,7 @@
 
 .item-row-time {
 	flex: none;
-	font-size: calc(11px * var(--ui-scale));
+	font-size: calc(10px * var(--ui-scale));
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
 }
@@ -440,7 +480,7 @@
 	gap: 8px;
 	min-width: 0;
 	padding-left: 16px; /* dot 8px + 8px gap — meta aligns under the title */
-	font-size: calc(11px * var(--ui-scale));
+	font-size: calc(10px * var(--ui-scale));
 	color: var(--text-2);
 }
 
@@ -448,6 +488,26 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+.item-project-group + .item-project-group {
+	margin-top: 6px;
+}
+.item-project-group-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 30px;
+	padding: 0 12px;
+	border-bottom: 1px solid var(--hairline);
+	background: var(--fill-subtle);
+	font-size: calc(11px * var(--ui-scale));
+	font-weight: 600;
+}
+.item-project-group-head > span:last-child {
+	color: var(--text-2);
+	font-size: calc(10px * var(--ui-scale));
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
 }
 .item-row-mode {
 	flex: none;
@@ -601,6 +661,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+}
+.menu-item-icon-empty {
+	visibility: hidden;
 }
 .menu-item-label {
 	min-width: 0;
