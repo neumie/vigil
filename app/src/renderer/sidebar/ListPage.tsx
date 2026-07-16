@@ -1,5 +1,5 @@
 // Work list page — header row (project scope, organization, New item, overflow),
-// text-index bucket filter with counts (§3.2), dense 48px rows (§3.3). Selection is
+// text-index bucket filter with counts (§3.2), balanced 56px rows (§3.3). Selection is
 // the action: a row push-navigates to detail. Queue rows also expose two
 // ownership choices (agent/manual) on hover or keyboard focus. Renders purely
 // from the pushed snapshot — no per-row fetches.
@@ -257,7 +257,7 @@ export function ListPage({
 	)
 }
 
-// 48px row (§3.3): dot + title + trailing time; meta line = project tag + one
+// 56px row (§3.3): dot + title + trailing time; meta line = project tag + one
 // verdict chip. Memoized — re-renders only when the row's item or time changes.
 const ItemRow = memo(function ItemRow({
 	item,
