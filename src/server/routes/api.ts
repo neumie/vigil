@@ -1039,6 +1039,11 @@ export function apiRoutes(
 			hint = session.hint
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err)
+			log.error(
+				'planning',
+				`Failed to start Item ${item.id} via ${itemSpawner.name} (project=${item.projectSlug}, branch=${branchName}, existingWorktree=${existingWorktreePath ?? 'none'})`,
+				err,
+			)
 			abortPlanning()
 			return c.json({ error: `Planning session failed to start: ${msg}` }, 500)
 		}

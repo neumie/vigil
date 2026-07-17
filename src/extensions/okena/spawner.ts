@@ -25,9 +25,24 @@ export class OkenaSpawner implements Spawner {
 		)
 
 		const reusedTerminal = await this.worktrees.findPlanTerminal(ensured.wtProjectId)
+		log.info('okena', 'Resolving planning terminal', {
+			projectId: ensured.wtProjectId,
+			worktreePath: ensured.worktreePath,
+			reusedTerminal,
+			autoTerminalId: ensured.autoTerminalId,
+		})
 		const terminalId =
 			reusedTerminal ?? ensured.autoTerminalId ?? (await this.worktrees.createTerminal(ensured.wtProjectId))
-		if (!terminalId) throw new Error('Failed to obtain a planning terminal')
+		if (!terminalId) {
+			throw new Error(
+				`Failed to obtain a planning terminal for Okena project ${ensured.wtProjectId} at ${ensured.worktreePath}`,
+			)
+		}
+		log.info('okena', 'Resolved planning terminal', {
+			projectId: ensured.wtProjectId,
+			terminalId,
+			source: reusedTerminal ? 'reused-plan' : ensured.autoTerminalId ? 'worktree-auto' : 'created',
+		})
 
 		try {
 			await this.client.action({

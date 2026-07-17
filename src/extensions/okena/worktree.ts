@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { phaseError } from '../../util/errors.js'
 import { log } from '../../util/logger.js'
@@ -10,7 +11,7 @@ import {
 	withRepoLock,
 	worktreeRegistrationForBranch,
 } from '../../worktree/manager.js'
-import type { OkenaClient } from './client.js'
+import type { OkenaClient, OkenaLayoutNode } from './client.js'
 
 interface CreateWorktreeResponse {
 	project_id: string
@@ -23,6 +24,17 @@ export interface EnsuredOkenaWorktree {
 	wtProjectId: string
 	/** A terminal created as a side effect of worktree creation, if any. */
 	autoTerminalId: string | null
+}
+
+export interface CreateTerminalOptions {
+	retryDelaysMs?: readonly number[]
+	sleep?: (ms: number) => Promise<unknown>
+}
+
+function liveTerminalIds(layout: OkenaLayoutNode | null | undefined): string[] {
+	if (!layout) return []
+	if (layout.type === 'terminal') return layout.detached || !layout.terminal_id ? [] : [layout.terminal_id]
+	return layout.children.flatMap(liveTerminalIds)
 }
 
 export type OkenaBranchSource = 'local' | 'remote' | 'new' | 'unavailable'
@@ -138,28 +150,48 @@ export class OkenaWorktreeManager {
 	 * Falls back to `create_terminal` when the split is a no-op — an empty
 	 * project (no layout) has nothing to split, so `split_terminal` returns no id.
 	 */
-	async createTerminal(projectId: string): Promise<string | null> {
-		try {
-			const split = await this.client.action<{ terminal_ids?: string[] }>({
-				action: 'split_terminal',
-				project_id: projectId,
-				path: [],
-				direction: 'horizontal',
-			})
-			const id = split.terminal_ids?.[0]
-			if (id) return id
-		} catch {
-			// Fall through to create_terminal (e.g. nothing to split yet).
+	async createTerminal(projectId: string, options: CreateTerminalOptions = {}): Promise<string | null> {
+		const retryDelaysMs = options.retryDelaysMs ?? [0, 100, 250, 500]
+		const sleep = options.sleep ?? delay
+		const failures: Array<{ attempt: number; action: string; error: string }> = []
+		for (const [index, retryDelay] of retryDelaysMs.entries()) {
+			if (retryDelay > 0) await sleep(retryDelay)
+			const attempt = index + 1
+			try {
+				const split = await this.client.action<{ terminal_ids?: string[] }>({
+					action: 'split_terminal',
+					project_id: projectId,
+					path: [],
+					direction: 'horizontal',
+				})
+				const id = split.terminal_ids?.[0]
+				if (id) return id
+				failures.push({ attempt, action: 'split_terminal', error: 'response contained no terminal ID' })
+			} catch (err) {
+				failures.push({
+					attempt,
+					action: 'split_terminal',
+					error: err instanceof Error ? err.message : String(err),
+				})
+			}
+			try {
+				const created = await this.client.action<{ terminal_ids?: string[] }>({
+					action: 'create_terminal',
+					project_id: projectId,
+				})
+				const id = created.terminal_ids?.[0]
+				if (id) return id
+				failures.push({ attempt, action: 'create_terminal', error: 'response contained no terminal ID' })
+			} catch (err) {
+				failures.push({
+					attempt,
+					action: 'create_terminal',
+					error: err instanceof Error ? err.message : String(err),
+				})
+			}
 		}
-		try {
-			const result = await this.client.action<{ terminal_ids?: string[] }>({
-				action: 'create_terminal',
-				project_id: projectId,
-			})
-			return result.terminal_ids?.[0] ?? null
-		} catch {
-			return null
-		}
+		log.warn('okena', 'Failed to create terminal after bounded retries', { projectId, failures })
+		return null
 	}
 
 	/**
@@ -234,7 +266,10 @@ export class OkenaWorktreeManager {
 	async findPlanTerminal(wtProjectId: string): Promise<string | null> {
 		const state = await this.client.getState()
 		const wtProject = state.projects.find(p => p.id === wtProjectId)
-		const entry = Object.entries(wtProject?.terminal_names ?? {}).find(([, name]) => name.startsWith('plan: '))
+		const liveIds = new Set(liveTerminalIds(wtProject?.layout))
+		const entry = Object.entries(wtProject?.terminal_names ?? {}).find(
+			([terminalId, name]) => liveIds.has(terminalId) && name.startsWith('plan: '),
+		)
 		return entry?.[0] ?? null
 	}
 

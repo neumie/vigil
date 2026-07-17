@@ -8,7 +8,7 @@ import type { OkenaClient } from '../src/extensions/okena/client.js'
 import { inspectItemOkenaWorkspace, openItemInOkena } from '../src/extensions/okena/item-opener.js'
 import { OkenaSolver } from '../src/extensions/okena/solver.js'
 import {
-	type OkenaWorktreeManager,
+	OkenaWorktreeManager,
 	createOkenaWorktreeForBranch,
 	prepareExistingOkenaBranch,
 } from '../src/extensions/okena/worktree.js'
@@ -233,6 +233,52 @@ test('Okena worktree creation reuses an existing branch without a noisy create a
 			create_branch: false,
 		},
 	])
+})
+
+test('Okena terminal creation retries while a new project layout settles', async () => {
+	const actions: string[] = []
+	let splitAttempts = 0
+	const client = {
+		action: async (payload: Record<string, unknown>) => {
+			actions.push(String(payload.action))
+			if (payload.action === 'split_terminal') {
+				splitAttempts += 1
+				if (splitAttempts === 2) return { terminal_ids: ['terminal-ready'] }
+			}
+			throw new Error(`${String(payload.action)} not ready`)
+		},
+	} as unknown as OkenaClient
+	const manager = new OkenaWorktreeManager(client)
+
+	const terminalId = await manager.createTerminal('project-racing', {
+		retryDelaysMs: [0, 0],
+		sleep: async () => undefined,
+	})
+
+	assert.equal(terminalId, 'terminal-ready')
+	assert.deepEqual(actions, ['split_terminal', 'create_terminal', 'split_terminal'])
+})
+
+test('Okena plan-terminal reuse ignores stale names outside the live layout', async () => {
+	const client = {
+		getState: async () => ({
+			projects: [
+				{
+					id: 'project-1',
+					name: 'feat/plan',
+					path: '/repo-wt/plan',
+					layout: { type: 'terminal', terminal_id: 'terminal-live' },
+					terminal_names: {
+						'terminal-stale': 'plan: old session',
+						'terminal-live': 'shell',
+					},
+				},
+			],
+		}),
+	} as unknown as OkenaClient
+	const manager = new OkenaWorktreeManager(client)
+
+	assert.equal(await manager.findPlanTerminal('project-1'), null)
 })
 
 test('OkenaSolver fails promptly when its execution workspace disappears', async () => {

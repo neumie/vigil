@@ -406,7 +406,7 @@ The pushed Task page is a reading surface, not another dashboard. It follows the
 - **Hit targets**: minimum 24×24; standard controls are 28. 1px hairlines that are drag handles get an invisible ≥8px hit area (`#divider::before` pattern).
 - **Reduced motion**: the §2.5 global clamp on every surface; ambient pulses stop; push navigation swaps instantly.
 - **Text selection**: disabled on controls/labels (`user-select: none`), always enabled on content (titles, logs, errors, ids).
-- **Live regions**: toasts announce via `aria-live="polite"`; state must exist as accessible text, not color alone (the sidebar's waiting card names the daemon state in words — no status-color-only signal exists to depend on).
+- **Live regions**: toasts announce via `aria-live="polite"`; state must exist as accessible text, not color alone (the sidebar's waiting card names the daemon state in words — no status-color-only signal exists to depend on). Nonvisual live-region text uses the shared `.sr-only` utility; that utility must retain absolute 1px clipping so progress copy such as “Plan in progress” never enters the visible action-bar layout.
 
 ---
 
