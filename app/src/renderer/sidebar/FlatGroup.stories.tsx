@@ -91,7 +91,7 @@ export const ItemDestinations: Story = {
 }
 
 /** Inline run evidence on Item detail (§3.15/§3.20): collapsed Activity
- *  history, the log's two-message newest-first preview, and Run setup's
+ *  history, the always-expanded newest-first log, and Run setup's
  *  summary-at-rest above its own disclosure. */
 export const EvidenceGroups: Story = {
 	render: () => (
@@ -106,15 +106,10 @@ export const EvidenceGroups: Story = {
 			>
 				{false}
 			</Card>
-			<Card
-				label="Log"
-				trailing={
-					<button type="button" className="detail-disclosure" aria-expanded={false}>
-						Show all
-					</button>
-				}
-			>
-				<section className="log-well">{'[12:05:19] solver-result.json written\n[12:04:40] tests: 12 passed'}</section>
+			<Card label="Log">
+				<section className="log-well">
+					{'[12:05:19] solver-result.json written\n[12:04:40] tests: 12 passed\n[12:03:02] edited src/auth/login.ts'}
+				</section>
 			</Card>
 			<Card label="Run setup">
 				<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>

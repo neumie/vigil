@@ -13,13 +13,9 @@ export type DetailSection =
 	| 'source'
 	| 'delivery'
 
-/** One entry in the detail page's flat editorial stack. `open` is the
- *  disclosure's MOUNT-TIME default only (§3.20): it is never re-applied on a
- *  status flip, so a mid-read status change cannot collapse a section the
- *  user opened (or pop one open under their pointer). */
+/** One entry in the detail page's flat editorial stack. */
 export interface DetailSectionEntry {
 	kind: DetailSection
-	open?: boolean
 }
 
 export type Attention = { tone: 'error' | 'warning' | 'info'; label: string; text: string } | null
@@ -60,8 +56,7 @@ function attentionFor(item: DashboardItem, messy: boolean): Attention {
 	return null
 }
 
-const sections = (...kinds: Array<DetailSection | DetailSectionEntry>): DetailSectionEntry[] =>
-	kinds.map(kind => (typeof kind === 'string' ? { kind } : kind))
+const sections = (...kinds: DetailSection[]): DetailSectionEntry[] => kinds.map(kind => ({ kind }))
 
 /** Presentation only: lifecycle permissions remain in `allowedActions`.
  *  Sections order the one flat stack per state (decision content first); each
@@ -113,8 +108,8 @@ export function detailState(item: DashboardItem): {
 			return {
 				chipTone: chipTone(item),
 				attention,
-				// The log is the diagnostic — open, directly beneath the failure text.
-				sections: sections('failure', { kind: 'log', open: true }, 'activity', 'outcome', 'setup', 'input', 'source'),
+				// The always-expanded log is the diagnostic, directly beneath the failure text.
+				sections: sections('failure', 'log', 'activity', 'outcome', 'setup', 'input', 'source'),
 			}
 		case 'done':
 			return {

@@ -140,25 +140,20 @@ export function ActivitySection({ item, now }: { item: DashboardItem; now: numbe
 
 const LIVE_TAIL_MS = 5000
 
-/** The run log, inline. `defaultOpen` comes from detail-state (failed only).
- *  The two newest messages remain visible while collapsed; expanding reveals
- *  every available message in the same newest-first order. While a running
- *  Item's detail is the top nav layer, `onLiveTick` quietly refreshes this
- *  preview. Ticks self-reschedule only after the previous fetch resolves, so a
- *  slow detail request can never stack. */
+/** The run log is always fully available in a bounded scroll well. While a
+ *  running Item's detail is the top nav layer, `onLiveTick` quietly refreshes
+ *  this preview. Ticks self-reschedule only after the previous fetch resolves,
+ *  so a slow detail request can never stack. */
 export function LogSection({
 	item,
-	defaultOpen,
 	live,
 	onLiveTick,
 }: {
 	item: DashboardItem
-	defaultOpen?: boolean
 	/** True only while the item runs and this page is on top of the nav stack. */
 	live?: boolean
 	onLiveTick?: () => Promise<void>
 }) {
-	const [open, setOpen] = useState(defaultOpen ?? false)
 	useEffect(() => {
 		if (!live || !onLiveTick) return
 		let alive = true
@@ -175,26 +170,12 @@ export function LogSection({
 	}, [live, onLiveTick])
 	const log = item.runObservation.log
 	const messages = useMemo(() => logMessagesNewestFirst(log.content), [log.content])
-	const visible = open ? messages : messages.slice(0, 2)
-	const listId = useId()
 	if (!log.available || messages.length === 0) return null
-	const outputToggle =
-		messages.length > 2 ? (
-			<button
-				type="button"
-				className="detail-disclosure"
-				aria-controls={listId}
-				aria-expanded={open}
-				onClick={() => setOpen(value => !value)}
-			>
-				{open ? 'Show less' : 'Show all'}
-			</button>
-		) : null
 	return (
-		<Card label="Log" trailing={outputToggle}>
+		<Card label="Log">
 			<EvidenceWell label="Run log">
-				<span id={listId}>{visible.join('\n')}</span>
-				{open && log.truncated ? '\n… older log output omitted' : ''}
+				{messages.join('\n')}
+				{log.truncated ? '\n… older log output omitted' : ''}
 			</EvidenceWell>
 		</Card>
 	)

@@ -256,13 +256,7 @@ export function DetailPage(props: DetailPageProps) {
 				return <FailureCard key="failure" item={item} hideError={state.attention?.text === item.errorMessage} />
 			case 'log':
 				return (
-					<LogSection
-						key="log"
-						item={item}
-						defaultOpen={section.open}
-						live={active && item.status === 'running'}
-						onLiveTick={refetchQuietly}
-					/>
+					<LogSection key="log" item={item} live={active && item.status === 'running'} onLiveTick={refetchQuietly} />
 				)
 			case 'input':
 				return <InputSection key="input" item={item} />

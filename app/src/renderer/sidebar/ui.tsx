@@ -572,7 +572,7 @@ export function ClampText({ text, lines = 4 }: { text: string; lines?: number })
 // ---------------------------------------------------------------------------
 // Inline disclosure — §3.20
 
-/** Quiet show/hide toggle for heavy in-place evidence (log, solve input, run
+/** Quiet show/hide toggle for heavy in-place evidence (solve input and run
  *  setup pickers). Content SNAPS open — never height-animated (§2.5) — and is
  *  rendered only while open, so a collapsed well contributes zero DOM to the
  *  always-mounted nav-page layers. `defaultOpen` applies at mount only: a

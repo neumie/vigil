@@ -1,7 +1,6 @@
 // Inline disclosure (§3.20): the quiet show/hide toggle for heavy in-place
-// evidence (log, solve input, run setup pickers). Content SNAPS open — never
-// height-animated — and renders only while open; `defaultOpen` applies at
-// mount only (detail-state's failed-state log).
+// evidence such as solve input and run setup pickers. Content SNAPS open —
+// never height-animated — and renders only while open.
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Card, Disclosure } from './ui'
 
@@ -19,31 +18,28 @@ const meta: Meta = {
 export default meta
 type Story = StoryObj
 
-const LOG = `[12:01:12] worktree ready at ../helm-item-fix-login
-[12:01:14] agent started (claude, worktree)
-[12:03:02] edited src/auth/login.ts
-[12:04:40] tests: 12 passed
-[12:05:19] solver-result.json written`
+const INPUT = `Implement the approved task in the prepared worktree.
+Preserve the existing authentication flow and add regression coverage.`
 
 /** Closed at rest: the verb-first cue is the only footprint — a collapsed
  *  well contributes zero DOM. */
 export const Closed: Story = {
 	render: () => (
-		<Card label="Log">
-			<Disclosure label="Show log" hideLabel="Hide log">
-				<section className="log-well">{LOG}</section>
+		<Card label="Solve input">
+			<Disclosure label="Show input" hideLabel="Hide input">
+				<section className="log-well">{INPUT}</section>
 			</Disclosure>
 		</Card>
 	),
 }
 
-/** Open (also the `defaultOpen` mount state — the failed-state log): the cue
- *  flips to its hide verb and the well snaps into the group's flow. */
+/** Open mount state: the cue flips to its hide verb and the well snaps into
+ *  the group's flow. */
 export const Open: Story = {
 	render: () => (
-		<Card label="Log">
-			<Disclosure label="Show log" hideLabel="Hide log" defaultOpen>
-				<section className="log-well">{LOG}</section>
+		<Card label="Solve input">
+			<Disclosure label="Show input" hideLabel="Hide input" defaultOpen>
+				<section className="log-well">{INPUT}</section>
 			</Disclosure>
 		</Card>
 	),

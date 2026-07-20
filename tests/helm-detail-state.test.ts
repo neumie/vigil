@@ -67,25 +67,14 @@ test('detail state stays focused and does not call cancellation an error', () =>
 	])
 })
 
-test('run evidence is inline: review orders decision content before the log disclosure', () => {
+test('run evidence is inline: review orders decision content before the log', () => {
 	const review = detailState({ ...base, status: 'review' })
 	assert.deepEqual(kinds(review.sections), ['outcome', 'delivery', 'activity', 'log', 'input', 'source'])
-	// Closed by default in review — outcome and PR are the review evidence.
-	assert.equal(review.sections.find(section => section.kind === 'log')?.open, undefined)
 })
 
-test('failed auto-opens the log directly beneath the failure text (§3.20 mount default)', () => {
+test('failed places the always-expanded log directly beneath the failure text', () => {
 	const failed = detailState({ ...base, status: 'failed', errorMessage: 'boom' })
 	assert.deepEqual(kinds(failed.sections).slice(0, 2), ['failure', 'log'])
-	assert.equal(failed.sections.find(section => section.kind === 'log')?.open, true)
-	// The only state that opens anything by default.
-	for (const status of ['running', 'review', 'done', 'cancelled'] as const) {
-		const state = detailState({ ...base, status })
-		assert.ok(
-			state.sections.every(section => section.open === undefined),
-			`${status} opens nothing by default`,
-		)
-	}
 })
 
 test('human-owned Active Items keep the compact work sections', () => {
