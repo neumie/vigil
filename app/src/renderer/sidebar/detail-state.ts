@@ -58,19 +58,19 @@ export function detailState(item: DashboardItem): {
 			// (manual status, Return to Queue) must not lose its history.
 			return {
 				attention,
-				sections: sections('intent', 'source', 'setup', 'activity', 'log', 'input'),
+				sections: sections('intent', 'setup', 'activity', 'log', 'input', 'source'),
 			}
 		case 'ready':
 			return {
 				attention,
-				sections: sections('queue', 'setup', 'source', 'activity', 'log', 'input'),
+				sections: sections('queue', 'setup', 'activity', 'log', 'input', 'source'),
 			}
 		case 'active':
 			return {
 				attention,
 				sections: item.planStatus
-					? sections('setup', 'source', 'activity', 'log', 'input')
-					: sections('source', 'activity', 'log', 'input'),
+					? sections('setup', 'activity', 'log', 'input', 'source')
+					: sections('activity', 'log', 'input', 'source'),
 			}
 		case 'running':
 			return {

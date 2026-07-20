@@ -79,7 +79,7 @@ test('failed places the always-expanded log directly beneath the failure text', 
 
 test('human-owned Active Items keep the compact work sections', () => {
 	const active = detailState({ ...base, status: 'active', workMode: 'manual' })
-	assert.deepEqual(kinds(active.sections), ['source', 'activity', 'log', 'input'])
+	assert.deepEqual(kinds(active.sections), ['activity', 'log', 'input', 'source'])
 })
 
 test('planned Active Items expose the executor choice', () => {
@@ -97,7 +97,7 @@ test('planned Active Items expose the executor choice', () => {
 			checkedAt: '2026-01-02T00:00:00Z',
 		},
 	})
-	assert.deepEqual(kinds(active.sections), ['setup', 'source', 'activity', 'log', 'input'])
+	assert.deepEqual(kinds(active.sections), ['setup', 'activity', 'log', 'input', 'source'])
 })
 
 test('automatic Inbox Items keep approval content first without a redundant hero sentence', () => {
@@ -106,7 +106,7 @@ test('automatic Inbox Items keep approval content first without a redundant hero
 		status: 'inbox',
 		source: { provider: 'Contember', externalId: 'task-1' },
 	})
-	assert.deepEqual(kinds(inbox.sections), ['intent', 'source', 'setup', 'activity', 'log', 'input'])
+	assert.deepEqual(kinds(inbox.sections), ['intent', 'setup', 'activity', 'log', 'input', 'source'])
 })
 
 test('run evidence stays reachable after a return to pre-run states', () => {
