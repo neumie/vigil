@@ -15,7 +15,6 @@ import {
 	PlanSection,
 	SetupSection,
 	SourceRow,
-	StateSummary,
 } from './DetailSections'
 import { lifecycleActionPlan, lifecycleActionPresentation, manualStatusOptions } from './detail-actions'
 import { useItemDetail } from './detail-data'
@@ -278,7 +277,7 @@ export function DetailPage(props: DetailPageProps) {
 					/>
 				)
 			case 'plan':
-				return <PlanSection key="plan" item={item} now={now} onOpen={() => onOpenPlan(id)} disabled={disabled} />
+				return <PlanSection key="plan" item={item} onOpen={() => onOpenPlan(id)} disabled={disabled} />
 			case 'source':
 				return <SourceRow key="source" item={item} onOpen={() => onOpenTask(id)} disabled={disabled} />
 			case 'delivery':
@@ -289,10 +288,7 @@ export function DetailPage(props: DetailPageProps) {
 		<div className="page-frame" data-detail-state={item.status} aria-busy={phase === 'loading'}>
 			<PushHeader title={itemTitle(item)} onBack={onBack} />
 			<div className="page-scroll">
-				<section className="detail-hero" aria-label="Current item state">
-					{state.headline && state.direction ? (
-						<StateSummary headline={state.headline} direction={state.direction} />
-					) : null}
+				<section className="detail-hero" aria-label="Item details">
 					<div className="detail-identity-meta">
 						{statusOptions.length > 0 ? (
 							<MenuButton

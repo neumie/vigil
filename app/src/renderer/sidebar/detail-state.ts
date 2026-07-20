@@ -1,5 +1,5 @@
 import type { DashboardItem, DashboardTone } from '../../shared-helm'
-import { planStatusDetail, planStatusLabel, statusTone } from './model'
+import { statusTone } from './model'
 
 export type DetailSection =
 	| 'intent'
@@ -40,14 +40,6 @@ function chipTone(item: DashboardItem): DashboardTone {
 	}
 }
 
-export function cancellationReason(item: DashboardItem): string {
-	const event = item.runObservation.events.find(
-		event => event.type === 'item_rejected' || event.type === 'item_cancelled',
-	)
-	if (event?.type === 'item_rejected') return 'Intent was rejected'
-	return 'Work was stopped'
-}
-
 function attentionFor(item: DashboardItem, messy: boolean): Attention {
 	if (item.status === 'failed' && item.errorMessage) {
 		return {
@@ -76,8 +68,6 @@ const sections = (...kinds: Array<DetailSection | DetailSectionEntry>): DetailSe
  *  Sections order the one flat stack per state (decision content first); each
  *  section component self-gates on its data and renders null when empty. */
 export function detailState(item: DashboardItem): {
-	headline: string | null
-	direction: string | null
 	chipTone: DashboardTone
 	attention: Attention
 	sections: DetailSectionEntry[]
@@ -90,59 +80,38 @@ export function detailState(item: DashboardItem): {
 			// nothing on a pristine item, but an item moved BACK here after a run
 			// (manual status, Return to Queue) must not lose its history.
 			return {
-				headline: item.source ? 'Review the intent' : 'Ready to plan or start',
-				direction: item.source ? 'Approve to queue this work, or reject it.' : 'Start runs this item now.',
 				chipTone: chipTone(item),
 				attention,
 				sections: sections('intent', 'source', 'setup', 'plan', 'activity', 'log', 'input'),
 			}
 		case 'ready':
 			return {
-				headline: 'Waiting in queue',
-				direction: 'Start the agent now, or work it manually.',
 				chipTone: chipTone(item),
 				attention,
 				sections: sections('queue', 'setup', 'plan', 'source', 'activity', 'log', 'input'),
 			}
 		case 'active':
-			return item.planStatus
-				? {
-						headline: planStatusLabel(item),
-						direction: planStatusDetail(item),
-						chipTone: chipTone(item),
-						attention,
-						sections: sections('plan', 'setup', 'source', 'activity', 'log', 'input'),
-					}
-				: {
-						headline: "You're working on this",
-						direction: 'Set it as done when you finish, or return it to the queue.',
-						chipTone: chipTone(item),
-						attention,
-						sections: sections('plan', 'source', 'activity', 'log', 'input'),
-					}
+			return {
+				chipTone: chipTone(item),
+				attention,
+				sections: item.planStatus
+					? sections('plan', 'setup', 'source', 'activity', 'log', 'input')
+					: sections('plan', 'source', 'activity', 'log', 'input'),
+			}
 		case 'running':
 			return {
-				headline: 'Work is in progress',
-				direction: 'Nothing needs you right now.',
 				chipTone: chipTone(item),
 				attention,
 				sections: sections('activity', 'log', 'input', 'plan', 'source'),
 			}
 		case 'review':
 			return {
-				headline: 'Ready for your review',
-				direction: 'Check the work, then set it as done.',
 				chipTone: chipTone(item),
 				attention,
 				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'plan', 'source'),
 			}
 		case 'failed':
 			return {
-				headline: 'Choose how to recover',
-				direction:
-					item.kind === 'solve'
-						? 'Retry starts a new run. Move usable work to review without rerunning.'
-						: 'Retry starts a new loop run.',
 				chipTone: chipTone(item),
 				attention,
 				// The log is the diagnostic — open, directly beneath the failure text.
@@ -159,8 +128,6 @@ export function detailState(item: DashboardItem): {
 			}
 		case 'done':
 			return {
-				headline: 'Work is complete',
-				direction: 'Retry starts a new run and replaces the current run result.',
 				chipTone: chipTone(item),
 				attention,
 				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'plan', 'source'),
@@ -169,8 +136,6 @@ export function detailState(item: DashboardItem): {
 			// Outcome/input stay reachable: a cancelled run may hold a partial
 			// result, a branch, and the solve input worth reviewing before retry.
 			return {
-				headline: cancellationReason(item),
-				direction: 'Retry queues a new run.',
 				chipTone: chipTone(item),
 				attention: null,
 				sections: sections('failure', 'outcome', 'activity', 'log', 'input', 'plan', 'source'),
@@ -180,4 +145,4 @@ export function detailState(item: DashboardItem): {
 	}
 }
 
-export default { detailState, cancellationReason }
+export default { detailState }

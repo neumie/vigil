@@ -10,7 +10,6 @@ import {
 	VERDICT_META,
 	logMessagesNewestFirst,
 	openExternalUrl,
-	planStatusLabel,
 	planTicketCounts,
 	relativeTime,
 } from './model'
@@ -44,15 +43,6 @@ export function IntentCard({
 			)}
 			{assessment.securityNote && !hideSecurityNote && <div className="security-note">{assessment.securityNote}</div>}
 		</Card>
-	)
-}
-
-export function StateSummary({ headline, direction }: { headline: string; direction: string }) {
-	return (
-		<div className="detail-state">
-			<h2>{headline}</h2>
-			<p className="state-direction">{direction}</p>
-		</div>
 	)
 }
 
@@ -121,13 +111,11 @@ function EvidenceWell({ label, children }: { label: string; children: ReactNode 
  *  Running shows 5 events before "Show all"; settled states show 3. Running
  *  always renders (the observation may lag the row while the detail loads). */
 export function ActivitySection({ item, now }: { item: DashboardItem; now: number }) {
-	const [all, setAll] = useState(false)
+	const [historyOpen, setHistoryOpen] = useState(false)
 	const listId = useId()
 	const observation = item.runObservation
 	const events = useMemo(() => [...observation.events].reverse(), [observation.events])
 	if (!hasRunEvidence(item) && item.status !== 'running') return null
-	const initial = item.status === 'running' ? 5 : 3
-	const visible = all ? events : events.slice(0, initial)
 	const summary =
 		observation.summary && observation.summary !== item.resultSummary && observation.summary !== item.errorMessage
 			? observation.summary
@@ -139,9 +127,9 @@ export function ActivitySection({ item, now }: { item: DashboardItem; now: numbe
 			{observation.almanac.status && <InfoRow label="Loop" value={observation.almanac.status} />}
 			{observation.almanac.round && <InfoRow label="Round" value={observation.almanac.round} />}
 			{summary && <ClampText text={summary} />}
-			{events.length > 0 && (
+			{historyOpen && events.length > 0 && (
 				<ol id={listId} className="activity-list">
-					{visible.map((event, index) => (
+					{events.map((event, index) => (
 						<li key={`${event.type}-${event.createdAt}-${index}`} className="activity-item">
 							<span>{event.label}</span>
 							<time className="activity-time" dateTime={event.createdAt ?? undefined}>
@@ -151,15 +139,15 @@ export function ActivitySection({ item, now }: { item: DashboardItem; now: numbe
 					))}
 				</ol>
 			)}
-			{events.length > initial && (
+			{events.length > 0 && (
 				<button
 					type="button"
 					className="detail-disclosure"
 					aria-controls={listId}
-					aria-expanded={all}
-					onClick={() => setAll(value => !value)}
+					aria-expanded={historyOpen}
+					onClick={() => setHistoryOpen(value => !value)}
 				>
-					{all ? 'Show less' : 'Show all'}
+					{historyOpen ? 'Hide history' : 'Show history'}
 				</button>
 			)}
 		</Card>
@@ -351,13 +339,11 @@ export function SetupSection({
  *  page. The planned-active hero already carries plan status — no repeat. */
 export function PlanSection({
 	item,
-	now,
 	onOpen,
 	disabled,
-}: { item: DashboardItem; now: number; onOpen: () => void; disabled?: boolean }) {
+}: { item: DashboardItem; onOpen: () => void; disabled?: boolean }) {
 	if (!item.plannedAt) return null
 	const status = item.planStatus
-	const heroOwnsStatus = item.status === 'active' && status != null
 	const docs = (item.planArtifacts ?? []).filter(doc => !['context.md', 'readme.md'].includes(doc.name.toLowerCase()))
 	// '…' while the full detail (the only carrier of planArtifacts) is loading —
 	// a nav row must never show a blank value (§3.15).
@@ -370,12 +356,8 @@ export function PlanSection({
 	const tickets = status ? planTicketCounts(status) : null
 	return (
 		<Card label="Plan" flush>
-			{!heroOwnsStatus && (
-				<InfoRow label="Status" value={planStatusLabel(item) ?? `Prepared ${relativeTime(item.plannedAt, now)}`} />
-			)}
-			{status?.specName && <InfoRow label="Spec" value={status.specName} mono />}
-			{tickets && tickets.open > 0 && (
-				<InfoRow label="Tickets" value={`${tickets.open} open · ${tickets.agent} agent · ${tickets.human} human`} />
+			{tickets && tickets.total > 0 && (
+				<InfoRow label="Tickets" value={`${tickets.total - tickets.open} of ${tickets.total} complete`} />
 			)}
 			<ActionRow nav label="Plan documents" value={docsValue} onClick={onOpen} disabled={disabled} />
 		</Card>

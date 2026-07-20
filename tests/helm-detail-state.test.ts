@@ -59,7 +59,6 @@ const kinds = (sections: Array<{ kind: string }>) => sections.map(section => sec
 
 test('detail state stays focused and does not call cancellation an error', () => {
 	const cancelled = detailState({ ...base, status: 'cancelled', errorMessage: 'Cancelled by user' })
-	assert.equal(cancelled.headline, 'Work was stopped')
 	assert.equal(cancelled.attention, null)
 	assert.deepEqual(kinds(cancelled.sections), ['failure', 'outcome', 'activity', 'log', 'input', 'plan', 'source'])
 	assert.deepEqual(kinds(detailState({ ...base, status: 'review', runOutcome: 'no_result' }).sections).slice(0, 2), [
@@ -89,16 +88,8 @@ test('failed auto-opens the log directly beneath the failure text (§3.20 mount 
 	}
 })
 
-test('review state leads with the always-present next-step headline (2026-07 hero spec)', () => {
-	const review = detailState({ ...base, status: 'review' })
-	assert.equal(review.headline, 'Ready for your review')
-	assert.equal(review.direction, 'Check the work, then set it as done.')
-})
-
-test('human-owned Active Items lead with the ownership headline (2026-07 hero spec)', () => {
+test('human-owned Active Items keep the compact work sections', () => {
 	const active = detailState({ ...base, status: 'active', workMode: 'manual' })
-	assert.equal(active.headline, "You're working on this")
-	assert.equal(active.direction, 'Set it as done when you finish, or return it to the queue.')
 	assert.deepEqual(kinds(active.sections), ['plan', 'source', 'activity', 'log', 'input'])
 })
 
@@ -117,52 +108,15 @@ test('planned Active Items expose the executor choice', () => {
 			checkedAt: '2026-01-02T00:00:00Z',
 		},
 	})
-	assert.equal(active.headline, 'Plan ready')
-	assert.equal(active.direction, 'spec.md is ready. No local or GitHub ticket queue was found.')
 	assert.deepEqual(kinds(active.sections), ['plan', 'setup', 'source', 'activity', 'log', 'input'])
 })
 
-test('planned Active Items distinguish planning from a ticket queue', () => {
-	const planningItem: DashboardItem = {
-		...base,
-		status: 'active',
-		workMode: 'manual',
-		plannedAt: '2026-01-02T00:00:00Z',
-		planStatus: {
-			stage: 'planning',
-			specName: null,
-			localTickets: { total: 0, open: 0, readyForAgent: 0, readyForHuman: 0 },
-			githubTickets: { total: 0, open: 0, readyForAgent: 0, readyForHuman: 0 },
-			githubAvailable: true,
-			checkedAt: '2026-01-02T00:00:00Z',
-		},
-	}
-	const planning = detailState(planningItem)
-	assert.equal(planning.headline, 'Planning')
-
-	const tickets = detailState({
-		...planningItem,
-		planStatus: {
-			stage: 'tickets_ready',
-			specName: 'spec.md',
-			localTickets: { total: 3, open: 3, readyForAgent: 2, readyForHuman: 1 },
-			githubTickets: { total: 0, open: 0, readyForAgent: 0, readyForHuman: 0 },
-			githubAvailable: true,
-			checkedAt: '2026-01-02T00:00:00Z',
-		},
-	})
-	assert.equal(tickets.headline, '0 of 3 tickets complete')
-	assert.equal(tickets.direction, '0 of 3 tickets complete in local. 3 open; 2 agent-ready, 1 human-ready.')
-})
-
-test('automatic Inbox Items lead with the approval decision', () => {
+test('automatic Inbox Items keep approval content first without a redundant hero sentence', () => {
 	const inbox = detailState({
 		...base,
 		status: 'inbox',
 		source: { provider: 'Contember', externalId: 'task-1' },
 	})
-	assert.equal(inbox.headline, 'Review the intent')
-	assert.equal(inbox.direction, 'Approve to queue this work, or reject it.')
 	assert.deepEqual(kinds(inbox.sections), ['intent', 'source', 'setup', 'plan', 'activity', 'log', 'input'])
 })
 

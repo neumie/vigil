@@ -100,20 +100,9 @@ export const EvidenceGroups: Story = {
 		<>
 			<Card label="Activity">
 				<InfoRow label="Started" value="14m" />
-				<ol className="activity-list">
-					{[
-						['Solver result recorded', '2m'],
-						['Pull request opened', '4m'],
-						['Branch pushed', '5m'],
-					].map(([label, time]) => (
-						<li key={label} className="activity-item">
-							<span>{label}</span>
-							<time className="activity-time">{time}</time>
-						</li>
-					))}
-				</ol>
+				<InfoRow label="State" value="Running" />
 				<button type="button" className="detail-disclosure" aria-expanded={false}>
-					Show all
+					Show history
 				</button>
 			</Card>
 			<Card label="Log">
