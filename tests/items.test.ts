@@ -2033,6 +2033,50 @@ test('AlmanacLoopRunner generates a missing loop prompt before launch', async ()
 	}
 })
 
+test('processLoopItem uses the current planned-Item selection instead of stale first-run options', async () => {
+	await withTempDb(async db => {
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-current-selection-'))
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Retry planned loop with another model',
+			projectSlug: 'helm',
+			prompt: 'Implement the plan.',
+		})
+		recordPreparedPlan(commands, item.id, {
+			worktreePath,
+			branchName: 'helm/item/current-loop-selection',
+			planDirName: 'current-loop-selection',
+			spawner: 'default',
+		})
+		commands.setSolveExecution(item.id, {
+			mode: 'loop',
+			prdPath: 'docs/plans/current-loop-selection/spec.md',
+			options: { mode: 'afk', provider: 'claude', model: 'claude-fable-5', effort: 'max', iterations: 3 },
+		})
+		commands.setSolveItemAgent(item.id, 'codex')
+		commands.setSolveItemModel(item.id, 'gpt-5.6-sol')
+		commands.setSolveItemEffort(item.id, 'xhigh')
+		commands.setItemStatus(item.id, 'ready')
+		const runner = new FakeLoopRunner()
+
+		try {
+			await processLoopItem(item.id, config, db, runner)
+			assert.equal(runner.calls.length, 1)
+			assert.deepEqual(runner.calls[0]?.payload, {
+				kind: 'loop',
+				prdPath: 'docs/plans/current-loop-selection/spec.md',
+				mode: 'afk',
+				provider: 'codex',
+				model: 'gpt-5.6-sol',
+				effort: 'xhigh',
+				iterations: 3,
+			})
+		} finally {
+			rmSync(worktreePath, { recursive: true, force: true })
+		}
+	})
+})
+
 test('processLoopItem records loop runner failures through ItemCommands', async () => {
 	await withTempDb(async db => {
 		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-fail-worktree-'))

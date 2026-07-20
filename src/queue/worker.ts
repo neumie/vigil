@@ -309,8 +309,21 @@ export async function processLoopItem(
 	const commands = new ItemCommands(db.items, config)
 	const item = commands.getItem(itemId)
 	if (!item) throw new Error(`Item ${itemId} not found in DB`)
-	const loopPayload = loopPayloadForItem(item)
-	if (!loopPayload) throw new Error(`Item ${itemId} is not configured for loop execution`)
+	const storedLoopPayload = loopPayloadForItem(item)
+	if (!storedLoopPayload) throw new Error(`Item ${itemId} is not configured for loop execution`)
+	// Planned solve Items retain one stable execution descriptor, but the user may
+	// change agent/model/effort when retrying. Resolve those fields from the
+	// current Item at execution time so the first loop attempt cannot pin every
+	// later retry to its original selection.
+	const loopPayload =
+		item.payload.kind === 'solve'
+			? {
+					...storedLoopPayload,
+					provider: item.payload.solverAgent ?? config.solver.agent,
+					model: item.payload.solverModel ?? config.solver.model,
+					effort: item.payload.solverEffort,
+				}
+			: storedLoopPayload
 
 	const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
 	if (!projectConfig) throw new Error(`No project config for slug: ${item.projectSlug}`)
@@ -331,6 +344,12 @@ export async function processLoopItem(
 		const worktreePath = await ensureItemWorktree(projectConfig, baseRef, branchName, existingWorktreePath)
 		commands.recordExecutionWorkspaceIdentity(itemId, { worktreePath, branchName, planDirName })
 
+		log.info('worker', 'Starting almanac loop with effective Item selection', {
+			itemId,
+			provider: loopPayload.provider ?? config.solver.agent,
+			model: loopPayload.model ?? config.solver.model ?? 'default',
+			effort: loopPayload.effort ?? 'default',
+		})
 		const result = await loopRunner.runLoop({
 			projectConfig: { ...projectConfig, baseBranch: baseRef },
 			solverConfig: config.solver,
