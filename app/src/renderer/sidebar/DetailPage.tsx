@@ -13,8 +13,8 @@ import {
 	LogSection,
 	OutcomeCard,
 	PlanSection,
+	ResourceRows,
 	SetupSection,
-	SourceRow,
 } from './DetailSections'
 import { lifecycleActionPlan, lifecycleActionPresentation, manualStatusOptions } from './detail-actions'
 import { useItemDetail } from './detail-data'
@@ -277,9 +277,17 @@ export function DetailPage(props: DetailPageProps) {
 					/>
 				)
 			case 'plan':
-				return <PlanSection key="plan" item={item} onOpen={() => onOpenPlan(id)} disabled={disabled} />
+				return <PlanSection key="plan" item={item} />
 			case 'source':
-				return <SourceRow key="source" item={item} onOpen={() => onOpenTask(id)} disabled={disabled} />
+				return (
+					<ResourceRows
+						key="source"
+						item={item}
+						onOpenTask={() => onOpenTask(id)}
+						onOpenPlan={() => onOpenPlan(id)}
+						disabled={disabled}
+					/>
+				)
 			case 'delivery':
 				return <DeliveryCard key="delivery" item={item} />
 		}

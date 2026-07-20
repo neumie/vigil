@@ -335,47 +335,62 @@ export function SetupSection({
 	)
 }
 
-/** Inline plan status facts; the documents themselves stay a pushed reading
- *  page. The planned-active hero already carries plan status — no repeat. */
-export function PlanSection({
-	item,
-	onOpen,
-	disabled,
-}: { item: DashboardItem; onOpen: () => void; disabled?: boolean }) {
-	if (!item.plannedAt) return null
-	const status = item.planStatus
-	const docs = (item.planArtifacts ?? []).filter(doc => !['context.md', 'readme.md'].includes(doc.name.toLowerCase()))
-	// '…' while the full detail (the only carrier of planArtifacts) is loading —
-	// a nav row must never show a blank value (§3.15).
-	const docsValue =
-		item.planArtifacts === undefined
-			? '…'
-			: docs.length === 0
-				? 'None yet'
-				: `${docs.length} ${docs.length === 1 ? 'note' : 'notes'}`
-	const tickets = status ? planTicketCounts(status) : null
+/** Ticket progress is the Plan section's whole summary, so it lives in the
+ *  header rather than consuming another fact row. */
+export function PlanSection({ item }: { item: DashboardItem }) {
+	if (!item.plannedAt || !item.planStatus) return null
+	const tickets = planTicketCounts(item.planStatus)
+	if (tickets.total === 0) return null
 	return (
-		<Card label="Plan" flush>
-			{tickets && tickets.total > 0 && (
-				<InfoRow label="Tickets" value={`${tickets.total - tickets.open} of ${tickets.total} complete`} />
-			)}
-			<ActionRow nav label="Plan documents" value={docsValue} onClick={onOpen} disabled={disabled} />
-		</Card>
+		<Card
+			label="Plan"
+			trailing={<Chip tone="gray">{`${tickets.total - tickets.open} of ${tickets.total} complete`}</Chip>}
+		/>
 	)
 }
 
-/** The one remaining push row to the source reading surface (§3.19). */
-export function SourceRow({ item, onOpen, disabled }: { item: DashboardItem; onOpen: () => void; disabled?: boolean }) {
-	if (!item.source && !item.captured && !item.sourceTask) return null
+function planDocumentsValue(item: DashboardItem): string {
+	const docs = (item.planArtifacts ?? []).filter(doc => !['context.md', 'readme.md'].includes(doc.name.toLowerCase()))
+	if (item.planArtifacts === undefined) return '…'
+	if (docs.length === 0) return 'None yet'
+	return `${docs.length} ${docs.length === 1 ? 'note' : 'notes'}`
+}
+
+/** Task and Plan documents are peer reading destinations, so they share one
+ *  flush navigation group instead of living under unrelated status facts. */
+export function ResourceRows({
+	item,
+	onOpenTask,
+	onOpenPlan,
+	disabled,
+}: {
+	item: DashboardItem
+	onOpenTask: () => void
+	onOpenPlan: () => void
+	disabled?: boolean
+}) {
+	const hasTask = Boolean(item.source || item.captured || item.sourceTask)
+	if (!hasTask && !item.plannedAt) return null
 	return (
 		<Card flush>
-			<ActionRow
-				nav
-				label={item.captured ? 'Imported task' : 'Task'}
-				value={sourceValue(item)}
-				onClick={onOpen}
-				disabled={disabled}
-			/>
+			{hasTask && (
+				<ActionRow
+					nav
+					label={item.captured ? 'Imported task' : 'Task'}
+					value={sourceValue(item)}
+					onClick={onOpenTask}
+					disabled={disabled}
+				/>
+			)}
+			{item.plannedAt && (
+				<ActionRow
+					nav
+					label="Plan documents"
+					value={planDocumentsValue(item)}
+					onClick={onOpenPlan}
+					disabled={disabled}
+				/>
+			)}
 		</Card>
 	)
 }

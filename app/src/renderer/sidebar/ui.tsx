@@ -633,7 +633,7 @@ export function Card({
 	flush,
 }: {
 	label?: string
-	children: ReactNode
+	children?: ReactNode
 	trailing?: ReactNode
 	/** Zero row gap — nav rows stack at their exact 36px pitch (§3.15). */
 	flush?: boolean
