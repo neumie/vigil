@@ -30,10 +30,10 @@ Source / Dashboard -> Item Commands -> Drainer lanes -> Solver / Almanac loop ->
    Active work, creates or reuses its worktree, and writes plan files under
    `docs/plans/<planDirName>/`. Helm separately reports **Planning**, **Plan ready**,
    or local/GitHub ticket counts as plan artifacts evolve. The same planned solve
-   Item can then start either a normal agent run or an Almanac loop; both reuse that
-   worktree. **Start loop** runs the complete agent-ready queue in AFK mode using
-   the Item's selected agent/model/effort overrides, falling back to daemon or
-   agent defaults.
+   Item can then start either a normal agent run or an Almanac loop; both honor
+   the Item's selected Agent, Model, Effort, and Workspace. A Main loop requires
+   the plan to have been prepared in Main. **Start loop** runs the complete
+   agent-ready queue in AFK mode, falling back to daemon or agent defaults.
 7. **Dispatch** - solve Items record a pre-shipped PR when the agent already
    shipped one; otherwise Helm can push the branch, open a PR, and post a
    provider comment when config allows it.

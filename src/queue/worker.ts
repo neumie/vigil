@@ -179,6 +179,7 @@ export async function processSolveItem(
 	try {
 		const selectedAgent = item.payload.kind === 'solve' ? item.payload.solverAgent : undefined
 		const selectedModel = item.payload.kind === 'solve' ? item.payload.solverModel : undefined
+		const selectedEffort = item.payload.kind === 'solve' ? item.payload.solverEffort : undefined
 		const selectedWorkspace = item.payload.kind === 'solve' ? item.payload.solverWorkspace : undefined
 
 		// A solve is the final guarantee that an enabled AI display name gets one
@@ -232,6 +233,7 @@ export async function processSolveItem(
 			taskId: item.id,
 			taskTitle: item.title,
 			solverConfig,
+			solverEffort: selectedEffort,
 			workspaceMode,
 			signal,
 			outputLogPath,
@@ -327,6 +329,9 @@ export async function processLoopItem(
 
 	const projectConfig = config.projects.find(p => p.slug === item.projectSlug)
 	if (!projectConfig) throw new Error(`No project config for slug: ${item.projectSlug}`)
+	const workspaceMode =
+		item.payload.kind === 'solve' ? (item.payload.solverWorkspace ?? config.solver.workspace ?? 'worktree') : 'worktree'
+	const mainMode = workspaceMode === 'main'
 
 	commands.startItem(itemId)
 	mkdirSync(LOGS_DIR, { recursive: true })
@@ -337,18 +342,36 @@ export async function processLoopItem(
 		// path, not a single conventional change, so
 		// AI naming is scoped to solve Items only.
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(item)
-		commands.recordExecutionWorkspaceIdentity(itemId, { planDirName, branchName })
-		if (item.kind === 'solve' && item.plannedAt && !existingWorktreePath) {
-			throw phaseError('solve', 'Planned worktree is missing. Re-plan the Item before starting a loop.')
+		commands.recordExecutionWorkspaceIdentity(itemId, mainMode ? { planDirName } : { planDirName, branchName })
+		if (item.kind === 'solve' && item.plannedAt) {
+			if (mainMode && (!item.worktreePath || resolve(item.worktreePath) !== resolve(projectConfig.repoPath))) {
+				throw phaseError(
+					'solve',
+					'This plan was prepared in a Worktree. Re-plan with Workspace set to Main before starting a loop in Main.',
+				)
+			}
+			if (!mainMode && !existingWorktreePath) {
+				throw phaseError('solve', 'Planned worktree is missing. Re-plan the Item before starting a loop.')
+			}
 		}
-		const worktreePath = await ensureItemWorktree(projectConfig, baseRef, branchName, existingWorktreePath)
-		commands.recordExecutionWorkspaceIdentity(itemId, { worktreePath, branchName, planDirName })
+		const worktreePath = mainMode
+			? projectConfig.repoPath
+			: await ensureItemWorktree(projectConfig, baseRef, branchName, existingWorktreePath)
+		if (mainMode) {
+			if (!existsSync(worktreePath)) throw phaseError('worktree', `Project checkout does not exist: ${worktreePath}`)
+			await excludeHelmFiles(worktreePath)
+		}
+		commands.recordExecutionWorkspaceIdentity(
+			itemId,
+			mainMode ? { worktreePath, planDirName } : { worktreePath, branchName, planDirName },
+		)
 
 		log.info('worker', 'Starting almanac loop with effective Item selection', {
 			itemId,
 			provider: loopPayload.provider ?? config.solver.agent,
 			model: loopPayload.model ?? config.solver.model ?? 'default',
 			effort: loopPayload.effort ?? 'default',
+			workspace: workspaceMode,
 		})
 		const result = await loopRunner.runLoop({
 			projectConfig: { ...projectConfig, baseBranch: baseRef },

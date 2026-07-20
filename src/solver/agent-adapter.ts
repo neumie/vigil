@@ -1,4 +1,5 @@
 import type { HelmConfig } from '../config.js'
+import type { SolverEffort } from '../items/schema.js'
 import type { ClaudeEvent } from '../types.js'
 import type { SolverAgent } from './agent.js'
 import { solverAgentLabel } from './agent.js'
@@ -13,8 +14,8 @@ export interface AgentInvocation {
 export interface AgentAdapter {
 	agent: SolverAgent
 	label: string
-	buildHeadlessInvocation(): AgentInvocation
-	buildInteractiveCommand(promptPath: string, worktreePath: string): string
+	buildHeadlessInvocation(effort?: SolverEffort): AgentInvocation
+	buildInteractiveCommand(promptPath: string, worktreePath: string, effort?: SolverEffort): string
 	parseTimeline(stdout: string): ClaudeEvent[]
 }
 
@@ -27,8 +28,11 @@ export function resolveSolverAgent(solverConfig: HelmConfig['solver']): SolverAg
 	return solverConfig.agent ?? 'claude'
 }
 
-export function buildHeadlessAgentInvocation(solverConfig: HelmConfig['solver']): AgentInvocation {
-	return createAgentAdapter(solverConfig).buildHeadlessInvocation()
+export function buildHeadlessAgentInvocation(
+	solverConfig: HelmConfig['solver'],
+	effort?: SolverEffort,
+): AgentInvocation {
+	return createAgentAdapter(solverConfig).buildHeadlessInvocation(effort)
 }
 
 /**
@@ -45,8 +49,9 @@ export function buildInteractiveAgentCommand(
 	solverConfig: HelmConfig['solver'],
 	promptPath: string,
 	worktreePath: string,
+	effort?: SolverEffort,
 ): string {
-	return createAgentAdapter(solverConfig).buildInteractiveCommand(promptPath, worktreePath)
+	return createAgentAdapter(solverConfig).buildInteractiveCommand(promptPath, worktreePath, effort)
 }
 
 export function agentLabelFromConfig(solverConfig: HelmConfig['solver']): string {
@@ -59,7 +64,7 @@ class ClaudeAgentAdapter implements AgentAdapter {
 
 	constructor(private readonly solverConfig: HelmConfig['solver']) {}
 
-	buildHeadlessInvocation(): AgentInvocation {
+	buildHeadlessInvocation(effort?: SolverEffort): AgentInvocation {
 		const args: string[] = ['-p', '--output-format', 'json', '--dangerously-skip-permissions']
 		if (this.solverConfig.model) {
 			args.push('--model', this.solverConfig.model)
@@ -67,12 +72,13 @@ class ClaudeAgentAdapter implements AgentAdapter {
 		if (this.solverConfig.maxBudgetUsd) {
 			args.push('--max-turns', '100')
 		}
+		if (effort) args.push('--effort', effort)
 		return { command: 'claude', args, label: 'claude-invoker' }
 	}
 
-	buildInteractiveCommand(promptPath: string, worktreePath: string): string {
+	buildInteractiveCommand(promptPath: string, worktreePath: string, effort?: SolverEffort): string {
 		return buildInteractiveCommand(
-			['claude', '--dangerously-skip-permissions'],
+			['claude', '--dangerously-skip-permissions', ...(effort ? ['--effort', effort] : [])],
 			this.solverConfig,
 			promptPath,
 			worktreePath,
@@ -90,15 +96,22 @@ class CodexAgentAdapter implements AgentAdapter {
 
 	constructor(private readonly solverConfig: HelmConfig['solver']) {}
 
-	buildHeadlessInvocation(): AgentInvocation {
+	buildHeadlessInvocation(effort?: SolverEffort): AgentInvocation {
 		const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--sandbox', 'danger-full-access', '-']
 		if (this.solverConfig.model) args.push('--model', this.solverConfig.model)
+		if (effort) args.push('--config', `model_reasoning_effort="${effort}"`)
 		return { command: 'codex', args, label: 'codex-invoker' }
 	}
 
-	buildInteractiveCommand(promptPath: string, worktreePath: string): string {
+	buildInteractiveCommand(promptPath: string, worktreePath: string, effort?: SolverEffort): string {
 		return buildInteractiveCommand(
-			['codex', '--dangerously-bypass-approvals-and-sandbox', '--sandbox', 'danger-full-access'],
+			[
+				'codex',
+				'--dangerously-bypass-approvals-and-sandbox',
+				'--sandbox',
+				'danger-full-access',
+				...(effort ? ['--config', `model_reasoning_effort="${effort}"`] : []),
+			],
 			this.solverConfig,
 			promptPath,
 			worktreePath,

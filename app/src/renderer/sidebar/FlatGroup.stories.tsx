@@ -124,8 +124,9 @@ export const EvidenceGroups: Story = {
 					{'[12:05:19] solver-result.json written\n[12:04:40] tests: 12 passed\n[12:03:02] edited src/auth/login.ts'}
 				</section>
 			</Card>
-			<Card label="Run setup">
+			<Card label="Execution setup">
 				<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>
+				<p className="run-caption">Applied to Start agent and Start loop.</p>
 				<Disclosure label="Change setup" hideLabel="Hide setup">
 					<p className="section-description">Agent, model, effort, and workspace pickers render here.</p>
 				</Disclosure>

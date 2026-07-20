@@ -1,4 +1,5 @@
 import type { HelmConfig } from '../config.js'
+import type { SolverEffort } from '../items/schema.js'
 import { log } from '../util/logger.js'
 import { createAgentAdapter } from './agent-adapter.js'
 import type { SolverAgent } from './agent.js'
@@ -10,14 +11,18 @@ export async function invokeAgent(
 	worktreePath: string,
 	prompt: string,
 	solver: HelmConfig['solver'],
+	effort?: SolverEffort,
 	signal?: AbortSignal,
 	outputLogPath?: string,
 ): Promise<InvokeResult> {
 	const agentAdapter = createAgentAdapter(solver)
-	const invocation = agentAdapter.buildHeadlessInvocation()
+	const invocation = agentAdapter.buildHeadlessInvocation(effort)
 	const displayName = agentAdapter.label
 
-	log.info('invoker', `Spawning ${displayName} in ${worktreePath}`, { model: solver.model ?? 'default' })
+	log.info('invoker', `Spawning ${displayName} in ${worktreePath}`, {
+		model: solver.model ?? 'default',
+		effort: effort ?? 'default',
+	})
 
 	const result = await spawnClaude({
 		command: invocation.command,

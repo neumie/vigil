@@ -108,7 +108,14 @@ export class DefaultSolver implements Solver {
 		log.info('solver', `Invoking ${agentAdapter.label} in ${worktreePath}`)
 		let invokeResult: InvokeResult
 		try {
-			invokeResult = await invokeAgent(worktreePath, solverPrompt, solverConfig, signal, outputLogPath)
+			invokeResult = await invokeAgent(
+				worktreePath,
+				solverPrompt,
+				solverConfig,
+				params.solverEffort,
+				signal,
+				outputLogPath,
+			)
 		} catch (err) {
 			if (isCancellation(err)) throw err
 			throw phaseError('solve', `${agentAdapter.label} invocation failed: ${err instanceof Error ? err.message : err}`)

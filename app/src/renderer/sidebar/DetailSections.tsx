@@ -224,8 +224,9 @@ export function SetupSection({
 		...(selection.agent === 'claude' ? [{ value: 'max', label: EFFORT_LABEL.max }] : []),
 	]
 	return (
-		<Card label="Run setup">
+		<Card label="Execution setup">
 			<p className="run-setup-summary">{selectionSummary(selection)}</p>
+			<p className="run-caption">Applied to Start agent and Start loop.</p>
 			<Disclosure label="Change setup" hideLabel="Hide setup">
 				<div className="run-setup">
 					<div>
@@ -275,7 +276,6 @@ export function SetupSection({
 							onChange={effort => onDraftChange({ ...draft, effort: (effort || null) as RunSelectionDraft['effort'] })}
 							options={effortOptions}
 						/>
-						<p className="run-caption">Used by Start loop.</p>
 					</div>
 					<div>
 						<div className="run-field-head">
@@ -300,7 +300,7 @@ export function SetupSection({
 							]}
 						/>
 						{selection.workspace === 'main' && (
-							<p className="run-caption">Runs in the project’s checkout — shares your working tree.</p>
+							<p className="run-caption">Uses the project checkout; loops require a plan prepared there.</p>
 						)}
 					</div>
 				</div>

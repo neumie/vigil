@@ -561,6 +561,24 @@ test('Agent Adapter selects command shape, labels, interactive commands, and tim
 		args: ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', 'claude-opus-4'],
 		label: 'claude-invoker',
 	})
+	assert.deepEqual(claude.buildHeadlessInvocation('high'), {
+		command: 'claude',
+		args: [
+			'-p',
+			'--output-format',
+			'json',
+			'--dangerously-skip-permissions',
+			'--model',
+			'claude-opus-4',
+			'--effort',
+			'high',
+		],
+		label: 'claude-invoker',
+	})
+	assert.equal(
+		claude.buildInteractiveCommand('.helm-prompt.txt', '/tmp/work tree', 'max'),
+		"cd '/tmp/work tree' && 'claude' '--dangerously-skip-permissions' '--effort' 'max' '--model' 'claude-opus-4' \"$(cat '.helm-prompt.txt')\"",
+	)
 	assert.deepEqual(
 		claude.parseTimeline(
 			JSON.stringify([
@@ -586,10 +604,25 @@ test('Agent Adapter selects command shape, labels, interactive commands, and tim
 		],
 		label: 'codex-invoker',
 	})
+	assert.deepEqual(codex.buildHeadlessInvocation('xhigh'), {
+		command: 'codex',
+		args: [
+			'exec',
+			'--dangerously-bypass-approvals-and-sandbox',
+			'--sandbox',
+			'danger-full-access',
+			'-',
+			'--model',
+			'gpt-5',
+			'--config',
+			'model_reasoning_effort="xhigh"',
+		],
+		label: 'codex-invoker',
+	})
 	assert.deepEqual(codex.parseTimeline('codex raw output'), [])
 	assert.equal(
-		codex.buildInteractiveCommand('docs/plans/demo/.planning-prompt.txt', '/tmp/work tree'),
-		"cd '/tmp/work tree' && 'codex' '--dangerously-bypass-approvals-and-sandbox' '--sandbox' 'danger-full-access' '--model' 'gpt-5' \"$(cat 'docs/plans/demo/.planning-prompt.txt')\"",
+		codex.buildInteractiveCommand('docs/plans/demo/.planning-prompt.txt', '/tmp/work tree', 'xhigh'),
+		"cd '/tmp/work tree' && 'codex' '--dangerously-bypass-approvals-and-sandbox' '--sandbox' 'danger-full-access' '--config' 'model_reasoning_effort=\"xhigh\"' '--model' 'gpt-5' \"$(cat 'docs/plans/demo/.planning-prompt.txt')\"",
 	)
 })
 
@@ -2077,6 +2110,50 @@ test('processLoopItem uses the current planned-Item selection instead of stale f
 	})
 })
 
+test('processLoopItem runs a loop in Main when the plan was prepared there', async () => {
+	await withTempDb(async db => {
+		const repoPath = mkdtempSync(join(tmpdir(), 'helm-loop-main-workspace-'))
+		const mainConfig: HelmConfig = {
+			...config,
+			projects: [{ ...config.projects[0], repoPath }],
+			solver: { ...config.solver, workspace: 'main' },
+		}
+		const commands = new ItemCommands(db.items, mainConfig)
+		const item = commands.createSolveItem({
+			title: 'Run planned loop in Main',
+			projectSlug: 'helm',
+			prompt: 'Implement the plan.',
+		})
+		const planDirName = 'main-loop-plan'
+		const workspace = new PlanWorkspace(repoPath, planDirName)
+		workspace.ensureDir()
+		writeFileSync(join(workspace.dir, 'spec.md'), '# Main plan', 'utf-8')
+		recordPreparedPlan(commands, item.id, {
+			worktreePath: repoPath,
+			branchName: null,
+			planDirName,
+			spawner: 'default',
+		})
+		commands.setSolveItemWorkspace(item.id, 'main')
+		commands.setSolveExecution(item.id, {
+			mode: 'loop',
+			prdPath: `${workspace.rel.dir}/spec.md`,
+			options: { mode: 'afk', iterations: 2 },
+		})
+		commands.setItemStatus(item.id, 'ready')
+		const runner = new FakeLoopRunner()
+
+		try {
+			await processLoopItem(item.id, mainConfig, db, runner)
+			assert.equal(runner.calls.length, 1)
+			assert.equal(runner.calls[0]?.worktreePath, repoPath)
+			assert.equal(db.items.get(item.id)?.status, 'review')
+		} finally {
+			rmSync(repoPath, { recursive: true, force: true })
+		}
+	})
+})
+
 test('processLoopItem records loop runner failures through ItemCommands', async () => {
 	await withTempDb(async db => {
 		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-loop-fail-worktree-'))
@@ -2329,7 +2406,7 @@ test('solve Items display the immutable prompt snapshot captured before invocati
 	})
 })
 
-test('processSolveItem uses solve Item selected solver agent', async () => {
+test('processSolveItem uses the selected agent and effort', async () => {
 	await withTempDb(async db => {
 		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-item-agent-'))
 		const item = db.items.create({
@@ -2339,7 +2416,7 @@ test('processSolveItem uses solve Item selected solver agent', async () => {
 			title: 'Run with Codex',
 			source: null,
 			baseRef: 'main',
-			payload: { kind: 'solve', prompt: 'Use selected agent.', solverAgent: 'codex' },
+			payload: { kind: 'solve', prompt: 'Use selected agent.', solverAgent: 'codex', solverEffort: 'xhigh' },
 		})
 		const solver = new FakeSolveSolver(worktreeRoot)
 
@@ -2347,6 +2424,7 @@ test('processSolveItem uses solve Item selected solver agent', async () => {
 			await processSolveItem(item.id, config, db, provider, solver)
 
 			assert.equal(solver.calls[0].solverConfig.agent, 'codex')
+			assert.equal(solver.calls[0].solverEffort, 'xhigh')
 		} finally {
 			rmSync(worktreeRoot, { recursive: true, force: true })
 		}
@@ -4326,6 +4404,106 @@ test('server starts a planned solve as a loop using its existing plan artifact',
 			assert.equal(payload.execution.options?.iterations, 10)
 			assert.equal(payload.execution.options?.provider, config.solver.agent)
 			assert.equal(payload.execution.options?.model, config.solver.model)
+		} finally {
+			rmSync(worktreePath, { recursive: true, force: true })
+		}
+	})
+})
+
+test('server starts a planned loop in Main when planning was prepared there', async () => {
+	await withTempDb(async db => {
+		const repoPath = mkdtempSync(join(tmpdir(), 'helm-api-loop-main-'))
+		const mainConfig: HelmConfig = {
+			...config,
+			projects: [{ ...config.projects[0], repoPath }],
+			solver: { ...config.solver, workspace: 'main' },
+		}
+		const commands = new ItemCommands(db.items, mainConfig)
+		const item = commands.createSolveItem({ title: 'Main planned loop', projectSlug: 'helm', prompt: 'Implement it.' })
+		const planDirName = '2026-07-15-main-planned-loop'
+		const workspace = new PlanWorkspace(repoPath, planDirName)
+		workspace.ensureDir()
+		writeFileSync(join(workspace.dir, 'spec.md'), '# Main plan', 'utf-8')
+		recordPreparedPlan(commands, item.id, {
+			worktreePath: repoPath,
+			branchName: null,
+			planDirName,
+			spawner: 'default',
+		})
+		const routeQueue = {
+			...queue,
+			processOneItem: (id: string) => {
+				commands.startItem(id)
+				return true
+			},
+		}
+		const api = apiRoutes(
+			mainConfig,
+			'helm.config.json',
+			db,
+			routeQueue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+		)
+
+		try {
+			const res = await api.request(`/items/${item.id}/start`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ executionMode: 'loop', solverWorkspace: 'main' }),
+			})
+			assert.equal(res.status, 200)
+			const payload = solvePayload(db, item.id)
+			assert.equal(payload.solverWorkspace, 'main')
+			assert.equal(payload.execution?.mode, 'loop')
+			if (payload.execution?.mode !== 'loop') throw new Error('Expected loop execution payload')
+			assert.equal(payload.execution.prdPath, `${workspace.rel.dir}/spec.md`)
+		} finally {
+			rmSync(repoPath, { recursive: true, force: true })
+		}
+	})
+})
+
+test('planned loop requires re-planning before switching a Worktree plan to Main', async () => {
+	await withTempDb(async db => {
+		const worktreePath = mkdtempSync(join(tmpdir(), 'helm-api-loop-main-replan-'))
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Switch loop to Main',
+			projectSlug: 'helm',
+			prompt: 'Implement it.',
+		})
+		const planDirName = '2026-07-15-loop-main-replan'
+		const workspace = new PlanWorkspace(worktreePath, planDirName)
+		workspace.ensureDir()
+		writeFileSync(join(workspace.dir, 'spec.md'), '# Plan', 'utf-8')
+		recordPreparedPlan(commands, item.id, {
+			worktreePath,
+			branchName: 'helm/item/loop-main-replan',
+			planDirName,
+			spawner: 'default',
+		})
+		const api = apiRoutes(
+			config,
+			'helm.config.json',
+			db,
+			queue as never,
+			poller as never,
+			provider as never,
+			spawner as never,
+			fakeEnricher as never,
+		)
+
+		try {
+			const res = await api.request(`/items/${item.id}/start`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ executionMode: 'loop', solverWorkspace: 'main' }),
+			})
+			assert.equal(res.status, 400)
+			assert.match(((await res.json()) as { error: string }).error, /Re-plan with Workspace set to Main/)
 		} finally {
 			rmSync(worktreePath, { recursive: true, force: true })
 		}

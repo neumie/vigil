@@ -205,7 +205,7 @@ export class ItemCommands {
 		return this.store.updatePayload(id, { ...item.payload, execution })
 	}
 
-	/** Per-item loop reasoning effort; null clears it back to the agent default. */
+	/** Per-item execution effort; null clears it back to the agent default. */
 	setSolveItemEffort(id: string, solverEffort: SolverEffort | null): ItemRecord {
 		const item = this.requireItem(id)
 		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {

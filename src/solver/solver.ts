@@ -1,4 +1,5 @@
 import type { HelmConfig, ProjectConfig } from '../config.js'
+import type { SolverEffort } from '../items/schema.js'
 import type { TaskContext } from '../providers/provider.js'
 import type { ClaudeEvent } from '../types.js'
 import type { SolverWorkspace } from './workspace.js'
@@ -23,6 +24,8 @@ export interface SolveParams {
 	taskId: string
 	taskTitle: string
 	solverConfig: HelmConfig['solver']
+	/** Per-Item reasoning effort applied by both direct agent and loop execution. */
+	solverEffort?: SolverEffort
 	/**
 	 * Execution workspace for this run (effective per-item value; defaults to
 	 * 'worktree'). In 'main' mode the solver runs the agent DIRECTLY in the

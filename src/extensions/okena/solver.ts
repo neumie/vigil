@@ -93,7 +93,7 @@ export class OkenaSolver implements Solver {
 		params.onPromptSnapshot?.(solverPrompt)
 		writeFileSync(promptFile, solverPrompt, 'utf-8')
 
-		const command = buildInteractiveAgentCommand(solverConfig, '.helm-prompt.txt', worktreePath)
+		const command = buildInteractiveAgentCommand(solverConfig, '.helm-prompt.txt', worktreePath, params.solverEffort)
 		const agentLabel = agentLabelFromConfig(solverConfig)
 		log.info('okena', `Running ${agentLabel} in terminal ${terminalId}`)
 		try {

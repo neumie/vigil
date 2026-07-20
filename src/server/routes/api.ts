@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -780,15 +781,25 @@ export function apiRoutes(
 				return c.json({ error: 'Planned Items require executionMode: agent or loop' }, 400)
 			}
 			if (requested === 'loop') {
-				if ((selectedItem.payload.solverWorkspace ?? config.solver.workspace) === 'main') {
-					return c.json({ error: 'Loops require an isolated worktree; switch Workspace to Worktree.' }, 400)
+				const workspaceMode = selectedItem.payload.solverWorkspace ?? config.solver.workspace ?? 'worktree'
+				const projectConfig = config.projects.find(project => project.slug === selectedItem.projectSlug)
+				if (!projectConfig) return c.json({ error: `Unknown project slug: ${selectedItem.projectSlug}` }, 400)
+				if (!selectedItem.planDirName || !selectedItem.worktreePath || !existsSync(selectedItem.worktreePath)) {
+					return c.json({ error: 'Planned workspace is missing. Re-plan the Item before starting a loop.' }, 400)
 				}
-				if (!selectedItem.worktreePath || !selectedItem.planDirName || !existsSync(selectedItem.worktreePath)) {
-					return c.json({ error: 'Planned worktree is missing. Re-plan the Item before starting a loop.' }, 400)
+				if (workspaceMode === 'main' && resolve(selectedItem.worktreePath) !== resolve(projectConfig.repoPath)) {
+					return c.json(
+						{
+							error:
+								'This plan was prepared in a Worktree. Re-plan with Workspace set to Main before starting a loop in Main.',
+						},
+						400,
+					)
 				}
+				const loopWorkspacePath = workspaceMode === 'main' ? projectConfig.repoPath : selectedItem.worktreePath
 				let prdPath: string
 				try {
-					prdPath = new PlanWorkspace(selectedItem.worktreePath, selectedItem.planDirName).loopArtifactPath()
+					prdPath = new PlanWorkspace(loopWorkspacePath, selectedItem.planDirName).loopArtifactPath()
 				} catch (err) {
 					return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
 				}

@@ -24,8 +24,8 @@ export const workModeSchema = z.enum(['agent', 'manual'])
 
 export const runOutcomeSchema = z.enum(['ok', 'errored', 'no_result', 'cancelled'])
 
-// Per-Item reasoning effort for Almanac loop execution. `max` is Claude-only
-// in the UI; the shared values work for both Claude and Codex.
+// Per-Item reasoning effort for direct agent and Almanac loop execution.
+// `max` is Claude-only in the UI; shared values work for Claude and Codex.
 export const solverEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 // Pre-solve intent triage verdict for a source task.
@@ -135,7 +135,7 @@ export const solveItemPayloadSchema = z
 		// Per-item model override (extension quick-switch / action routes); free
 		// string passed to the agent CLI's --model, wins over config.solver.model.
 		solverModel: z.string().min(1).max(100).optional(),
-		// Per-item reasoning effort for Start loop; omitted = agent default.
+		// Per-item reasoning effort for Start agent and Start loop; omitted = agent default.
 		solverEffort: solverEffortSchema.optional(),
 		// Per-item execution workspace override; wins over config.solver.workspace.
 		// 'main' runs the agent directly in the project's canonical checkout.

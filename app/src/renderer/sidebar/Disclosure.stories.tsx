@@ -45,12 +45,13 @@ export const Open: Story = {
 	),
 }
 
-/** A summary readable at rest above the disclosure (run setup): the current
+/** A summary readable at rest above the disclosure (execution setup): the current
  *  value costs zero clicks; the controls stay one snap away. */
 export const WithSummaryAtRest: Story = {
 	render: () => (
-		<Card label="Run setup">
+		<Card label="Execution setup">
 			<p className="run-setup-summary">Claude Code · Default model · Worktree</p>
+			<p className="run-caption">Applied to Start agent and Start loop.</p>
 			<Disclosure label="Change setup" hideLabel="Hide setup">
 				<p className="section-description">The four run-selection fields render here when open.</p>
 			</Disclosure>
