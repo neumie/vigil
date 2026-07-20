@@ -18,6 +18,7 @@ type NormalizeHelmModule = typeof import('../app/src/normalize-helm.ts')
 type SharedHelmModule = typeof import('../app/src/shared-helm.ts')
 const {
 	colorForProject,
+	executionLogLabel,
 	groupItemsByProject,
 	logMessagesNewestFirst,
 	okenaActionLabel,
@@ -33,6 +34,11 @@ type DashboardItem = import('../app/src/shared-helm.ts').DashboardItem
 test('run log messages are newest-first and omit blank lines', () => {
 	assert.deepEqual(logMessagesNewestFirst('first\n\nsecond\r\nthird\n'), ['third', 'second', 'first'])
 	assert.deepEqual(logMessagesNewestFirst(''), [])
+})
+
+test('execution logs name the producer', () => {
+	assert.equal(executionLogLabel('loop'), 'Loop log')
+	assert.equal(executionLogLabel('solve'), 'Agent log')
 })
 
 test('Okena workspace buttons state their effect without a separate caption', () => {

@@ -119,7 +119,7 @@ export const EvidenceGroups: Story = {
 			>
 				{false}
 			</Card>
-			<Card label="Log">
+			<Card label="Loop log">
 				<section className="log-well">
 					{'[12:05:19] solver-result.json written\n[12:04:40] tests: 12 passed\n[12:03:02] edited src/auth/login.ts'}
 				</section>

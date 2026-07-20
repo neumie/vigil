@@ -5,7 +5,14 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AppConfig, Assessment, DashboardItem } from '../../shared-helm'
-import { CHIP_CLASS, VERDICT_META, logMessagesNewestFirst, openExternalUrl, relativeTime } from './model'
+import {
+	CHIP_CLASS,
+	VERDICT_META,
+	executionLogLabel,
+	logMessagesNewestFirst,
+	openExternalUrl,
+	relativeTime,
+} from './model'
 import {
 	EFFORT_LABEL,
 	type RunSelectionDraft,
@@ -171,9 +178,10 @@ export function LogSection({
 	const log = item.runObservation.log
 	const messages = useMemo(() => logMessagesNewestFirst(log.content), [log.content])
 	if (!log.available || messages.length === 0) return null
+	const label = executionLogLabel(item.executionMode)
 	return (
-		<Card label="Log">
-			<EvidenceWell label="Run log">
+		<Card label={label}>
+			<EvidenceWell label={label}>
 				{messages.join('\n')}
 				{log.truncated ? '\n… older log output omitted' : ''}
 			</EvidenceWell>

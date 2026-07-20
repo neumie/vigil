@@ -262,6 +262,10 @@ export function logMessagesNewestFirst(content: string): string[] {
 		.reverse()
 }
 
+export function executionLogLabel(mode: DashboardItem['executionMode']): 'Loop log' | 'Agent log' {
+	return mode === 'loop' ? 'Loop log' : 'Agent log'
+}
+
 /** Resolve possibly-relative daemon URLs (ingested attachments) to absolute. */
 export function absoluteUrl(url: string, daemonUrl: string): string | null {
 	try {
