@@ -75,10 +75,13 @@ export const NavRows: Story = {
 	),
 }
 
-export const HeaderWithTrailing: Story = {
+export const ItemDestinations: Story = {
 	render: () => (
 		<>
-			<Card label="Plan" trailing={<Chip tone="gray">2 of 5 complete</Chip>} />
+			<div className="detail-identity-meta">
+				<Chip tone="blue">Active</Chip>
+				<span className="detail-ticket-progress">2 of 5 complete</span>
+			</div>
 			<Card flush>
 				<ActionRow nav label="Task" value="Contember #4821" onClick={noop} />
 				<ActionRow nav label="Plan documents" value="2 notes" onClick={noop} />

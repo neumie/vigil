@@ -10,7 +10,6 @@ export type DetailSection =
 	| 'log'
 	| 'input'
 	| 'setup'
-	| 'plan'
 	| 'source'
 	| 'delivery'
 
@@ -82,55 +81,46 @@ export function detailState(item: DashboardItem): {
 			return {
 				chipTone: chipTone(item),
 				attention,
-				sections: sections('intent', 'source', 'setup', 'plan', 'activity', 'log', 'input'),
+				sections: sections('intent', 'source', 'setup', 'activity', 'log', 'input'),
 			}
 		case 'ready':
 			return {
 				chipTone: chipTone(item),
 				attention,
-				sections: sections('queue', 'setup', 'plan', 'source', 'activity', 'log', 'input'),
+				sections: sections('queue', 'setup', 'source', 'activity', 'log', 'input'),
 			}
 		case 'active':
 			return {
 				chipTone: chipTone(item),
 				attention,
 				sections: item.planStatus
-					? sections('plan', 'setup', 'source', 'activity', 'log', 'input')
-					: sections('plan', 'source', 'activity', 'log', 'input'),
+					? sections('setup', 'source', 'activity', 'log', 'input')
+					: sections('source', 'activity', 'log', 'input'),
 			}
 		case 'running':
 			return {
 				chipTone: chipTone(item),
 				attention,
-				sections: sections('activity', 'log', 'input', 'plan', 'source'),
+				sections: sections('activity', 'log', 'input', 'source'),
 			}
 		case 'review':
 			return {
 				chipTone: chipTone(item),
 				attention,
-				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'plan', 'source'),
+				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'source'),
 			}
 		case 'failed':
 			return {
 				chipTone: chipTone(item),
 				attention,
 				// The log is the diagnostic — open, directly beneath the failure text.
-				sections: sections(
-					'failure',
-					{ kind: 'log', open: true },
-					'activity',
-					'outcome',
-					'setup',
-					'input',
-					'plan',
-					'source',
-				),
+				sections: sections('failure', { kind: 'log', open: true }, 'activity', 'outcome', 'setup', 'input', 'source'),
 			}
 		case 'done':
 			return {
 				chipTone: chipTone(item),
 				attention,
-				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'plan', 'source'),
+				sections: sections('outcome', 'delivery', 'activity', 'log', 'input', 'source'),
 			}
 		case 'cancelled':
 			// Outcome/input stay reachable: a cancelled run may hold a partial
@@ -138,7 +128,7 @@ export function detailState(item: DashboardItem): {
 			return {
 				chipTone: chipTone(item),
 				attention: null,
-				sections: sections('failure', 'outcome', 'activity', 'log', 'input', 'plan', 'source'),
+				sections: sections('failure', 'outcome', 'activity', 'log', 'input', 'source'),
 			}
 		default:
 			throw new Error(`Unsupported item status: ${item.status}`)

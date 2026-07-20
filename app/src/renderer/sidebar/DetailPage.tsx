@@ -12,14 +12,13 @@ import {
 	IntentCard,
 	LogSection,
 	OutcomeCard,
-	PlanSection,
 	ResourceRows,
 	SetupSection,
 } from './DetailSections'
 import { lifecycleActionPlan, lifecycleActionPresentation, manualStatusOptions } from './detail-actions'
 import { useItemDetail } from './detail-data'
 import { detailState } from './detail-state'
-import { colorForProject, itemTitle, relativeTime, useNow } from './model'
+import { colorForProject, itemTitle, planTicketCounts, relativeTime, useNow } from './model'
 import { type RunSelectionDraft, buildPlanBody, buildRunBody } from './run-selection'
 import {
 	Banner,
@@ -75,6 +74,7 @@ export function DetailPage(props: DetailPageProps) {
 		: effectiveWorkspace === 'main'
 			? 'Inspecting main checkout…'
 			: 'Inspecting workspace…'
+	const ticketProgress = item.plannedAt && item.planStatus ? planTicketCounts(item.planStatus) : null
 	const disabled = busy !== null
 	const run = async (
 		label: string,
@@ -276,8 +276,6 @@ export function DetailPage(props: DetailPageProps) {
 						onDraftChange={onDraftChange}
 					/>
 				)
-			case 'plan':
-				return <PlanSection key="plan" item={item} />
 			case 'source':
 				return (
 					<ResourceRows
@@ -318,6 +316,11 @@ export function DetailPage(props: DetailPageProps) {
 						<ProjectColorText color={projectColor} className="detail-project">
 							{item.projectSlug}
 						</ProjectColorText>
+						{ticketProgress && ticketProgress.total > 0 ? (
+							<span className="detail-ticket-progress">
+								{ticketProgress.total - ticketProgress.open} of {ticketProgress.total} complete
+							</span>
+						) : null}
 						{item.workMode ? (
 							<span className={`detail-work-mode mode-${item.workMode}`}>
 								{GLYPH[item.workMode]}

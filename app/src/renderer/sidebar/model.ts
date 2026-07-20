@@ -30,8 +30,8 @@ export function colorForProject(config: AppConfig | null | undefined, slug: stri
 
 export type BucketKey = 'needs' | 'active' | 'queue' | 'inbox'
 
-/** The one local+GitHub ticket aggregation — hero copy and the detail's Plan
- *  group must never sum the buckets independently. */
+/** The one local+GitHub ticket aggregation — list labels and the detail
+ *  identity header must never sum the buckets independently. */
 export function planTicketCounts(status: NonNullable<DashboardItem['planStatus']>): {
 	total: number
 	open: number

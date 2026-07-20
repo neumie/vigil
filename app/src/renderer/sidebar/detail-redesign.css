@@ -48,6 +48,13 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.detail-ticket-progress {
+	flex: none;
+	font-size: calc(11px * var(--ui-scale));
+	font-weight: 600;
+	color: var(--text-1);
+	white-space: nowrap;
+}
 .detail-work-mode {
 	flex: none;
 	display: inline-flex;

@@ -5,14 +5,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AppConfig, Assessment, DashboardItem } from '../../shared-helm'
-import {
-	CHIP_CLASS,
-	VERDICT_META,
-	logMessagesNewestFirst,
-	openExternalUrl,
-	planTicketCounts,
-	relativeTime,
-} from './model'
+import { CHIP_CLASS, VERDICT_META, logMessagesNewestFirst, openExternalUrl, relativeTime } from './model'
 import {
 	EFFORT_LABEL,
 	type RunSelectionDraft,
@@ -332,20 +325,6 @@ export function SetupSection({
 				</div>
 			</Disclosure>
 		</Card>
-	)
-}
-
-/** Ticket progress is the Plan section's whole summary, so it lives in the
- *  header rather than consuming another fact row. */
-export function PlanSection({ item }: { item: DashboardItem }) {
-	if (!item.plannedAt || !item.planStatus) return null
-	const tickets = planTicketCounts(item.planStatus)
-	if (tickets.total === 0) return null
-	return (
-		<Card
-			label="Plan"
-			trailing={<Chip tone="gray">{`${tickets.total - tickets.open} of ${tickets.total} complete`}</Chip>}
-		/>
 	)
 }
 
