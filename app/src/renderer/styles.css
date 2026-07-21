@@ -305,6 +305,22 @@ body.tab-dragging .tab {
 	}
 }
 
+/* Optional visible copy breathes independently; the dots keep their own
+ * directional motion and never inherit this restrained text treatment. */
+.activity-indicator-label {
+	animation: activity-indicator-label-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes activity-indicator-label-breathe {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.76;
+	}
+}
+
 /* Terminal tabs add only placement; all indicator visuals stay reusable. */
 .tab-running {
 	margin-right: 2px;

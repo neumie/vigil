@@ -419,7 +419,8 @@ The shared loading/in-progress primitive (`ActivityIndicator` + `createActivityI
 - Shape: a compact six-dot Braille matrix, **2 columns × 3 rows**, each dot 2px with a 2px gap. It contributes no visible words by itself.
 - Color is monochrome: `--text-0` over the owning surface. The head is white/high-emphasis and a three-dot opacity tail fades toward the background, giving smooth direction without accent-color status jewelry.
 - Motion is clockwise: top-left → top-right → middle-right → bottom-right → bottom-left → middle-left. One dot advances every `--motion-state` interval (140ms), one 840ms cycle; opacity interpolates linearly between the head and tail. The global reduced-motion clamp applies.
-- Accessibility: `role="status"`, `aria-live="polite"`, and a caller-supplied state label (`Running`, `Loading Items`, etc.). Surfaces may render adjacent visible copy when the words matter; icon-only compact placements must still pass the label.
+- Accessibility: the semantic `<output>` status uses `aria-live="polite"` and a caller-supplied state label (`Running`, `Loading Items`, etc.). Surfaces may render adjacent visible copy when the words matter; icon-only compact placements must still pass the label.
+- Optional visible copy uses `.activity-indicator-label`: only the text breathes gently from 100% to 76% opacity over 1.8s; the dots retain their independent clockwise motion. Reduced-motion mode clamps the breath with every other animation.
 - Placement is owned by the caller. Terminal tabs put it before the title with 2px extra right margin; loading rows/buttons may choose their normal component gap. Never bake surface padding into the primitive.
 - **Don't** use the indicator for idle decoration, static status, or inferred activity. It means a process explicitly reported in-progress state.
 

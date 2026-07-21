@@ -35,7 +35,7 @@ export const WithVisibleLabel: Story = {
 	render: () => (
 		<>
 			<ActivityIndicator label="Loading Items" />
-			<span>Loading Items</span>
+			<span className="activity-indicator-label">Loading Items</span>
 		</>
 	),
 }

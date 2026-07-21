@@ -53,6 +53,10 @@ test('renderer wires explicit progress into visible, accessible tab state', () =
 	const renderer = readFileSync(new URL('../app/src/renderer/renderer.ts', import.meta.url), 'utf8')
 	const preload = readFileSync(new URL('../app/src/preload.ts', import.meta.url), 'utf8')
 	const component = readFileSync(new URL('../app/src/renderer/activity-indicator.tsx', import.meta.url), 'utf8')
+	const story = readFileSync(
+		new URL('../app/src/renderer/sidebar/ActivityIndicator.stories.tsx', import.meta.url),
+		'utf8',
+	)
 	const css = readFileSync(new URL('../app/src/renderer/styles.css', import.meta.url), 'utf8')
 	assert.ok(renderer.indexOf('tab.progressTracker.feed(data)') < renderer.indexOf('tab.outputGuard.write(output'))
 	assert.match(renderer, /createActivityIndicator\('Running'\)/)
@@ -67,5 +71,8 @@ test('renderer wires explicit progress into visible, accessible tab state', () =
 	assert.match(css, /\.activity-indicator-dot\s*\{[^}]*background:\s*var\(--text-0\)/s)
 	assert.match(css, /\.activity-indicator-dot:nth-child\(6\)/)
 	assert.match(css, /@keyframes activity-indicator-clockwise/)
+	assert.match(story, /className="activity-indicator-label"/)
+	assert.match(css, /\.activity-indicator-label\s*\{[^}]*animation:[^;}]*1\.8s/s)
+	assert.match(css, /@keyframes activity-indicator-label-breathe[\s\S]*opacity:\s*0\.76/)
 	assert.match(css, /\.tab-running\s*\{[^}]*margin-right:\s*2px/s)
 })
