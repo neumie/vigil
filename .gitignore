@@ -13,7 +13,7 @@ vigil.config.json
 .pi-subagents/
 docs/superpowers/
 logs/
-attachments/
+/attachments/
 .almanac/
 docs/plans/*/*.log
 *.tsbuildinfo
