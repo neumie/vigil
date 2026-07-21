@@ -1,4 +1,4 @@
-// Chips (§3.4) + status dots (§3.5). Chip text is sentence case, text-only;
+// Chip (§3.4) + dot (§3.5) primitives. Chip text is sentence case, text-only;
 // the verdict set comes from the one verdict→label/tone mapping (VERDICT_META).
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { AssessmentVerdict, DashboardTone, ItemStatus } from '../../shared-helm'
@@ -8,7 +8,7 @@ import { VERDICT_META, statusTone } from './model'
 import { Chip, GLYPH, StatusDot } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Chips & Dots',
+	title: 'Primitives/Chip and dot',
 }
 
 export default meta

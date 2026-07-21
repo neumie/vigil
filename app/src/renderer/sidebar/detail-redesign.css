@@ -82,13 +82,33 @@
 	color: var(--text-2);
 }
 .detail-disclosure {
-	min-height: 24px;
-	padding: 0 4px;
+	display: inline-flex;
+	align-self: flex-start;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-height: 28px;
+	padding: 0 8px;
 	border: 0;
-	background: none;
-	color: var(--accent);
+	border-radius: 6px;
+	background: var(--fill-subtle);
+	color: var(--text-1);
 	font: 600 calc(11px * var(--ui-scale)) var(--font-ui);
 	cursor: pointer;
+	transition: background-color 140ms ease-out, color 140ms ease-out;
+}
+.detail-disclosure:hover,
+.detail-disclosure[aria-expanded="true"] {
+	background: var(--fill-raised);
+	color: var(--text-0);
+}
+.disclosure-mark {
+	width: 8px;
+	color: var(--text-2);
+	font-size: calc(13px * var(--ui-scale));
+	font-weight: 500;
+	line-height: 1;
+	text-align: center;
 }
 /* Inline disclosure (§3.20): the revealed wrapper is layout-neutral — children
  * participate in the card's flex flow directly. Content snaps; never animate

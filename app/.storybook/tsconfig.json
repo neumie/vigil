@@ -1,5 +1,5 @@
 {
 	"extends": "../tsconfig.json",
-	"include": ["./*.ts", "../src/renderer/sidebar/**/*.stories.tsx"],
+	"include": ["./*.ts", "../src/renderer/**/*.stories.tsx", "../src/renderer/helm-window.d.ts"],
 	"exclude": []
 }

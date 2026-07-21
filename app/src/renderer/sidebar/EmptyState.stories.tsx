@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { EmptyState } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Empty state',
+	title: 'Primitives/Empty state',
 	decorators: [
 		story => <div style={{ width: 340, height: 320, display: 'flex', flexDirection: 'column' }}>{story()}</div>,
 	],

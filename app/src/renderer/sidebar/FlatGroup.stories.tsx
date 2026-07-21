@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ActionRow, Btn, Card, Disclosure, GLYPH, InfoRow } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Flat group',
+	title: 'Compositions/Flat group',
 	decorators: [
 		story => (
 			<div className="page-scroll" style={{ width: 340, overflow: 'visible' }}>
@@ -115,7 +115,10 @@ export const EvidenceGroups: Story = {
 				label="Activity"
 				trailing={
 					<button type="button" className="detail-disclosure" aria-expanded={false}>
-						Show history
+						<span>Show history</span>
+						<span className="disclosure-mark" aria-hidden="true">
+							+
+						</span>
 					</button>
 				}
 			>

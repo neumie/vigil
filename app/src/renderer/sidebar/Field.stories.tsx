@@ -1,11 +1,11 @@
-// Form fields (§3.7): inputs, textarea, select, toggle. Labels are the
+// Field primitives (§3.7): inputs, textarea, select, toggle. Labels are the
 // 12/500 sentence-case Label style (FieldLabel).
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { FieldLabel, SelectInput, TextArea, TextInput, Toggle } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Fields',
+	title: 'Primitives/Field',
 	decorators: [story => <div style={{ width: 340, display: 'flex', flexDirection: 'column', gap: 12 }}>{story()}</div>],
 }
 

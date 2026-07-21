@@ -10,6 +10,13 @@ import './preview.css'
 
 const preview: Preview = {
 	parameters: {
+		options: {
+			// Full review surfaces are the first thing a designer sees; lower-level
+			// inventories follow from composition down to primitive.
+			storySort: {
+				order: ['Views', ['Sidebar', 'Terminal workspace', 'Run context editor'], 'Compositions', 'Primitives', '*'],
+			},
+		},
 		// Canvas backgrounds mirror the app's background ladder (§2.1); the
 		// default matches the sidebar's --pane so components sit on the exact
 		// surface they ship on.

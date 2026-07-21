@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Card, Disclosure } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Disclosure',
+	title: 'Primitives/Disclosure',
 	decorators: [
 		story => (
 			<div className="page-scroll" style={{ width: 340, overflow: 'visible' }}>

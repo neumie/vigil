@@ -10,7 +10,7 @@ import { VERDICT_META, statusWord } from './model'
 import { Chip, GLYPH, IconBtn, ProjectColorText } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/List row',
+	title: 'Compositions/List row',
 	decorators: [
 		story => (
 			<div className="list-scroll" style={{ width: 340, overflow: 'visible' }}>

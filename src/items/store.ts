@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { TaskContext } from '../providers/provider.js'
+import type { RunContextDocument } from './run-context.js'
 import { itemRecordSchema } from './schema.js'
 import type {
 	Assessment,
@@ -128,6 +129,8 @@ export class ItemStore {
 			completedAt: null,
 			plannedAt: null,
 			planStatus: null,
+			runContext: null,
+			runContextRevision: 0,
 			updatedAt: now,
 			errorMessage: null,
 			errorPhase: null,
@@ -143,12 +146,12 @@ export class ItemStore {
 				`INSERT INTO items (
 					id, kind, status, work_mode, project_slug, title, display_name, assessment, source, captured_context, base_ref, spawner, group_id, payload,
 					worktree_path, branch_name, plan_dir_name, almanac_run_id,
-					created_at, queued_at, started_at, completed_at, planned_at, plan_status, updated_at,
+					created_at, queued_at, started_at, completed_at, planned_at, plan_status, run_context, run_context_revision, updated_at,
 					error_message, error_phase, result_summary, solve_input_snapshot, pr_url, run_outcome, deploy_state
 				) VALUES (
 					@id, @kind, @status, @workMode, @projectSlug, @title, @displayName, @assessment, @source, @capturedContext, @baseRef, @spawner, @groupId, @payload,
 					@worktreePath, @branchName, @planDirName, @almanacRunId,
-					@createdAt, @queuedAt, @startedAt, @completedAt, @plannedAt, @planStatus, @updatedAt,
+					@createdAt, @queuedAt, @startedAt, @completedAt, @plannedAt, @planStatus, @runContext, @runContextRevision, @updatedAt,
 					@errorMessage, @errorPhase, @resultSummary, @solveInputSnapshot, @prUrl, @runOutcome, @deployState
 				)`,
 			)
@@ -282,6 +285,27 @@ export class ItemStore {
 			.prepare('UPDATE items SET plan_status = ?, updated_at = ? WHERE id = ?')
 			.run(JSON.stringify(planStatus), updatedAt, id)
 		if (result.changes === 0) throw new Error(`Item not found: ${id}`)
+		const updated = this.get(id)
+		if (!updated) throw new Error(`Item not found: ${id}`)
+		return updated
+	}
+
+	/** Optimistic writer for the operator-owned run-context document. */
+	updateRunContext(id: string, runContext: RunContextDocument | null, expectedRevision: number): ItemRecord | null {
+		const current = this.get(id)
+		if (!current) throw new Error(`Item not found: ${id}`)
+		if (current.runContextRevision !== expectedRevision) return null
+		const runContextRevision = expectedRevision + 1
+		const updatedAt = new Date().toISOString()
+		validateItem({ ...current, runContext, runContextRevision, updatedAt })
+		const result = this.db
+			.prepare(
+				`UPDATE items
+				 SET run_context = ?, run_context_revision = ?, updated_at = ?
+				 WHERE id = ? AND run_context_revision = ?`,
+			)
+			.run(runContext ? JSON.stringify(runContext) : null, runContextRevision, updatedAt, id, expectedRevision)
+		if (result.changes === 0) return null
 		const updated = this.get(id)
 		if (!updated) throw new Error(`Item not found: ${id}`)
 		return updated
@@ -524,6 +548,8 @@ export class ItemStore {
 			completedAt: item.completedAt,
 			plannedAt: item.plannedAt,
 			planStatus: item.planStatus ? JSON.stringify(item.planStatus) : null,
+			runContext: item.runContext ? JSON.stringify(item.runContext) : null,
+			runContextRevision: item.runContextRevision,
 			updatedAt: item.updatedAt,
 			errorMessage: item.errorMessage,
 			errorPhase: item.errorPhase,
@@ -561,6 +587,8 @@ export class ItemStore {
 			completedAt: row.completed_at ?? null,
 			plannedAt: row.planned_at ?? null,
 			planStatus: readJson(row.plan_status, 'planStatus'),
+			runContext: readJson(row.run_context, 'runContext'),
+			runContextRevision: row.run_context_revision ?? 0,
 			updatedAt: row.updated_at,
 			errorMessage: row.error_message ?? null,
 			errorPhase: row.error_phase ?? null,

@@ -52,13 +52,14 @@ test('extension Item notices show almanac failure reasons as failures', () => {
 	)
 })
 
-test('extension remaps approve to start (run immediately), leaving other actions', () => {
+test('extension offers Queue and Start separately for Inbox Items', () => {
 	assert.deepEqual(
 		extensionItemActions([
 			{ id: 'approve', label: 'Approve', tone: 'primary' },
 			{ id: 'reject', label: 'Reject', tone: 'danger' },
 		]),
 		[
+			{ id: 'approve', label: 'Queue', tone: 'muted' },
 			{ id: 'start', label: 'Start', tone: 'primary' },
 			{ id: 'reject', label: 'Reject', tone: 'danger' },
 		],

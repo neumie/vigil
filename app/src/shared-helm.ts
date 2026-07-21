@@ -71,6 +71,32 @@ export interface SourceTask {
 	projectContext?: string
 }
 
+export interface RunContextDraft {
+	version: 1
+	blocks: Array<Record<string, unknown>>
+	markdown: string
+}
+
+export interface RunContextDocument extends RunContextDraft {
+	updatedAt: string
+}
+
+export interface RunContextLoad {
+	item: { id: string; title: string; projectSlug: string; status: ItemStatus }
+	source: SourceTask
+	document: RunContextDocument | null
+	revision: number
+}
+
+export interface RunContextSave {
+	document: RunContextDocument | null
+	revision: number
+}
+
+export interface RunContextReset extends RunContextSave {
+	source: SourceTask
+}
+
 export interface DashboardAction {
 	id: DashboardActionId
 	label: string
@@ -169,6 +195,8 @@ export interface DashboardItem {
 	source: { provider: string; externalId: string; url?: string } | null
 	/** True for ingested (captured-context) Items — e.g. an email. */
 	captured: boolean
+	/** Operator-authored narrative/comments replace the source for future runs. */
+	runContextEdited: boolean
 	/** Single-item routes only: the "create source task" action applies. */
 	canCreateSourceTask?: boolean
 	baseRef: string

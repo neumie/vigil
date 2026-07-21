@@ -1,6 +1,13 @@
 // IPC surface shared by preload (implements) and renderer (consumes as `window.helm`).
 
-import type { DaemonApi } from './shared-helm'
+import type {
+	DaemonApi,
+	HelmResult,
+	RunContextDraft,
+	RunContextLoad,
+	RunContextReset,
+	RunContextSave,
+} from './shared-helm'
 
 export interface PtySpawnResult {
 	id: number
@@ -82,8 +89,9 @@ export interface ConfigApi {
  * `background` parks one running + one exited session and opens the popover;
  * `background-strip` parks them but keeps the popover closed (strip + badge shot).
  * `background-park` parks the ACTIVE tab (after any --term-cmd output landed) so
- * a relaunch can verify parked snapshot restore; `background-restore` restores
- * the first startup-parked session back to a tab (popover row click analog).
+ * a relaunch can verify parked snapshot restore; `background-open` opens the
+ * first parked holder while keeping it backgrounded; `background-restore` moves
+ * the first startup-parked session back to a tab.
  * `rename-edit` opens the inline tab-rename editor on the active tab (input
  * styling + select-all shot); `rename` commits the fixed pin "deploy watch" on
  * the active tab through the same commit path (relaunch verifies pin restore).
@@ -105,6 +113,7 @@ export type UiPreview =
 	| 'background'
 	| 'background-strip'
 	| 'background-park'
+	| 'background-open'
 	| 'background-restore'
 	| 'rename'
 	| 'rename-edit'
@@ -144,6 +153,21 @@ export interface NavApi {
 	onGo(listener: (direction: 'back' | 'forward') => void): () => void
 }
 
+export interface RunContextWindowApi {
+	open(itemId: string): Promise<void>
+}
+
+/** Restricted preload surface for the dedicated editor window. */
+export interface RunContextEditorApi {
+	load(): Promise<HelmResult<RunContextLoad>>
+	save(revision: number, document: RunContextDraft): Promise<HelmResult<RunContextSave>>
+	reset(revision: number): Promise<HelmResult<RunContextReset>>
+	setDirty(dirty: boolean): void
+	close(discard: boolean): void
+	cancelClose(): void
+	onCloseRequested(listener: () => void): () => void
+}
+
 export interface HelmApi {
 	pty: PtyApi
 	sessions: SessionsApi
@@ -157,6 +181,8 @@ export interface HelmApi {
 	nav: NavApi
 	/** Daemon data bridge: main-process poller + HTTP command proxy (src/helm-bridge.ts). */
 	daemon: DaemonApi
+	/** Opens/focuses the full-size external editor for one Item. */
+	runContext: RunContextWindowApi
 	/** Host OS, for platform-specific keybindings/layout ('darwin' on macOS). */
 	platform: NodeJS.Platform
 	/** Set only on `--ui-preview=…` screenshot runs; null in normal use. */

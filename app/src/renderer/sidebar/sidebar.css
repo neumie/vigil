@@ -1102,6 +1102,21 @@ button.banner {
 	color: var(--text-1);
 	background: var(--fill-subtle);
 }
+.banner-actionable {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 12px;
+}
+.banner-actionable-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+.banner-action {
+	align-self: start;
+}
 /* Banner heading: Label type weight in the banner's tone color (§3.12). */
 .banner-label {
 	font-size: calc(12px * var(--ui-scale));
@@ -1264,27 +1279,6 @@ button.banner {
 	min-height: 56px;
 	flex-direction: column;
 	align-items: stretch;
-}
-
-/* Settings' pending-restart notice: §3.12 info banner + one quiet action. */
-.restart-notice {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 12px;
-	border-radius: 6px;
-	background: var(--fill-subtle);
-	color: var(--text-1);
-	font-size: calc(12px * var(--ui-scale));
-	line-height: 1.5;
-	letter-spacing: -0.01em;
-	word-break: break-word;
-}
-.restart-notice-text {
-	flex: 1;
-}
-.restart-notice .btn {
-	flex: none;
 }
 
 /* ---------- plan & task sub-pages ---------- */

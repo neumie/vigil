@@ -24,6 +24,7 @@ const UI_PREVIEWS: readonly UiPreview[] = [
 	'background',
 	'background-strip',
 	'background-park',
+	'background-open',
 	'background-restore',
 	'rename',
 	'rename-edit',
@@ -119,6 +120,9 @@ const api: HelmApi = {
 		pauseToggle: () => invokeHelm('daemon:pauseToggle'),
 		poll: () => invokeHelm('daemon:poll'),
 	} satisfies DaemonApi,
+	runContext: {
+		open: itemId => ipcRenderer.invoke('run-context:open', itemId) as Promise<void>,
+	},
 	tabs: {
 		onNew: listener => subscribe('tab:new', listener),
 		onClose: listener => subscribe('tab:close', listener),

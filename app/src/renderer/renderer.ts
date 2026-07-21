@@ -4,7 +4,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
-import type { HelmApi, RestoredSession } from '../shared'
+import type { RestoredSession } from '../shared'
 import { createActivityIndicator, setActivityIndicatorState } from './activity-indicator'
 import { appearance } from './appearance'
 import { mountSidebar } from './sidebar/SidebarRoot'
@@ -24,12 +24,6 @@ import {
 	shouldMarkTerminalCompletion,
 } from './terminal-progress'
 import { showToast } from './toast'
-
-declare global {
-	interface Window {
-		helm: HelmApi
-	}
-}
 
 const helm = window.helm
 
@@ -118,11 +112,6 @@ interface Tab {
 	parked: boolean
 	/** Exit code when the pty ended while parked — the popover row stays, state "Exited". */
 	exitCode: number | null
-	/** Output arrived since parking — quiet dot on the popover row; cleared on restore/exit. */
-	activity: boolean
-	/** Ignore output before this timestamp: a dtach reattach repaints on spawn (-r winch),
-	 *  and that redraw is not "new output since parking". */
-	activityMuteUntil: number
 	/** Current APPLIED normalized title (label when unpinned; popover/toast text). */
 	title: string
 	/** Raw form of `title` — the tooltip shows it when normalization changed it. */
@@ -227,6 +216,7 @@ function renderTabAgentState(tab: Tab): void {
 		setActivityIndicatorState(tab.runningEl, 'progress', 'Running')
 	}
 	renderTabLabel(tab)
+	if (tab.parked) updateBackgroundUi()
 }
 
 function setTabAgentAttention(tab: Tab, attention: boolean): void {
@@ -610,8 +600,8 @@ function unfreezeTerminalFrame(tab: Tab): void {
 function activate(tab: Tab): void {
 	activeTab = tab
 	clearTabAgentAttention(tab)
+	for (const t of [...tabs, ...parked]) t.holder.classList.toggle('active', t === tab)
 	for (const t of tabs) {
-		t.holder.classList.toggle('active', t === tab)
 		t.tabButton.classList.toggle('active', t === tab)
 		t.tabButton.setAttribute('aria-selected', String(t === tab))
 	}
@@ -635,7 +625,8 @@ window.addEventListener('focus', () => {
 
 function cycleTab(delta: number): void {
 	if (tabs.length === 0) return
-	const current = activeTab ? tabs.indexOf(activeTab) : 0
+	const activeIndex = activeTab ? tabs.indexOf(activeTab) : -1
+	const current = activeIndex >= 0 ? activeIndex : delta > 0 ? -1 : 0
 	const next = tabs[(current + delta + tabs.length) % tabs.length]
 	if (next && next !== activeTab) activate(next)
 }
@@ -694,16 +685,12 @@ function closeTab(tab: Tab): void {
 // keeps landing in scrollback. The strip-right stack button (visible only when
 // parked.length > 0) opens the popover listing them.
 
-/** dtach's `-r winch` repaint window after a reattach spawn — not "new output". */
-const REATTACH_MUTE_MS = 2000
-
 function parkTab(tab: Tab): void {
 	if (tab.closed || tab.parked) return
 	const index = tabs.indexOf(tab)
 	if (index === -1) return
 	tabs.splice(index, 1)
 	tab.parked = true
-	tab.activity = false
 	parked.push(tab)
 	tab.tabButton.remove()
 	tab.holder.classList.remove('active')
@@ -721,13 +708,20 @@ function parkTab(tab: Tab): void {
 	updateBackgroundUi()
 }
 
-/** Popover row click: back to the strip end, focused and refit. */
+/** Open the terminal pane without changing its persisted background ownership. */
+function openParked(tab: Tab): void {
+	if (!parked.includes(tab) || tab.closed) return
+	closeBackgroundPopover()
+	activate(tab)
+	updateBackgroundUi()
+}
+
+/** Move back to the strip end, focused and refit. */
 function restoreParked(tab: Tab): void {
 	const index = parked.indexOf(tab)
 	if (index === -1) return
 	parked.splice(index, 1)
 	tab.parked = false
-	tab.activity = false // restore clears the activity dot
 	tabs.push(tab)
 	tabsEl.appendChild(tab.tabButton)
 	if (tab.sessionId) helm.sessions.setParked(tab.sessionId, false)
@@ -778,6 +772,12 @@ function killParkedTab(tab: Tab): void {
 	// Exited rows (ptyId null) just remove — the session is already gone.
 	tab.term.dispose()
 	tab.holder.remove()
+	if (activeTab === tab) {
+		activeTab = null
+		const neighbor = tabs[0]
+		if (neighbor) activate(neighbor)
+	}
+	syncEmptyState()
 	updateBackgroundUi()
 }
 
@@ -794,18 +794,30 @@ function updateBackgroundUi(): void {
 }
 
 function renderBackgroundRows(): void {
-	// Preserve roving focus across re-renders (activity/exit updates).
-	const focused = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')].indexOf(document.activeElement as HTMLElement)
+	// Preserve the row across re-renders (OSC activity / exit / title updates).
+	const focusedRow = document.activeElement?.closest('.bg-row')
+	const focused = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')].indexOf(focusedRow as HTMLElement)
 	bgRows.textContent = ''
 	for (const tab of parked) {
 		const row = document.createElement('div')
-		row.className = 'bg-row'
-		row.setAttribute('role', 'button')
-		row.tabIndex = 0
+		row.className = `bg-row${activeTab === tab ? ' active' : ''}`
 
-		const dot = document.createElement('span')
-		dot.className = `bg-dot${tab.activity ? ' on' : ''}`
-		dot.setAttribute('aria-hidden', 'true')
+		const open = document.createElement('button')
+		open.className = 'bg-open'
+		open.title = 'Open and keep in background'
+		open.setAttribute('aria-label', `Open ${displayName(tab)} and keep in background`)
+		open.addEventListener('click', () => openParked(tab))
+
+		const activitySlot = document.createElement('span')
+		activitySlot.className = 'bg-activity-slot'
+		if (tab.agentRunning || tab.agentAttention) {
+			const indicator = createActivityIndicator(
+				tab.agentAttention ? 'Run finished — open terminal to clear' : 'Agent running',
+				tab.agentAttention ? 'attention' : 'progress',
+			)
+			indicator.classList.add('bg-activity')
+			activitySlot.append(indicator)
+		}
 
 		const title = document.createElement('span')
 		title.className = `bg-title${tab.exitCode !== null ? ' exited' : ''}`
@@ -814,31 +826,28 @@ function renderBackgroundRows(): void {
 		const state = document.createElement('span')
 		state.className = 'bg-state'
 		state.textContent = tab.exitCode === null ? 'Running' : `Exited (${tab.exitCode})`
+		open.append(activitySlot, title, state)
+
+		const restore = document.createElement('button')
+		restore.className = 'bg-action'
+		restore.textContent = 'Tab'
+		restore.title = 'Move to tabs and open'
+		restore.setAttribute('aria-label', `Move ${displayName(tab)} to tabs and open`)
+		restore.addEventListener('click', () => restoreParked(tab))
 
 		const kill = document.createElement('button')
 		kill.className = 'bg-kill'
 		kill.textContent = '×'
 		kill.title = 'Close'
 		kill.setAttribute('aria-label', `Close ${displayName(tab)}`)
-		kill.addEventListener('click', event => {
-			event.stopPropagation()
-			killParkedTab(tab)
-		})
+		kill.addEventListener('click', () => killParkedTab(tab))
 
-		row.append(dot, title, state, kill)
-		row.setAttribute('aria-label', `Restore ${displayName(tab)}`)
-		row.addEventListener('click', () => restoreParked(tab))
-		row.addEventListener('keydown', event => {
-			if (event.key === 'Enter' || event.key === ' ') {
-				event.preventDefault()
-				restoreParked(tab)
-			}
-		})
+		row.append(open, restore, kill)
 		bgRows.appendChild(row)
 	}
 	if (focused >= 0) {
 		const rows = bgRows.querySelectorAll<HTMLElement>('.bg-row')
-		rows[Math.min(focused, rows.length - 1)]?.focus()
+		rows[Math.min(focused, rows.length - 1)]?.querySelector<HTMLElement>('.bg-open')?.focus()
 	}
 }
 
@@ -854,7 +863,7 @@ function onBgKeydown(event: KeyboardEvent): void {
 		return
 	}
 	if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-	const rows = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')]
+	const rows = [...bgRows.querySelectorAll<HTMLElement>('.bg-open')]
 	if (rows.length === 0) return
 	event.preventDefault()
 	const current = rows.indexOf(document.activeElement as HTMLElement)
@@ -869,7 +878,7 @@ function openBackgroundPopover(): void {
 	renderBackgroundRows()
 	bgPopover.hidden = false
 	bgToggle.setAttribute('aria-expanded', 'true')
-	bgRows.querySelector<HTMLElement>('.bg-row')?.focus()
+	bgRows.querySelector<HTMLElement>('.bg-open')?.focus()
 	document.addEventListener('pointerdown', onBgOutside, true)
 	document.addEventListener('keydown', onBgKeydown, true)
 }
@@ -1241,7 +1250,7 @@ function openTabMenu(tab: Tab, x: number, y: number): void {
 // (closing the last tab used to auto-open a new one; deliberate removal).
 function syncEmptyState(): void {
 	const empty = document.getElementById('no-terms')
-	if (empty) empty.hidden = tabs.length > 0
+	if (empty) empty.hidden = tabs.length > 0 || activeTab !== null
 }
 
 interface TerminalOpts {
@@ -1322,10 +1331,6 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 		closed: false,
 		parked: startParked,
 		exitCode: null,
-		activity: false,
-		// A parked reattach repaints on spawn (dtach -r winch); that redraw must
-		// not light the "output since parking" dot.
-		activityMuteUntil: startParked ? performance.now() + REATTACH_MUTE_MS : 0,
 		title: '',
 		titleRaw: '',
 		oscTitle: null,
@@ -1514,12 +1519,6 @@ helm.pty.onData((id, data) => {
 	}
 	tab.outputGuard.write(output, (data, onParsed) => tab.term.write(data, onParsed))
 	tab.dirty = true // snapshot autosave picks this tab up on the next tick
-	// Quiet activity dot: first output since parking (once — no per-chunk DOM
-	// work on the pty:data path, §6.2).
-	if (tab.parked && !tab.activity && performance.now() >= tab.activityMuteUntil) {
-		tab.activity = true
-		updateBackgroundUi()
-	}
 })
 
 helm.pty.onExit((id, exitCode) => {
@@ -1533,7 +1532,6 @@ helm.pty.onExit((id, exitCode) => {
 		// Exited in the background: keep the row (state "Exited"), no toast spam.
 		// The exit burst is a death rattle, not activity — the state says it all.
 		tab.exitCode = exitCode
-		tab.activity = false
 		updateBackgroundUi()
 	} else {
 		closeTab(tab)
@@ -1558,7 +1556,7 @@ new ResizeObserver(() => {
 appearance.subscribe(() => {
 	const theme = appearance.getTermTheme()
 	const fontSize = appearance.getTermFontSize()
-	for (const tab of tabs) {
+	for (const tab of [...tabs, ...parked]) {
 		tab.term.options.theme = theme
 		if (tab.term.options.fontSize !== fontSize) tab.term.options.fontSize = fontSize
 	}
@@ -1585,7 +1583,9 @@ helm.tabs.onNew(() => {
 	if (tabsReady) void createTerminal()
 })
 helm.tabs.onClose(() => {
-	if (activeTab) closeTab(activeTab)
+	if (!activeTab) return
+	if (activeTab.parked) killParkedTab(activeTab)
+	else closeTab(activeTab)
 })
 // ⌘⇧B (Shell menu accelerator — xterm swallows renderer keys): park the
 // active tab into the background list.
@@ -1647,8 +1647,8 @@ async function runUiPreview(): Promise<void> {
 	}
 	// background-park: park the ACTIVE tab (after any --term-cmd output landed)
 	// so a later run against the same profile/socket pool verifies parked
-	// snapshot restore. background-restore: restore the first startup-parked
-	// session back to a tab — the popover row-click analog, screenshot-driven.
+	// snapshot restore. background-open previews the first parked holder without
+	// changing ownership; background-restore moves it back to a tab.
 	if (preview === 'background-park') {
 		await new Promise(resolve => setTimeout(resolve, 1500))
 		if (activeTab) parkTab(activeTab)
@@ -1674,7 +1674,7 @@ async function runUiPreview(): Promise<void> {
 		if (tab) commitCustomName(tab, 'deploy watch')
 		return
 	}
-	if (preview !== 'background' && preview !== 'background-strip') return
+	if (preview !== 'background' && preview !== 'background-strip' && preview !== 'background-open') return
 	await createTerminal().catch(() => {})
 	const exiting = activeTab
 	if (exiting) {
@@ -1686,10 +1686,10 @@ async function runUiPreview(): Promise<void> {
 	const running = activeTab
 	if (running) {
 		parkTab(running)
-		// Output after parking lights the quiet activity dot.
-		if (running.ptyId !== null) helm.pty.write(running.ptyId, 'true\r')
+		setTabAgentRunning(running, true)
 	}
 	if (preview === 'background') openBackgroundPopover()
+	else if (preview === 'background-open' && running) openParked(running)
 }
 
 // Startup: reattach every dtach session that survived the previous run —

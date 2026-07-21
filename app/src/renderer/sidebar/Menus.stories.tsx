@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Btn, FieldLabel, GLYPH, IconBtn, MenuButton, PushHeader, Sheet, TextInput } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Menus & Chrome',
+	title: 'Compositions/Menu and navigation',
 }
 
 export default meta

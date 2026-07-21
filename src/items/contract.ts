@@ -66,6 +66,8 @@ export interface DashboardItem {
 	source: ItemRecord['source']
 	/** True for ingested (captured-context) Items — e.g. an email filed via /api/items/ingest. */
 	captured: boolean
+	/** A saved rich document overrides narrative/comments for future planning/runs. */
+	runContextEdited: boolean
 	/**
 	 * True when the "create a task in the source system from this captured Item"
 	 * action applies (captured, not yet linked to the active provider, and the
@@ -284,6 +286,7 @@ export function toDashboardItem(
 		assessment: item.assessment,
 		source: item.source,
 		captured: item.capturedContext != null,
+		runContextEdited: item.runContext != null,
 		baseRef: item.baseRef,
 		spawner: item.spawner,
 		groupId: item.groupId,

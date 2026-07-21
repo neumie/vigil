@@ -7,7 +7,7 @@ import type { BucketKey } from './model'
 import { Segmented } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Segmented',
+	title: 'Primitives/Segmented control',
 	decorators: [story => <div style={{ width: 340 }}>{story()}</div>],
 }
 

@@ -25,12 +25,12 @@ const meta: Meta<typeof ActivityIndicator> = {
 export default meta
 type Story = StoryObj<typeof ActivityIndicator>
 
-/** The primitive is words-free at rest; the state remains named for assistive technology. */
+/** Ordinary progress stays words-free and grayscale; the state remains named for assistive technology. */
 export const InProgress: Story = {
 	args: { label: 'Running' },
 }
 
-/** A completed background run stays visible until its tab is checked. */
+/** Only a completed background run introduces accent, until its tab is checked. */
 export const NeedsAttention: Story = {
 	args: { label: 'Run finished — unchecked', variant: 'attention' },
 }

@@ -54,7 +54,14 @@ export function itemRunNotices(item: DashboardItem): ItemRunNotice[] {
  * pass through untouched.
  */
 export function extensionItemActions(actions: DashboardAction[]): DashboardAction[] {
-	return actions.map(action => (action.id === 'approve' ? { id: 'start', label: 'Start', tone: 'primary' } : action))
+	return actions.flatMap(action =>
+		action.id === 'approve'
+			? [
+					{ id: 'approve', label: 'Queue', tone: 'muted' },
+					{ id: 'start', label: 'Start', tone: 'primary' },
+				]
+			: [action],
+	)
 }
 
 export function Widget(props: { taskId: Accessor<string | null> }) {
@@ -696,9 +703,9 @@ function Card(props: {
 										    no target: the page stays put while the OS opens Helm. */}
 										<Show when={props.helmUrl()}>
 											{url => (
-												<a class="vg-link-open" href={url()}>
+												<button type="button" class="vg-link-open" on:click={() => window.location.assign(url())}>
 													Helm ↗
-												</a>
+												</button>
 											)}
 										</Show>
 										<button type="button" class="vg-close" on:click={props.onCollapse}>
@@ -776,9 +783,13 @@ function LinkLine(props: { label: string; link: DashboardLink | null }) {
 					<span>{props.label}</span>
 					<Show when={link().url} fallback={<span class="vg-link-line__value">{link().label}</span>}>
 						{url => (
-							<a href={url()} target="_blank" rel="noreferrer">
+							<button
+								type="button"
+								class="vg-link-line__link"
+								on:click={() => window.open(url(), '_blank', 'noopener,noreferrer')}
+							>
 								{link().label}
-							</a>
+							</button>
 						)}
 					</Show>
 				</div>

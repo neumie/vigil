@@ -474,16 +474,19 @@ export function Banner({
 	tone,
 	label,
 	children,
+	action,
 }: {
 	tone: 'error' | 'warning' | 'info'
 	label?: string
 	children: ReactNode
+	action?: ReactNode
 }) {
 	const [expanded, setExpanded] = useState(false)
 	const [overflows, setOverflows] = useState(false)
 	const id = useId()
 	const bodyRef = useRef<HTMLSpanElement>(null)
 	useEffect(() => {
+		if (action) return
 		const node = bodyRef.current
 		if (!node) return
 		const measure = () => {
@@ -493,7 +496,19 @@ export function Banner({
 		const observer = new ResizeObserver(measure)
 		observer.observe(node)
 		return () => observer.disconnect()
-	}, [expanded])
+	}, [action, expanded])
+	if (action)
+		return (
+			<output className={`banner banner-${tone} banner-actionable`}>
+				<span className="banner-actionable-copy">
+					{label && <span className="banner-label">{label}</span>}
+					<span className="banner-body" ref={bodyRef}>
+						{children}
+					</span>
+				</span>
+				<span className="banner-action">{action}</span>
+			</output>
+		)
 	if (!overflows && !expanded)
 		return (
 			<div className={`banner banner-${tone} banner-clamped`}>
@@ -611,7 +626,10 @@ export function Disclosure({
 					onToggle?.(!open)
 				}}
 			>
-				{open ? hideLabel : label}
+				<span>{open ? hideLabel : label}</span>
+				<span className="disclosure-mark" aria-hidden="true">
+					{open ? '−' : '+'}
+				</span>
 			</button>
 			{open && (
 				// Layout-neutral (display: contents) — content labels itself.

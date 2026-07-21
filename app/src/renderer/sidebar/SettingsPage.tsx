@@ -16,6 +16,7 @@ import { appearance } from '../appearance'
 import { showToast } from '../toast'
 import {
 	ActionRow,
+	Banner,
 	Btn,
 	Card,
 	EmptyState,
@@ -173,12 +174,17 @@ function SaveBar({ store }: { store: SettingsStore }) {
 	return (
 		<div className="action-bar action-bar-stack">
 			{store.pendingRestart && (
-				<output className="restart-notice">
-					<span className="restart-notice-text">{store.pendingRestart}</span>
-					<Btn sm busy={store.restarting} onClick={() => void store.restartNow()}>
-						{store.restarting ? 'Restarting' : 'Restart now'}
-					</Btn>
-				</output>
+				<Banner
+					tone="info"
+					label="Restart required"
+					action={
+						<Btn tone="quiet" sm busy={store.restarting} onClick={() => void store.restartNow()}>
+							{store.restarting ? 'Restarting' : 'Restart'}
+						</Btn>
+					}
+				>
+					{store.pendingRestart}
+				</Banner>
 			)}
 			{store.dirty && (
 				<Btn tone="primary" block busy={store.saving} onClick={() => void store.save()}>

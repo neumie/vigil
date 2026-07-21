@@ -362,4 +362,14 @@ WHERE planned_at IS NOT NULL
 		version: 24,
 		sql: 'ALTER TABLE items ADD COLUMN plan_status TEXT;',
 	},
+	{
+		// Operator-authored rich run context. The lossless editor document is kept
+		// separate from provider/captured source data and immutable solve evidence;
+		// revision enables optimistic saves from the external editor window.
+		version: 25,
+		sql: `
+ALTER TABLE items ADD COLUMN run_context TEXT;
+ALTER TABLE items ADD COLUMN run_context_revision INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 ]

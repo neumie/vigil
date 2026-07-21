@@ -23,6 +23,7 @@ import { DB } from '../src/db/client.js'
 import { MIGRATIONS } from '../src/db/schema.js'
 import { DeployWatcher, httpUrlOrNull, parsePrUrl } from '../src/github/deploy-watcher.js'
 import { ItemCommands } from '../src/items/commands.js'
+import { buildItemExecutionContext } from '../src/items/context.js'
 import { toDashboardItem, toDashboardItems } from '../src/items/contract.js'
 import { resolveItemWorkspace } from '../src/items/identity.js'
 import { observeItemRun } from '../src/items/observation.js'
@@ -5520,3 +5521,191 @@ test('manual branch-name AI pass refuses main-workspace Items', () =>
 		assert.match(body.error, /main-workspace/)
 		assert.equal(modelCalled, false)
 	}))
+
+test('run context replaces only narrative, survives retry, and uses optimistic revisions', () =>
+	withTempDb(db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Editable context',
+			projectSlug: 'helm',
+			prompt: 'Original manual prompt',
+			source: { provider: 'fake', externalId: 'editable-context' },
+		})
+		const draft = {
+			version: 1 as const,
+			blocks: [{ id: 'paragraph-1', type: 'paragraph', content: [{ type: 'text', text: 'Corrected truth' }] }],
+			markdown: '## Corrected specification\n\nUse the verified behavior.',
+		}
+		const saved = commands.setRunContext(item.id, draft, 0)
+		assert.equal(saved.runContextRevision, 1)
+		assert.equal(saved.runContext?.markdown, draft.markdown)
+
+		const source = {
+			title: 'Provider title',
+			description: 'False source description',
+			comments: [{ author: 'Old comment', createdAt: '2026-07-20T10:00:00.000Z', body: 'No longer true' }],
+			metadata: { Priority: 'High' },
+			attachments: [{ name: 'proof.png', url: 'https://example.test/proof.png' }],
+		}
+		const execution = buildItemExecutionContext(saved, source)
+		assert.equal(execution.description, draft.markdown)
+		assert.equal(execution.comments, undefined)
+		assert.deepEqual(execution.attachments, source.attachments)
+		assert.equal(execution.metadata?.Priority, 'High')
+		assert.equal(execution.metadata?.['Item ID'], item.id)
+
+		assert.throws(() => commands.setRunContext(item.id, draft, 0), /changed in another editor/)
+		commands.startItem(item.id)
+		assert.throws(() => commands.setRunContext(item.id, draft, 1), /cannot change while the Item is running/)
+		commands.failItem(item.id, 'Real solve failure', 'solve')
+		const retried = commands.retryItem(item.id)
+		assert.equal(retried.runContext?.markdown, draft.markdown)
+		assert.equal(retried.runContextRevision, 1)
+	}))
+
+test('run-context API seeds live source, saves one document, plans with it, and resets to latest source', async () => {
+	await withTempDb(async db => {
+		let description = 'Original source description'
+		let providerFails = false
+		const contextProvider = {
+			...provider,
+			name: 'fake',
+			getTaskContext: async () => {
+				if (providerFails) throw new Error('Provider unavailable')
+				return {
+					title: 'Live task',
+					description,
+					comments: [{ author: 'Reporter', createdAt: '2026-07-20T10:00:00.000Z', body: 'Stale claim' }],
+					attachments: [{ name: 'evidence.txt', url: 'https://example.test/evidence.txt' }],
+				}
+			},
+		}
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Live task',
+			projectSlug: 'helm',
+			prompt: 'Fallback summary',
+			source: { provider: 'fake', externalId: 'task-1', url: 'https://example.test/tasks/1' },
+		})
+		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-run-context-plan-'))
+		const planningSpawner = new FakePlanningSpawner(worktreeRoot)
+		const api = apiRoutes(
+			config,
+			'helm.config.json',
+			db,
+			queue as never,
+			poller as never,
+			contextProvider as never,
+			planningSpawner,
+			fakeEnricher as never,
+		)
+
+		try {
+			providerFails = true
+			const unseededOutageRes = await api.request(`/items/${item.id}/run-context`)
+			assert.equal(unseededOutageRes.status, 502)
+			providerFails = false
+
+			const initialRes = await api.request(`/items/${item.id}/run-context`)
+			assert.equal(initialRes.status, 200)
+			const initial = (await initialRes.json()) as {
+				data: { source: { description?: string }; document: null; revision: number }
+			}
+			assert.equal(initial.data.source.description, 'Original source description')
+			assert.equal(initial.data.document, null)
+			assert.equal(initial.data.revision, 0)
+
+			const document = {
+				version: 1,
+				blocks: [{ id: 'edited', type: 'paragraph', content: [{ type: 'text', text: 'Verified context' }] }],
+				markdown: 'Verified context only.',
+			}
+			const saveRes = await api.request(`/items/${item.id}/run-context`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ revision: 0, document }),
+			})
+			assert.equal(saveRes.status, 200)
+			assert.equal(db.items.get(item.id)?.runContext?.markdown, 'Verified context only.')
+
+			const conflictRes = await api.request(`/items/${item.id}/run-context`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ revision: 0, document }),
+			})
+			assert.equal(conflictRes.status, 409)
+
+			const planRes = await api.request(`/items/${item.id}/plan`, { method: 'POST' })
+			assert.equal(planRes.status, 200)
+			assert.equal(planningSpawner.calls[0]?.taskContext.description, 'Verified context only.')
+			assert.equal(planningSpawner.calls[0]?.taskContext.comments, undefined)
+			assert.equal(planningSpawner.calls[0]?.taskContext.attachments?.[0]?.name, 'evidence.txt')
+
+			providerFails = true
+			const outageLoadRes = await api.request(`/items/${item.id}/run-context`)
+			assert.equal(outageLoadRes.status, 200)
+			const outageLoad = (await outageLoadRes.json()) as {
+				data: { source: { title: string; description?: string }; document: { markdown: string }; revision: number }
+			}
+			assert.deepEqual(outageLoad.data.source, { title: 'Live task' })
+			assert.equal(outageLoad.data.document.markdown, 'Verified context only.')
+			assert.equal(outageLoad.data.revision, 1)
+
+			const failedReset = await api.request(`/items/${item.id}/run-context/reset`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ revision: 1 }),
+			})
+			assert.equal(failedReset.status, 502)
+			assert.equal(db.items.get(item.id)?.runContext?.markdown, 'Verified context only.')
+
+			providerFails = false
+			description = 'Latest source description'
+			const resetRes = await api.request(`/items/${item.id}/run-context/reset`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ revision: 1 }),
+			})
+			assert.equal(resetRes.status, 200)
+			const reset = (await resetRes.json()) as {
+				data: { source: { description?: string }; document: null; revision: number }
+			}
+			assert.equal(reset.data.source.description, 'Latest source description')
+			assert.equal(reset.data.document, null)
+			assert.equal(reset.data.revision, 2)
+			assert.equal(db.items.get(item.id)?.runContext, null)
+			assert.equal(db.items.get(item.id)?.source?.externalId, 'task-1')
+		} finally {
+			rmSync(worktreeRoot, { recursive: true, force: true })
+		}
+	})
+})
+
+test('processSolveItem hands the saved run-context narrative to the solver', async () => {
+	await withTempDb(async db => {
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			title: 'Solve edited context',
+			projectSlug: 'helm',
+			prompt: 'Original prompt must not reach the solver.',
+		})
+		commands.setRunContext(
+			item.id,
+			{
+				version: 1,
+				blocks: [{ id: 'only', type: 'paragraph', content: [{ type: 'text', text: 'Use corrected context.' }] }],
+				markdown: 'Use corrected context.',
+			},
+			0,
+		)
+		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-run-context-solve-'))
+		const solver = new FakeSolveSolver(worktreeRoot)
+		try {
+			await processSolveItem(item.id, config, db, provider, solver)
+			assert.equal(solver.calls[0]?.taskContext.description, 'Use corrected context.')
+			assert.notEqual(solver.calls[0]?.taskContext.description, 'Original prompt must not reach the solver.')
+		} finally {
+			rmSync(worktreeRoot, { recursive: true, force: true })
+		}
+	})
+})

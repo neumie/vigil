@@ -245,8 +245,9 @@ body.tab-dragging .tab {
 	text-overflow: ellipsis;
 }
 
-/* Reusable in-progress primitive (§3.21): a six-dot Braille cell whose active
- * head uses accent while the soft clockwise tail settles to neutral. */
+/* Reusable in-progress primitive (§3.21): a six-dot Braille cell whose
+ * grayscale head and soft clockwise tail stay neutral. Accent is reserved for
+ * the explicit needs-attention variant below. */
 .activity-indicator {
 	flex: none;
 	display: grid;
@@ -265,47 +266,42 @@ body.tab-dragging .tab {
 	border-radius: 999px;
 	background: var(--text-0);
 	opacity: 0.1;
-	animation: activity-indicator-clockwise 840ms linear infinite;
+	animation: activity-indicator-clockwise 1.2s linear infinite;
 }
 
 /* Clockwise: top-left → top-right → middle-right → bottom-right →
  * bottom-left → middle-left. Negative delays begin on a complete cycle. */
 .activity-indicator-dot:nth-child(2) {
-	animation-delay: -700ms;
+	animation-delay: -1s;
 }
 .activity-indicator-dot:nth-child(3) {
-	animation-delay: -140ms;
+	animation-delay: -200ms;
 }
 .activity-indicator-dot:nth-child(4) {
-	animation-delay: -560ms;
+	animation-delay: -800ms;
 }
 .activity-indicator-dot:nth-child(5) {
-	animation-delay: -280ms;
+	animation-delay: -400ms;
 }
 .activity-indicator-dot:nth-child(6) {
-	animation-delay: -420ms;
+	animation-delay: -600ms;
 }
 
 @keyframes activity-indicator-clockwise {
 	0% {
-		background-color: var(--accent);
 		opacity: 1;
 	}
 	16.66% {
-		background-color: var(--accent);
 		opacity: 0.68;
 	}
 	33.33% {
-		background-color: var(--text-0);
 		opacity: 0.38;
 	}
 	50% {
-		background-color: var(--text-0);
 		opacity: 0.18;
 	}
 	66.66%,
 	100% {
-		background-color: var(--text-0);
 		opacity: 0.1;
 	}
 }
@@ -503,7 +499,7 @@ body.tab-dragging .tab {
 }
 
 #bg-popover {
-	width: 260px; /* within the §3.8 180–280 band; fixed so rows don't reflow */
+	width: 300px;
 }
 
 #bg-popover[hidden] {
@@ -519,46 +515,54 @@ body.tab-dragging .tab {
 	user-select: none;
 }
 
-/* Row = a tab surrogate at the menu-item pitch: restore on click, ✕ mirrors
- * the strip tab's hover-revealed close (not a §3.3 list row). */
+/* Each row exposes three explicit operations: Open keeps the session parked,
+ * Tab restores it to the strip, and × closes through the grace path. */
 .bg-row {
-	display: flex;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 4px;
+	height: 32px;
+	padding: 2px 4px;
+	user-select: none;
+}
+
+.bg-open {
+	display: grid;
+	grid-template-columns: 6px minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 8px;
+	min-width: 0;
 	height: 28px;
-	padding: 0 8px;
+	padding: 0 4px;
+	border: none;
 	border-radius: 4px;
-	cursor: default;
-	user-select: none;
+	background: none;
+	font-family: inherit;
+	text-align: left;
+	cursor: pointer;
 	transition: background-color 140ms ease-out;
 }
 
-.bg-row:hover,
-.bg-row:focus-visible {
+.bg-open:hover,
+.bg-row.active .bg-open {
 	background: var(--fill-subtle);
 }
 
-/* Fixed dot slot keeps titles aligned; transparent when quiet. */
-.bg-dot {
-	flex: none;
+.bg-activity-slot {
+	display: grid;
+	place-items: center;
 	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: transparent;
-}
-
-.bg-dot.on {
-	background: var(--accent);
+	height: 10px;
 }
 
 .bg-title {
-	flex: 1;
 	min-width: 0;
 	overflow: hidden;
+	color: var(--text-0);
+	font-size: 13px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 13px;
-	color: var(--text-0);
 }
 
 .bg-title.exited {
@@ -566,39 +570,43 @@ body.tab-dragging .tab {
 }
 
 .bg-state {
-	flex: none;
 	font-size: 11px;
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
 }
 
+.bg-action,
 .bg-kill {
-	flex: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 16px;
-	height: 16px;
+	height: 24px;
+	padding: 0;
 	border: none;
 	border-radius: 4px;
 	background: none;
-	color: var(--text-1);
+	color: var(--text-2);
+	font-family: inherit;
+	cursor: pointer;
+	transition: background-color 140ms ease-out, color 140ms ease-out;
+}
+
+.bg-action {
+	width: 30px;
+	font-size: 10px;
+	font-weight: 600;
+}
+
+.bg-kill {
+	width: 20px;
 	font-size: 13px;
 	line-height: 1;
-	cursor: pointer;
-	opacity: 0;
-	transition: opacity 140ms ease-out, background-color 140ms ease-out;
 }
 
-.bg-row:hover .bg-kill,
-.bg-row:focus-within .bg-kill {
-	opacity: 0.6;
-}
-
-.bg-kill:hover,
-.bg-kill:focus-visible {
-	opacity: 1;
+.bg-action:hover,
+.bg-kill:hover {
 	background: var(--fill-raised);
+	color: var(--text-0);
 }
 
 /* Context menu at the pointer (tab right-click): §3.8 panel, fixed positioning

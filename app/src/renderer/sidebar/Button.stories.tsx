@@ -1,9 +1,9 @@
-// Buttons (§3.1): four tones, two sizes, disabled/busy, block; icon buttons.
+// Button primitive (§3.1): four tones, two sizes, disabled/busy, block; icon buttons.
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Btn, GLYPH, IconBtn } from './ui'
 
 const meta: Meta = {
-	title: 'Sidebar/Buttons',
+	title: 'Primitives/Button',
 }
 
 export default meta

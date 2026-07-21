@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { taskContextSchema } from '../providers/provider.js'
 import { solverAgentSchema } from '../solver/agent.js'
 import { solverWorkspaceSchema } from '../solver/workspace.js'
+import { runContextDocumentSchema } from './run-context.js'
 
 export const itemKindSchema = z.enum(['solve', 'loop'])
 
@@ -188,6 +189,9 @@ export const itemRecordSchema = z.object({
 	plannedAt: z.string().nullable(),
 	// Cached plan/spec/ticket readiness, maintained by PlanStatusWatcher.
 	planStatus: planStatusSchema.nullable(),
+	// Operator-authored narrative used by planning + execution; source remains immutable.
+	runContext: runContextDocumentSchema.nullable(),
+	runContextRevision: z.number().int().nonnegative(),
 	updatedAt: z.string().min(1),
 	errorMessage: z.string().nullable(),
 	errorPhase: z.string().nullable(),

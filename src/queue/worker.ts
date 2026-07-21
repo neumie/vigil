@@ -7,7 +7,7 @@ import { copyAttachmentsToWorktree } from '../attachments/store.js'
 import type { HelmConfig } from '../config.js'
 import type { DB } from '../db/client.js'
 import { ItemCommands } from '../items/commands.js'
-import { buildItemTaskContext, localizeCapturedAttachments } from '../items/context.js'
+import { buildItemExecutionContext, localizeCapturedAttachments } from '../items/context.js'
 import { loopPayloadForItem } from '../items/execution.js'
 import { resolveItemWorkspace } from '../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../items/naming.js'
@@ -136,7 +136,7 @@ async function buildSolveItemTaskContext(item: ItemRecord, provider: TaskProvide
 	// Frozen captured context (ingested email etc.) wins — its attachments are
 	// worktree-local files, not remote URLs.
 	if (item.capturedContext) {
-		return localizeCapturedAttachments(buildItemTaskContext(item, item.capturedContext))
+		return localizeCapturedAttachments(buildItemExecutionContext(item, item.capturedContext))
 	}
 
 	if (item.source) {
@@ -144,10 +144,10 @@ async function buildSolveItemTaskContext(item: ItemRecord, provider: TaskProvide
 		if (!sourceContext) {
 			throw phaseError('poll', 'Item source not found in source system')
 		}
-		return buildItemTaskContext(item, sourceContext)
+		return buildItemExecutionContext(item, sourceContext)
 	}
 
-	return buildItemTaskContext(item)
+	return buildItemExecutionContext(item)
 }
 
 export interface ProcessSolveItemDeps {

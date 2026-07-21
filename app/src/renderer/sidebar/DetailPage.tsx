@@ -259,6 +259,7 @@ export function DetailPage(props: DetailPageProps) {
 						item={item}
 						onOpenTask={() => onOpenTask(id)}
 						onOpenPlan={() => onOpenPlan(id)}
+						onOpenRunContext={() => void window.helm.runContext.open(id)}
 						disabled={disabled}
 					/>
 				)

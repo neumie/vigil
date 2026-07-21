@@ -8,6 +8,8 @@ import type { SolverAgent } from '../solver/agent.js'
 import type { SolverWorkspace } from '../solver/workspace.js'
 import type { ErrorPhase } from '../types.js'
 import { itemExecutionMode } from './execution.js'
+import { RunContextConflictError, parseRunContextDraft } from './run-context.js'
+import type { RunContextDraft } from './run-context.js'
 import { itemSourceSchema } from './schema.js'
 import type {
 	Assessment,
@@ -223,6 +225,22 @@ export class ItemCommands {
 		}
 		const { solverModel: _prev, ...payload } = item.payload
 		return this.store.updatePayload(id, solverModel ? { ...payload, solverModel } : payload)
+	}
+
+	/** Persist or reset the editor-owned narrative without mutating source data. */
+	setRunContext(id: string, draft: RunContextDraft | null, expectedRevision: number): ItemRecord {
+		const item = this.requireItem(id)
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items have editable run context')
+		}
+		if (item.status === 'running') throw new Error('Run context cannot change while the Item is running')
+		if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+			throw new Error('Run context revision must be a non-negative integer')
+		}
+		const runContext = draft ? { ...parseRunContextDraft(draft), updatedAt: new Date().toISOString() } : null
+		const updated = this.store.updateRunContext(id, runContext, expectedRevision)
+		if (!updated) throw new RunContextConflictError()
+		return updated
 	}
 
 	/**

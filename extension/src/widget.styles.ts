@@ -148,10 +148,14 @@ export const WIDGET_STYLES = `
 	.vg-card__hactions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 	.vg-link-open {
+		padding: 0;
+		border: 0;
+		background: none;
 		color: var(--vg-accent);
-		text-decoration: none;
+		font-family: var(--vg-font);
 		font-size: 11px;
 		font-weight: 500;
+		cursor: pointer;
 		opacity: 0.85;
 	}
 	.vg-link-open:hover { opacity: 1; }
@@ -221,14 +225,19 @@ export const WIDGET_STYLES = `
 		font-weight: 500;
 		color: var(--vg-text-2);
 	}
-	.vg-link-line a {
-		color: var(--vg-accent);
-		text-decoration: none;
-		font-weight: 500;
+	.vg-link-line__link {
 		max-width: 210px;
+		padding: 0;
 		overflow: hidden;
+		border: 0;
+		background: none;
+		color: var(--vg-accent);
+		font-family: var(--vg-font);
+		font-size: inherit;
+		font-weight: 500;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		cursor: pointer;
 	}
 	.vg-link-line__value {
 		color: var(--vg-text-1);
@@ -457,6 +466,7 @@ export const WIDGET_STYLES = `
 	.vg-model__option:focus-visible,
 	.vg-error__dismiss:focus-visible,
 	.vg-link-open:focus-visible,
+	.vg-link-line__link:focus-visible,
 	.vg-pr:focus-visible {
 		outline: 2px solid var(--vg-accent);
 		outline-offset: 2px;

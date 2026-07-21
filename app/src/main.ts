@@ -7,6 +7,7 @@ import { APP_NAME, macApplicationMenu } from './app-menu'
 import { BufferStore } from './buffers'
 import { HelmBridge } from './helm-bridge'
 import { parseHelmItemUrl } from './protocol'
+import { RunContextWindows } from './run-context-window'
 import * as sessions from './sessions'
 import { THEME_PRESETS } from './theme-presets'
 
@@ -16,6 +17,18 @@ const daemonUrl = process.env.HELM_URL ?? process.env.VIGIL_URL ?? 'http://local
 // Single owner of daemon HTTP: one poller + command proxy, pushed to the
 // renderer over IPC (the file:// renderer can't fetch :7474 itself).
 const helmBridge = new HelmBridge(daemonUrl)
+let pendingEditorQuit = false
+const runContextWindows = new RunContextWindows(helmBridge, __dirname, {
+	onAllClosed: () => {
+		if (!pendingEditorQuit) return
+		pendingEditorQuit = false
+		app.quit()
+	},
+	onCloseCancelled: () => {
+		pendingEditorQuit = false
+		quitRequested = false
+	},
+})
 
 // --- CLI modes ---------------------------------------------------------------
 // `electron . --screenshot=<path> [--user-data-dir-tmp]` renders the window
@@ -444,14 +457,20 @@ function buildMenu(): void {
 		(channel: string, ...args: unknown[]) =>
 		() =>
 			mainWindow?.webContents.send(channel, ...args)
+	const closeFocused = () => {
+		const focused = BrowserWindow.getFocusedWindow()
+		if (focused && focused !== mainWindow) focused.close()
+		else mainWindow?.webContents.send('tab:close')
+	}
 	const template: Electron.MenuItemConstructorOptions[] = [
 		...(process.platform === 'darwin' ? [macApplicationMenu()] : []),
 		{
 			label: 'Shell',
 			submenu: [
 				{ label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: send('tab:new') },
-				// Owning cmd+w here keeps it from closing the window (no window-menu close role).
-				{ label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: send('tab:close') },
+				// Main window: close its active terminal. Auxiliary editor: close that
+				// window through its unsaved-draft guard instead of touching a terminal.
+				{ label: 'Close', accelerator: 'CmdOrCtrl+W', click: closeFocused },
 				// Park the active tab (iTerm "bury session" analog): the tab leaves
 				// the strip, the terminal + pty stay alive behind the strip-right
 				// stack button. Renderer owns the actual park (tab state lives there).
@@ -797,6 +816,7 @@ ipcMain.handle('themes:list', () => {
 })
 
 helmBridge.registerIpc()
+runContextWindows.registerIpc()
 
 void app.whenReady().then(() => {
 	app.setAboutPanelOptions({ applicationName: APP_NAME, applicationVersion: app.getVersion() })
@@ -817,8 +837,20 @@ app.on('window-all-closed', () => {
 // the pre-dtach behavior of killing the shells is gone by design. Buffer
 // snapshots are flushed by the window-close interception (the renderer still
 // holds every xterm buffer after the clients detach).
-app.on('before-quit', () => {
+app.on('before-quit', event => {
+	if (runContextWindows.hasDirtyWindows()) {
+		// Keep the main window, bridge, and attached dtach clients alive until
+		// every dirty editor explicitly saves/discards. Keep editing cancels quit.
+		event.preventDefault()
+		pendingEditorQuit = true
+		quitRequested = false
+		runContextWindows.requestCloseAll()
+		return
+	}
 	quitRequested = true
+})
+
+app.on('will-quit', () => {
 	helmBridge.stop()
 	killAllPtyClients()
 	sessionSupport?.registry.flush()

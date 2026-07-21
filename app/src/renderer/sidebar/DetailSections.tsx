@@ -114,7 +114,10 @@ export function ActivitySection({ item, now }: { item: DashboardItem; now: numbe
 			aria-expanded={historyOpen}
 			onClick={() => setHistoryOpen(value => !value)}
 		>
-			{historyOpen ? 'Hide history' : 'Show history'}
+			<span>{historyOpen ? 'Hide history' : 'Show history'}</span>
+			<span className="disclosure-mark" aria-hidden="true">
+				{historyOpen ? '−' : '+'}
+			</span>
 		</button>
 	)
 	return (
@@ -341,15 +344,17 @@ export function ResourceRows({
 	item,
 	onOpenTask,
 	onOpenPlan,
+	onOpenRunContext,
 	disabled,
 }: {
 	item: DashboardItem
 	onOpenTask: () => void
 	onOpenPlan: () => void
+	onOpenRunContext: () => void
 	disabled?: boolean
 }) {
 	const hasTask = Boolean(item.source || item.captured || item.sourceTask)
-	if (!hasTask && !item.plannedAt) return null
+	if (!hasTask && !item.plannedAt && item.kind !== 'solve') return null
 	return (
 		<>
 			{hasTask && (
@@ -357,6 +362,14 @@ export function ResourceRows({
 					label={item.captured ? 'Imported task' : 'Task'}
 					value={sourceValue(item)}
 					onClick={onOpenTask}
+					disabled={disabled}
+				/>
+			)}
+			{item.kind === 'solve' && (
+				<ResourceLink
+					label="Run context"
+					value={item.runContextEdited ? 'Customized' : 'Source context'}
+					onClick={onOpenRunContext}
 					disabled={disabled}
 				/>
 			)}

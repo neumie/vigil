@@ -28,6 +28,10 @@ import type {
 	HelmResult,
 	HelmSnapshot,
 	ItemStatus,
+	RunContextDraft,
+	RunContextLoad,
+	RunContextReset,
+	RunContextSave,
 } from './shared-helm'
 
 const POLL_MS = 2500
@@ -171,6 +175,33 @@ export class HelmBridge {
 		} catch (err) {
 			return { error: errorMessage(err) }
 		}
+	}
+
+	loadRunContext(itemId: string): Promise<HelmResult<RunContextLoad>> {
+		return this.request('GET', `/items/${encodeURIComponent(itemId)}/run-context`)
+	}
+
+	async saveRunContext(
+		itemId: string,
+		revision: number,
+		document: RunContextDraft,
+	): Promise<HelmResult<RunContextSave>> {
+		const result = await this.request<RunContextSave>('PUT', `/items/${encodeURIComponent(itemId)}/run-context`, {
+			revision,
+			document,
+		})
+		if (result.error === undefined) this.kick()
+		return result
+	}
+
+	async resetRunContext(itemId: string, revision: number): Promise<HelmResult<RunContextReset>> {
+		const result = await this.request<RunContextReset>(
+			'POST',
+			`/items/${encodeURIComponent(itemId)}/run-context/reset`,
+			{ revision },
+		)
+		if (result.error === undefined) this.kick()
+		return result
 	}
 
 	// --- IPC surface -------------------------------------------------------------

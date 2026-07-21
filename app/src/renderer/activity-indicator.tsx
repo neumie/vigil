@@ -15,7 +15,7 @@ export interface ActivityIndicatorProps {
 	label?: string
 	className?: string
 	hidden?: boolean
-	/** Progress chases clockwise; attention breathes as one completed matrix. */
+	/** Progress chases clockwise in grayscale; attention adds the accent color-wave. */
 	variant?: ActivityIndicatorVariant
 }
 
@@ -23,8 +23,8 @@ function classes(className?: string): string {
 	return `activity-indicator${className ? ` ${className}` : ''}`
 }
 
-/** Shared activity primitive for React surfaces. Accent marks active dots;
- * the tail settles to neutral and words remain assistive-only. */
+/** Shared activity primitive for React surfaces. Progress stays neutral;
+ * only attention introduces accent, and words remain assistive-only. */
 export function ActivityIndicator({
 	label = 'In progress',
 	className,

@@ -22,12 +22,18 @@ import type { HelmConfig } from '../../config.js'
 import type { DB } from '../../db/client.js'
 import { ensureItemAssessment } from '../../items/assess.js'
 import { ItemCommands } from '../../items/commands.js'
-import { buildItemTaskContext, localizeCapturedAttachments, resolveItemSourceContext } from '../../items/context.js'
+import {
+	buildItemExecutionContext,
+	buildItemTaskContext,
+	localizeCapturedAttachments,
+	resolveItemSourceContext,
+} from '../../items/context.js'
 import { canCreateSourceTask, toDashboardItemWithSiblings, toDashboardItems } from '../../items/contract.js'
 import type { ItemEnricher } from '../../items/enricher.js'
 import { resolveItemWorkspace } from '../../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../../items/naming.js'
 import { observeItemRun } from '../../items/observation.js'
+import { RunContextConflictError, runContextDraftSchema } from '../../items/run-context.js'
 import { itemStatusSchema, solverEffortSchema } from '../../items/schema.js'
 import type { ItemRecord, SolverEffort } from '../../items/schema.js'
 import { PlanWorkspace } from '../../plan/workspace.js'
@@ -79,6 +85,9 @@ const MAX_INGEST_ATTACHMENT_BYTES = 25 * 1024 * 1024
 // buffered/parsed — the per-field/attachment caps below only run post-parse.
 // Generous enough for ~25MB of attachments after base64 (+33%) + JSON overhead.
 const MAX_INGEST_BODY_BYTES = 40 * 1024 * 1024
+// Local editor JSON is bounded before parsing too; the document schema applies
+// tighter Markdown/block-state limits after this coarse transport cap.
+const MAX_RUN_CONTEXT_BODY_BYTES = 1_250_000
 
 const ingestSchema = z
 	.object({
@@ -206,6 +215,15 @@ export function apiRoutes(
 		),
 		canCreateSourceTask: canCreateSourceTask(item, provider),
 	})
+	const resolveRunContextSource = async (item: ItemRecord): Promise<TaskContext> => {
+		if (item.kind !== 'solve' || item.payload.kind !== 'solve') {
+			throw new Error('Only solve Items have editable run context')
+		}
+		const expectsSource = item.capturedContext !== null || item.source !== null
+		const source = expectsSource ? await resolveItemSourceContext(item, provider) : null
+		if (expectsSource && !source) throw new Error('Item source not found in source system')
+		return buildItemTaskContext(item, source)
+	}
 	const expandGroupedItems = (items: ItemRecord[]) => {
 		const expanded: ItemRecord[] = []
 		const seenItems = new Set<string>()
@@ -612,6 +630,94 @@ export function apiRoutes(
 		return c.json({ data: { ...(await dashboardItem(item)), sourceTask, planArtifacts, okenaWorkspace } })
 	})
 
+	api.get('/items/:id/run-context', async c => {
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+		if (item.kind !== 'solve') return c.json({ error: 'Only solve Items have editable run context' }, 400)
+		try {
+			const source = await resolveRunContextSource(item)
+			return c.json({
+				data: {
+					item: { id: item.id, title: item.title, projectSlug: item.projectSlug, status: item.status },
+					source,
+					document: item.runContext,
+					revision: item.runContextRevision,
+				},
+			})
+		} catch (err) {
+			// A saved Helm-owned override remains useful when its live provider is
+			// temporarily unavailable. Return a minimal source shell so the editor
+			// can open the persisted document; an unsaved Item still needs the live
+			// source to seed its first draft. Reset intentionally keeps requiring it.
+			if (item.runContext) {
+				log.warn(
+					'api',
+					`Live source unavailable for saved run context ${item.id}: ${err instanceof Error ? err.message : err}`,
+				)
+				return c.json({
+					data: {
+						item: { id: item.id, title: item.title, projectSlug: item.projectSlug, status: item.status },
+						source: { title: item.title },
+						document: item.runContext,
+						revision: item.runContextRevision,
+					},
+				})
+			}
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 502)
+		}
+	})
+
+	api.put('/items/:id/run-context', bodyLimit({ maxSize: MAX_RUN_CONTEXT_BODY_BYTES }), async c => {
+		const parsed = z
+			.object({ revision: z.number().int().nonnegative(), document: runContextDraftSchema })
+			.strict()
+			.safeParse(await c.req.json().catch(() => null))
+		if (!parsed.success) return c.json({ error: 'Invalid run context', details: parsed.error.flatten() }, 400)
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+		try {
+			const updated = itemCommands.setRunContext(item.id, parsed.data.document, parsed.data.revision)
+			return c.json({ data: { document: updated.runContext, revision: updated.runContextRevision } })
+		} catch (err) {
+			if (err instanceof RunContextConflictError) {
+				const latest = itemCommands.getItem(item.id)
+				return c.json(
+					{ error: err.message, revision: latest?.runContextRevision, document: latest?.runContext ?? null },
+					409,
+				)
+			}
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+		}
+	})
+
+	api.post('/items/:id/run-context/reset', bodyLimit({ maxSize: 4 * 1024 }), async c => {
+		const parsed = z
+			.object({ revision: z.number().int().nonnegative() })
+			.strict()
+			.safeParse(await c.req.json().catch(() => null))
+		if (!parsed.success) return c.json({ error: 'Invalid run context reset', details: parsed.error.flatten() }, 400)
+		const item = itemCommands.getItem(c.req.param('id'))
+		if (!item) return c.json({ error: 'Not found' }, 404)
+		if (item.kind !== 'solve') return c.json({ error: 'Only solve Items have editable run context' }, 400)
+		if (item.runContextRevision !== parsed.data.revision) {
+			return c.json({ error: 'Run context changed in another editor' }, 409)
+		}
+		let source: TaskContext
+		try {
+			// Fetch first: a provider outage must leave the saved document untouched.
+			source = await resolveRunContextSource(item)
+		} catch (err) {
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 502)
+		}
+		try {
+			const updated = itemCommands.setRunContext(item.id, null, parsed.data.revision)
+			return c.json({ data: { source, document: null, revision: updated.runContextRevision } })
+		} catch (err) {
+			if (err instanceof RunContextConflictError) return c.json({ error: err.message }, 409)
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+		}
+	})
+
 	api.post('/items', async c => {
 		const body = await c.req.json()
 		const createIntentSchema = z.enum(['queue', 'plan'])
@@ -981,8 +1087,8 @@ export function apiRoutes(
 		// paths so the planning agent's context.md points at the local copies (placed
 		// below after the worktree exists) — symmetric with the solve path.
 		const taskContext = item.capturedContext
-			? localizeCapturedAttachments(buildItemTaskContext(item, sourceContext))
-			: buildItemTaskContext(item, sourceContext)
+			? localizeCapturedAttachments(buildItemExecutionContext(item, sourceContext))
+			: buildItemExecutionContext(item, sourceContext)
 
 		// Derive a conventional branch name before resolving identity, so planning
 		// writes its worktree under the AI-chosen name (no-op unless enabled). Wire

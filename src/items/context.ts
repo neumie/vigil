@@ -1,5 +1,6 @@
 import { WORKTREE_ATTACHMENT_SUBDIR } from '../attachments/store.js'
 import type { TaskContext, TaskProvider } from '../providers/provider.js'
+import { applyRunContextDocument } from './run-context.js'
 import type { ItemRecord } from './schema.js'
 
 /**
@@ -46,6 +47,8 @@ function itemMetadata(item: ItemRecord): Record<string, string> {
 	return metadata
 }
 
+/** Canonical source/Item context. AI enrichment intentionally reads this raw
+ * view; operator edits apply only through buildItemExecutionContext below. */
 export function buildItemTaskContext(item: ItemRecord, sourceContext?: TaskContext | null): TaskContext {
 	const metadata = itemMetadata(item)
 
@@ -70,4 +73,10 @@ export function buildItemTaskContext(item: ItemRecord, sourceContext?: TaskConte
 				metadata: { ...metadata, PRD: item.payload.prdPath },
 			}
 	}
+}
+
+/** Planning and execution share this one overlay seam. A saved editor document
+ * replaces narrative/comments while retaining server-owned identity and files. */
+export function buildItemExecutionContext(item: ItemRecord, sourceContext?: TaskContext | null): TaskContext {
+	return applyRunContextDocument(buildItemTaskContext(item, sourceContext), item.runContext)
 }
