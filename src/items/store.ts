@@ -287,15 +287,21 @@ export class ItemStore {
 		return updated
 	}
 
-	// Source items still awaiting any AI enrichment (display name or assessment) —
-	// the work-list for the backfill enricher.
-	listSourceItemsNeedingEnrichment(): ItemRecord[] {
+	// Source Items and source-less Queue solves still awaiting any eligible AI
+	// enrichment — the DB-only work-list for startup backfill.
+	listItemsNeedingEnrichment(): ItemRecord[] {
 		const rows = this.db
 			.prepare(
 				`SELECT * FROM items
-				 WHERE source IS NOT NULL
-				   AND (display_name IS NULL OR assessment IS NULL
-				        OR (branch_name IS NULL AND status IN ('inbox', 'ready')))
+				 WHERE kind = 'solve'
+				   AND (
+				     (source IS NOT NULL
+				       AND (display_name IS NULL OR assessment IS NULL
+				         OR (branch_name IS NULL AND status IN ('inbox', 'ready'))))
+				     OR
+				     (source IS NULL AND status = 'ready'
+				       AND (display_name IS NULL OR assessment IS NULL OR branch_name IS NULL))
+				   )
 				 ORDER BY created_at DESC`,
 			)
 			.all() as Record<string, unknown>[]

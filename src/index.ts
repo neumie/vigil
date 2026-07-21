@@ -58,7 +58,7 @@ async function main() {
 	// Start polling
 	poller.start()
 
-	// One-time backfill of AI enrichment (display name + intent triage) for Items still missing it.
+	// One-time backfill of eligible display, assessment, and branch enrichment.
 	enricher.backfill()
 
 	// Start processing queue

@@ -118,32 +118,52 @@ test('itemWantsWorkspaceName only prewarms runnable worktree solve Items', () =>
 	assert.equal(itemWantsWorkspaceName(fakeItem({}), makeConfig({ branchNaming: false })), false)
 })
 
-test('startup backfill includes unnamed runnable branches but excludes running Items', () =>
+test('startup backfill includes source and manual Queue branches but excludes running Items', () =>
 	withTempDb(async db => {
 		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
 		const commands = new ItemCommands(db.items, config)
-		const item = commands.createSolveItem({
+		const sourceItem = commands.createSolveItem({
 			projectSlug: 'helm',
-			title: 'Backfill branch name',
-			prompt: 'Prewarm this Item.',
+			title: 'Backfill source branch name',
+			prompt: 'Prewarm this source Item.',
 			source: { provider: 'Email', externalId: 'email:backfill-branch' },
-			capturedContext: { title: 'Backfill branch name' },
+			capturedContext: { title: 'Backfill source branch name' },
 		})
-		commands.recordDisplayName(item.id, 'Backfill branch')
-		commands.recordAssessment(item.id, {
-			intent: 'Prewarm this Item',
+		const manualItem = commands.createSolveItem({
+			projectSlug: 'helm',
+			title: 'Backfill manual branch name',
+			prompt: 'Prewarm this manual Item.',
+		})
+		const activeManualItem = commands.createSolveItem({
+			projectSlug: 'helm',
+			title: 'Human-owned active Item',
+			prompt: 'Do not prewarm after manual ownership begins.',
+		})
+		commands.setItemStatus(activeManualItem.id, 'active')
+		commands.createLoopItem({
+			projectSlug: 'helm',
+			title: 'Loop is not AI named',
+			prdPath: 'docs/plans/not-an-enrichment-target/prd.md',
+		})
+		commands.recordDisplayName(sourceItem.id, 'Backfill source branch')
+		commands.recordAssessment(sourceItem.id, {
+			intent: 'Prewarm this source Item',
 			verdict: 'clear',
 			clarifyingQuestions: [],
 			securityNote: null,
 			assessedAt: '2026-07-21T00:00:00.000Z',
 		})
 		assert.deepEqual(
-			db.items.listSourceItemsNeedingEnrichment().map(candidate => candidate.id),
-			[item.id],
+			db.items
+				.listItemsNeedingEnrichment()
+				.map(candidate => candidate.id)
+				.sort((a, b) => a.localeCompare(b)),
+			[sourceItem.id, manualItem.id].sort((a, b) => a.localeCompare(b)),
 		)
 
-		commands.startItem(item.id)
-		assert.deepEqual(db.items.listSourceItemsNeedingEnrichment(), [])
+		commands.startItem(sourceItem.id)
+		commands.startItem(manualItem.id)
+		assert.deepEqual(db.items.listItemsNeedingEnrichment(), [])
 	}))
 
 test('enricher precomputes a source Item branch before Start agent', () =>
@@ -177,16 +197,64 @@ test('enricher precomputes a source Item branch before Start agent', () =>
 		}
 	}))
 
-test('late branch prewarming cannot rename a source Item after execution starts', () =>
+test('enricher precomputes a manual Queue Item display name before Start agent', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ branchNaming: false, displayName: true, triage: false })
+		const item = new ItemCommands(db.items, config).createSolveItem({
+			projectSlug: 'helm',
+			title: 'Use a concise display name for this manually created queued solve Item',
+			prompt: 'Keep the raw task title canonical.',
+		})
+		const enricher = new ItemEnricher(config, db.items, provider, 1, {
+			deps: { runOneShot: async () => 'Concise manual Item' },
+			retryDelaysMs: [],
+		})
+		try {
+			enricher.enqueue([item])
+			for (let i = 0; i < 50 && !db.items.get(item.id)?.displayName; i++) await sleep(10)
+			assert.equal(db.items.get(item.id)?.displayName, 'Concise manual Item')
+		} finally {
+			enricher.stop()
+		}
+	}))
+
+test('enricher precomputes a manual Queue Item branch before Start agent', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
+		const item = new ItemCommands(db.items, config).createSolveItem({
+			projectSlug: 'helm',
+			title: 'Use descriptive manual worktree',
+			prompt: 'Name this hand-added task before it starts.',
+		})
+		let prompt = ''
+		const enricher = new ItemEnricher(config, db.items, provider, 1, {
+			deps: {
+				runOneShot: async opts => {
+					prompt = opts.prompt
+					return 'feat/name-manual-worktree'
+				},
+				branchExists: async () => false,
+			},
+			retryDelaysMs: [],
+		})
+		try {
+			enricher.enqueue([item])
+			for (let i = 0; i < 50 && !db.items.get(item.id)?.branchName; i++) await sleep(10)
+			assert.equal(db.items.get(item.id)?.branchName, 'feat/name-manual-worktree')
+			assert.match(prompt, /Name this hand-added task before it starts/)
+		} finally {
+			enricher.stop()
+		}
+	}))
+
+test('late branch prewarming cannot rename a manual Item after execution starts', () =>
 	withTempDb(async db => {
 		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
 		const commands = new ItemCommands(db.items, config)
 		const item = commands.createSolveItem({
 			projectSlug: 'helm',
-			title: 'Start during branch prewarm',
+			title: 'Start during manual branch prewarm',
 			prompt: 'Keep execution identity stable.',
-			source: { provider: 'Email', externalId: 'email:branch-race' },
-			capturedContext: { title: 'Start during branch prewarm' },
 		})
 		let finishNaming: ((value: string) => void) | undefined
 		let markNamingStarted: (() => void) | undefined

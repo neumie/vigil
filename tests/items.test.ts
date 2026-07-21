@@ -49,8 +49,8 @@ import type { SolverResult as SolverResultFile } from '../src/types.js'
 import { phaseError, taskCancelled } from '../src/util/errors.js'
 import { createWorktree, withRepoLock } from '../src/worktree/manager.js'
 
-// apiRoutes takes an ItemEnricher (used only by the ingest route); these route
-// tests don't ingest, so a no-op enqueue stub is enough.
+// apiRoutes enqueues both ingested and manually created Items for background AI
+// enrichment; tests that don't inspect that handoff can use a no-op stub.
 const fakeEnricher = { enqueue() {} }
 
 function recordPreparedPlan(
@@ -1340,8 +1340,14 @@ test('server creates queued loop Items with PRD path and almanac flags', async (
 	})
 })
 
-test('server creates parallel solve Items through dashboard contract', async () => {
+test('server creates parallel solve Items through dashboard contract and enqueues enrichment', async () => {
 	await withTempDb(async db => {
+		const enqueued: string[] = []
+		const recordingEnricher = {
+			enqueue(items: Array<{ id: string }>) {
+				enqueued.push(...items.map(item => item.id))
+			},
+		}
 		const api = apiRoutes(
 			config,
 			'helm.config.json',
@@ -1350,7 +1356,7 @@ test('server creates parallel solve Items through dashboard contract', async () 
 			poller as never,
 			provider as never,
 			spawner as never,
-			fakeEnricher as never,
+			recordingEnricher as never,
 		)
 
 		const res = await api.request('/items', {
@@ -1390,6 +1396,10 @@ test('server creates parallel solve Items through dashboard contract', async () 
 			['ready', 'ready'],
 		)
 		assert.equal(db.items.list({ projectSlug: 'helm' }).length, 2)
+		assert.deepEqual(
+			enqueued,
+			body.data.map(item => item.id),
+		)
 	})
 })
 

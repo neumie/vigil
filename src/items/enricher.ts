@@ -31,13 +31,13 @@ export interface EnricherOptions {
 const DEFAULT_RETRY_DELAYS_MS = [30_000, 120_000, 300_000]
 
 /**
- * Background per-item AI enricher. For each source Item it runs the best-effort
- * enrichments that are enabled and still missing — a short display name (from the
- * title), a pre-solve intent assessment, and an optional AI branch name (both from
- * task context) — off the poll/start hot paths, with a small concurrency cap so a
- * batch poll can't fan out dozens of model calls at once. Wired in `index.ts`; the
- * poller enqueues newly-discovered Items, and startup runs a one-time backfill over
- * Items still missing enrichment.
+ * Background per-item AI enricher. For each source Item—or source-less solve Item
+ * still waiting in Queue—it runs the best-effort enrichments that are enabled and
+ * missing: a short display name (from the title), a pre-solve intent assessment,
+ * and an optional AI branch name (both from task context). Work stays off the
+ * poll/start hot paths, with a small concurrency cap so a batch cannot fan out
+ * dozens of model calls at once. Wired in `index.ts`; poll/API creation enqueues
+ * new Items, and startup runs a one-time backfill over eligible rows.
  *
  * **Transient-failure auto-retry.** A one-shot model call can time out (SIGTERM)
  * when the machine is overloaded, leaving the Item unenriched. After each run, if
@@ -80,9 +80,12 @@ export class ItemEnricher {
 		)
 	}
 
-	/** An enrichment that should have landed but hasn't (worth running / retrying). */
+	/** An enrichment that should have landed but hasn't (worth running / retrying).
+	 * Source Items keep their historical cosmetic backfill behavior; source-less
+	 * manual Items are eligible only while waiting in Queue. */
 	private needsEnrichment(item: ItemRecord): boolean {
-		if (!item.source) return false
+		if (item.kind !== 'solve') return false
+		if (!item.source && item.status !== 'ready') return false
 		return (
 			itemWantsDisplayName(item, this.config) ||
 			itemWantsAssessment(item, this.config) ||
@@ -90,10 +93,10 @@ export class ItemEnricher {
 		)
 	}
 
-	/** One-time startup sweep over source Items still missing any enrichment. */
+	/** One-time startup sweep over Items still missing eligible enrichment. */
 	backfill() {
 		if (!this.enabled) return
-		const pending = this.store.listSourceItemsNeedingEnrichment()
+		const pending = this.store.listItemsNeedingEnrichment()
 		if (pending.length > 0) log.info('enrich', `Backfilling enrichment for ${pending.length} Item(s)`)
 		this.enqueue(pending)
 	}
@@ -164,8 +167,8 @@ export class ItemEnricher {
 	private async enrichOne(id: string) {
 		let item = this.store.get(id)
 		if (!item) return
-		// Display name first (title-only); it returns the updated row so the
-		// assessment step sees the freshest Item without a reload.
+		// Display name first (title-only); it returns the updated row so later
+		// context-based passes start from the freshest Item without a reload.
 		item = await ensureItemDisplayName({
 			commands: this.commands,
 			item,
@@ -180,18 +183,8 @@ export class ItemEnricher {
 		const wantsWorkspaceName = itemWantsWorkspaceName(item, this.config)
 		if (wantsAssessment || wantsWorkspaceName) {
 			const taskContext = buildItemTaskContext(item, await this.fetchContext(item))
-			if (wantsAssessment) {
-				await ensureItemAssessment({
-					commands: this.commands,
-					item,
-					taskContext,
-					config: this.config,
-					deps: this.deps,
-				}).catch(err => {
-					log.warn('enrich', `Assessment error for Item ${id}: ${err instanceof Error ? err.message : err}`)
-				})
-			}
-
+			// Identity is latency-critical: reserve the branch before advisory triage
+			// so a newly hand-added Item can be started with its AI name immediately.
 			const freshItem = this.store.get(id)
 			if (!freshItem) return
 			item = freshItem
@@ -213,13 +206,29 @@ export class ItemEnricher {
 					log.warn('enrich', `Branch naming error for Item ${id}: ${err instanceof Error ? err.message : err}`)
 				})
 			}
+
+			if (wantsAssessment) {
+				await ensureItemAssessment({
+					commands: this.commands,
+					item,
+					taskContext,
+					config: this.config,
+					deps: this.deps,
+				}).catch(err => {
+					log.warn('enrich', `Assessment error for Item ${id}: ${err instanceof Error ? err.message : err}`)
+				})
+			}
 		}
 	}
 
-	/** Task context for assessment: frozen captured context first (ingested email
-	 *  etc.), else live provider context; degrades to title-only on any failure. */
+	/** Task context for assessment/naming: frozen captured context first (ingested
+	 *  email etc.), else live provider context; degrades to canonical title plus
+	 *  the hand-authored prompt for manual solve Items. */
 	private async fetchContext(item: ItemRecord): Promise<TaskContext> {
-		const fallback: TaskContext = { title: item.displayName ?? item.title }
+		const fallback: TaskContext = {
+			title: item.title,
+			...(item.payload.kind === 'solve' ? { description: item.payload.prompt } : {}),
+		}
 		if (item.capturedContext) return item.capturedContext
 		if (!item.source) return fallback
 		try {

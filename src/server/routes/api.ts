@@ -686,6 +686,7 @@ export function apiRoutes(
 						})
 				}
 			})()
+			enricher.enqueue(items)
 			if (items.some(item => item.status === 'ready')) queue.wake()
 			return c.json({ data: items.length === 1 ? await dashboardItem(items[0]) : dashboardItems(items) }, 201)
 		} catch (err) {
