@@ -245,6 +245,30 @@ body.tab-dragging .tab {
 	text-overflow: ellipsis;
 }
 
+/* Explicit OSC 9;4 live state from Pi — visible words plus the shared live
+ * pulse, never guessed from output or silence. */
+.tab-running {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	color: var(--accent);
+	font-size: 10px;
+	font-weight: 500;
+}
+
+.tab-running[hidden] {
+	display: none;
+}
+
+.tab-running-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 999px;
+	background: var(--accent);
+	animation: dot-pulse 1.6s ease-in-out infinite;
+}
+
 /* Inline tab rename (double-click / context-menu "Rename…", §3.14): a §3.7
  * field compacted into the 28px tab — accent border IS the focus signal
  * (fields never get the outer ring). Enter/blur commit, Esc cancels; empty

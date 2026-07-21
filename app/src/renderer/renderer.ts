@@ -17,6 +17,7 @@ import {
 } from './tab-drag'
 import { decideTabTitle, isShellDefaultTitle, normalizeTabTitle } from './tab-title'
 import { terminalShortcut } from './terminal-keybindings'
+import { type TerminalProgressTracker, createTerminalProgressTracker } from './terminal-progress'
 import { showToast } from './toast'
 
 declare global {
@@ -140,6 +141,10 @@ interface Tab {
 	frameOutputPending: boolean
 	frameFreeze: HTMLElement | null
 	outputGuard: SynchronizedOutputGuard
+	/** Explicit OSC 9;4 state from Pi; never inferred from terminal output. */
+	agentRunning: boolean
+	progressTracker: TerminalProgressTracker
+	runningEl: HTMLSpanElement
 	term: Terminal
 	fit: FitAddon
 	/** Buffer serializer for snapshot saves (restore-before-attach, app/src/buffers.ts). */
@@ -200,9 +205,17 @@ function displayName(tab: Tab): string {
 function renderTabLabel(tab: Tab): void {
 	const text = displayName(tab)
 	tab.labelEl.textContent = text
+	tab.tabButton.setAttribute('aria-label', tab.agentRunning ? `${text} — Running` : text)
 	const tip = tab.customName !== null ? (tab.oscRaw ?? tab.oscTitle ?? (tab.titleRaw || tab.title)) : tab.titleRaw
 	if (tip && tip !== text) tab.labelEl.title = tip
 	else tab.labelEl.removeAttribute('title')
+}
+
+function setTabAgentRunning(tab: Tab, running: boolean): void {
+	if (tab.agentRunning === running) return
+	tab.agentRunning = running
+	tab.runningEl.hidden = !running
+	renderTabLabel(tab)
 }
 
 // ---------- manual rename (double-click a tab / context-menu "Rename…") ----------
@@ -587,6 +600,7 @@ function closeTab(tab: Tab): void {
 	if (tab.closed) return
 	tab.closed = true
 	tab.outputGuard.abort()
+	tab.progressTracker.clear()
 	const { title, customName } = tab
 	const shown = customName ?? title
 	// Soft close (okena-style): main only DETACHES the pty client and arms a
@@ -689,6 +703,8 @@ function killParkedTab(tab: Tab): void {
 	const index = parked.indexOf(tab)
 	if (index === -1 || tab.closed) return
 	tab.closed = true
+	tab.outputGuard.abort()
+	tab.progressTracker.clear()
 	parked.splice(index, 1)
 	persistTerminalOrder()
 	const { title, customName } = tab
@@ -1240,18 +1256,27 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 	tabButton.tabIndex = 0
 	const label = document.createElement('span')
 	label.className = 'tab-label'
+	const running = document.createElement('span')
+	running.className = 'tab-running'
+	running.hidden = true
+	running.setAttribute('aria-live', 'polite')
+	const runningDot = document.createElement('span')
+	runningDot.className = 'tab-running-dot'
+	runningDot.setAttribute('aria-hidden', 'true')
+	running.append(runningDot, 'Running')
 	const close = document.createElement('button')
 	close.className = 'tab-close'
 	close.textContent = '×'
 	close.title = 'Close (⌘W)'
 	close.setAttribute('aria-label', 'Close terminal')
-	tabButton.append(label, close)
+	tabButton.append(label, running, close)
 
 	let tab!: Tab
 	const outputGuard = createSynchronizedOutputGuard({
 		onFreeze: () => freezeTerminalFrame(tab),
 		onUnfreeze: () => unfreezeTerminalFrame(tab),
 	})
+	const progressTracker = createTerminalProgressTracker(active => setTabAgentRunning(tab, active))
 	tab = {
 		ptyId: null,
 		sessionId: null,
@@ -1276,6 +1301,9 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 		frameOutputPending: false,
 		frameFreeze: null,
 		outputGuard,
+		agentRunning: false,
+		progressTracker,
+		runningEl: running,
 		term,
 		fit,
 		serialize,
@@ -1436,6 +1464,7 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 helm.pty.onData((id, data) => {
 	const tab = findByPty(id)
 	if (!tab) return
+	tab.progressTracker.feed(data)
 	// Session-backed spawns: swallow dtach's one-time attach clear so it can't
 	// wipe the restored snapshot (non-dtach fallback ptys emit no such prefix).
 	let output = data
@@ -1457,6 +1486,7 @@ helm.pty.onExit((id, exitCode) => {
 	const tab = findByPty(id)
 	if (!tab) return
 	tab.outputGuard.abort()
+	tab.progressTracker.clear()
 	tab.ptyId = null // pty is gone; don't kill it again on close
 	tab.dirty = false // session over — its snapshot is reaped with it, don't re-save
 	if (tab.parked) {
