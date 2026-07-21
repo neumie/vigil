@@ -805,8 +805,9 @@ function renderBackgroundRows(): void {
 	const focused = [...bgRows.querySelectorAll<HTMLElement>('.bg-row')].indexOf(focusedRow as HTMLElement)
 	bgRows.textContent = ''
 	for (const tab of parked) {
-		const sessionState = tab.exitCode === null ? 'Running' : `Exited (${tab.exitCode})`
+		const exitedState = tab.exitCode === null ? null : `Exited (${tab.exitCode})`
 		const agentState = tab.agentAttention ? 'Run finished, needs attention' : tab.agentRunning ? 'Agent running' : null
+		const accessibleState = [exitedState, agentState].filter(Boolean).join(', ')
 		const row = document.createElement('div')
 		row.className = `bg-row${activeTab === tab ? ' active' : ''}`
 
@@ -815,29 +816,32 @@ function renderBackgroundRows(): void {
 		open.title = 'Open and keep in background'
 		open.setAttribute(
 			'aria-label',
-			`Open ${displayName(tab)} and keep in background — ${sessionState}${agentState ? `, ${agentState}` : ''}`,
+			`Open ${displayName(tab)} and keep in background${accessibleState ? ` — ${accessibleState}` : ''}`,
 		)
 		open.addEventListener('click', () => openParked(tab))
 
-		const activitySlot = document.createElement('span')
-		activitySlot.className = 'bg-activity-slot'
 		if (tab.agentRunning || tab.agentAttention) {
 			const indicator = createActivityIndicator(
 				tab.agentAttention ? 'Run finished — open terminal to clear' : 'Agent running',
 				tab.agentAttention ? 'attention' : 'progress',
 			)
 			indicator.classList.add('bg-activity')
-			activitySlot.append(indicator)
+			open.append(indicator)
 		}
 
+		const copy = document.createElement('span')
+		copy.className = 'bg-open-copy'
 		const title = document.createElement('span')
-		title.className = `bg-title${tab.exitCode !== null ? ' exited' : ''}`
+		title.className = `bg-title${exitedState ? ' exited' : ''}`
 		title.textContent = displayName(tab) // rename pin shows here too
-
-		const state = document.createElement('span')
-		state.className = 'bg-state'
-		state.textContent = sessionState
-		open.append(activitySlot, title, state)
+		copy.append(title)
+		if (exitedState) {
+			const state = document.createElement('span')
+			state.className = 'bg-state'
+			state.textContent = exitedState
+			copy.append(state)
+		}
+		open.append(copy)
 
 		const restore = document.createElement('button')
 		restore.className = 'bg-action'

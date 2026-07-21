@@ -37,12 +37,12 @@ test('background rows form an editorial list with explicit icon actions', () => 
 	assert.match(css, /#bg-popover\s*\{[^}]*max-height:\s*min\(480px, calc\(100vh - 48px\)\)/s)
 	assert.match(css, /#bg-rows\s*\{[^}]*overflow-y:\s*auto/s)
 	assert.match(css, /\.bg-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto auto/s)
-	assert.match(css, /\.bg-row\s*\{[^}]*min-height:\s*52px/s)
+	assert.match(css, /\.bg-row\s*\{[^}]*min-height:\s*44px/s)
 	assert.match(css, /\.bg-row\s*\{[^}]*margin:\s*0 -4px/s)
 	assert.match(css, /\.bg-row\s*\{[^}]*width:\s*calc\(100% \+ 8px\)/s)
 	assert.match(css, /\.bg-row\s*\{[^}]*border-radius:\s*0/s)
-	assert.match(css, /\.bg-open\s*\{[^}]*grid-template-columns:\s*10px minmax\(0, 1fr\)/s)
-	assert.match(css, /\.bg-state\s*\{[^}]*grid-column:\s*2/s)
+	assert.match(css, /\.bg-open\s*\{[^}]*display:\s*flex/s)
+	assert.match(css, /\.bg-open-copy\s*\{[^}]*display:\s*grid/s)
 })
 
 test('background popover catches a click on native titlebar whitespace', () => {
@@ -57,16 +57,24 @@ test('background popover catches a click on native titlebar whitespace', () => {
 	assert.match(close, /topbarDragSpace\.classList\.remove\('popover-catcher'\)/)
 })
 
-test('background rows reuse protocol-owned ActivityIndicator state', () => {
+test('background rows show only protocol-owned agent state', () => {
 	const render = functionSlice('renderBackgroundRows', 'onBgOutside')
 	assert.match(render, /tab\.agentRunning \|\| tab\.agentAttention/)
 	assert.match(render, /createActivityIndicator/)
-	assert.match(render, /sessionState/)
+	assert.match(render, /const exitedState = tab\.exitCode === null \? null : `Exited \(\$\{tab\.exitCode\}\)`/)
 	assert.match(render, /agentState/)
-	assert.match(render, /Open \$\{displayName\(tab\)\} and keep in background — \$\{sessionState\}/)
+	assert.doesNotMatch(render, /['"]Running['"]/)
+	assert.doesNotMatch(render, /bg-activity-slot/)
+	assert.match(render, /if \(exitedState\)/)
 	assert.doesNotMatch(renderer, /bg-dot|activityMuteUntil|Output after parking lights/)
 	assert.match(renderer, /if \(tab\.parked\) updateBackgroundUi\(\)/)
 	assert.match(renderer, /if \(activeTab\.parked\) killParkedTab\(activeTab\)/)
+})
+
+test('background rows collapse idle live terminals to one compact line', () => {
+	assert.match(css, /\.bg-row\s*\{[^}]*min-height:\s*44px/s)
+	assert.match(css, /\.bg-open\s*\{[^}]*display:\s*flex/s)
+	assert.doesNotMatch(css, /\.bg-activity-slot\s*\{/)
 })
 
 test('closing the final background row moves focus before hiding the control', () => {

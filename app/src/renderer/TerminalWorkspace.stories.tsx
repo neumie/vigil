@@ -52,17 +52,17 @@ function BackgroundRow({
 	state,
 	activity,
 	active,
-}: { title: string; state: string; activity?: 'progress' | 'attention'; active?: boolean }) {
+}: { title: string; state?: string; activity?: 'progress' | 'attention'; active?: boolean }) {
 	return (
 		<div className={`bg-row${active ? ' active' : ''}`}>
 			<button type="button" className="bg-open" title="Open and keep in background">
-				<span className="bg-activity-slot">
-					{activity ? (
-						<ActivityIndicator variant={activity} label={activity === 'attention' ? 'Run finished' : 'Agent running'} />
-					) : null}
+				{activity ? (
+					<ActivityIndicator variant={activity} label={activity === 'attention' ? 'Run finished' : 'Agent running'} />
+				) : null}
+				<span className="bg-open-copy">
+					<span className={`bg-title${state ? ' exited' : ''}`}>{title}</span>
+					{state ? <span className="bg-state">{state}</span> : null}
 				</span>
-				<span className={`bg-title${state.startsWith('Exited') ? ' exited' : ''}`}>{title}</span>
-				<span className="bg-state">{state}</span>
 			</button>
 			<button type="button" className="bg-action" title="Move to tabs and open">
 				⇥
@@ -134,7 +134,7 @@ function TerminalShell({ children, popover, left = 0 }: { children?: ReactNode; 
 						>
 							<StackIcon />
 							<span id="bg-count" className="bg-count">
-								3
+								4
 							</span>
 						</button>
 						{popover ? (
@@ -144,12 +144,13 @@ function TerminalShell({ children, popover, left = 0 }: { children?: ReactNode; 
 								<div className="bg-header">
 									<span>Background terminals</span>
 									<span id="bg-header-count" className="bg-header-count">
-										3
+										4
 									</span>
 								</div>
 								<div id="bg-rows">
-									<BackgroundRow title="indexing workspace" state="Running" activity="progress" active />
-									<BackgroundRow title="agent review" state="Running" activity="attention" />
+									<BackgroundRow title="okena" active />
+									<BackgroundRow title="indexing workspace" activity="progress" />
+									<BackgroundRow title="agent review" activity="attention" />
 									<BackgroundRow title="completed tests" state="Exited (0)" />
 								</div>
 							</div>
