@@ -38,6 +38,7 @@ test('background rows form an editorial list with explicit icon actions', () => 
 	assert.doesNotMatch(render, /restore\.className|kill\.className/)
 	assert.match(normalizedHtml, /aria-haspopup="dialog"/)
 	assert.match(normalizedHtml, /<span id="bg-header-count" class="bg-header-count">0<\/span>/)
+	assert.match(css, /#bg-popover\s*\{[^}]*top:\s*calc\(100% \+ 5px\)/s)
 	assert.match(css, /#bg-popover\s*\{[^}]*width:\s*320px/s)
 	assert.match(css, /#bg-popover\s*\{[^}]*max-height:\s*min\(480px, calc\(100vh - 48px\)\)/s)
 	assert.match(css, /#bg-rows\s*\{[^}]*overflow-y:\s*auto/s)

@@ -505,6 +505,7 @@ body.tab-dragging .tab {
 }
 
 #bg-popover {
+	top: calc(100% + 5px);
 	display: flex;
 	flex-direction: column;
 	width: 320px;
