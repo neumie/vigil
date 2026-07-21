@@ -1,11 +1,11 @@
-// Inline disclosure (§3.20): the quiet show/hide toggle for heavy in-place
-// evidence such as solve input and run setup pickers. Content SNAPS open —
-// never height-animated — and renders only while open.
+// Disclosure group (§3.20): heavy inline evidence stays behind a quiet
+// section-header action. Content SNAPS open, never height-animates, and renders
+// only while open.
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Card, Disclosure } from './ui'
+import { Disclosure } from './ui'
 
 const meta: Meta = {
-	title: 'Primitives/Disclosure',
+	title: 'Compositions/Disclosure group',
 	decorators: [
 		story => (
 			<div className="page-scroll" style={{ width: 340, overflow: 'visible' }}>
@@ -21,40 +21,43 @@ type Story = StoryObj
 const INPUT = `Implement the approved task in the prepared worktree.
 Preserve the existing authentication flow and add regression coverage.`
 
-/** Closed at rest: the verb-first cue is the only footprint — a collapsed
- *  well contributes zero DOM. */
+/** Closed at rest: the section header and its quiet action are the entire
+ * visible footprint; the empty controlled-region shell stays hidden so the
+ * action's aria-controls target remains valid. */
 export const Closed: Story = {
 	render: () => (
-		<Card label="Solve input">
-			<Disclosure label="Show input" hideLabel="Hide input">
-				<section className="log-well">{INPUT}</section>
-			</Disclosure>
-		</Card>
+		<Disclosure heading="Solve input" label="Show" hideLabel="Hide">
+			<section className="log-well">{INPUT}</section>
+		</Disclosure>
 	),
 }
 
-/** Open mount state: the cue flips to its hide verb and the well snaps into
- *  the group's flow. */
+/** Open mount state: the action flips to Hide and the evidence snaps directly
+ * into the section flow. */
 export const Open: Story = {
 	render: () => (
-		<Card label="Solve input">
-			<Disclosure label="Show input" hideLabel="Hide input" defaultOpen>
-				<section className="log-well">{INPUT}</section>
-			</Disclosure>
-		</Card>
+		<Disclosure heading="Solve input" label="Show" hideLabel="Hide" defaultOpen>
+			<section className="log-well">{INPUT}</section>
+		</Disclosure>
 	),
 }
 
-/** A summary readable at rest above the disclosure (execution setup): the current
- *  value costs zero clicks; the controls stay one snap away. */
+/** A useful resting summary stays visible while only the editing controls are
+ * conditional. */
 export const WithSummaryAtRest: Story = {
 	render: () => (
-		<Card label="Execution setup">
-			<p className="run-setup-summary">Claude Code · Default model · Worktree</p>
-			<p className="run-caption">Applied to Start agent and Start loop.</p>
-			<Disclosure label="Change setup" hideLabel="Hide setup">
-				<p className="section-description">The four run-selection fields render here when open.</p>
-			</Disclosure>
-		</Card>
+		<Disclosure
+			heading="Execution setup"
+			label="Change"
+			hideLabel="Done"
+			summary={
+				<>
+					<p className="run-setup-summary">Claude Code · Default model · Worktree</p>
+					<p className="run-caption">Applied to Start agent and Start loop.</p>
+				</>
+			}
+		>
+			<p className="section-description">The four run-selection fields render here when open.</p>
+		</Disclosure>
 	),
 }

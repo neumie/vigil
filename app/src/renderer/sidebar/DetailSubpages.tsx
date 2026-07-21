@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { HelmSnapshot } from '../../shared-helm'
 import { useItemDetail } from './detail-data'
 import { absoluteUrl, openExternalUrl, relativeTime, useNow } from './model'
-import { Card, EmptyState, GLYPH, IconBtn, InfoRow, PushHeader } from './ui'
+import { Btn, Card, EmptyState, GLYPH, IconBtn, InfoRow, PushHeader } from './ui'
 
 interface DetailSubpageProps {
 	id: string
@@ -17,9 +17,9 @@ function Unavailable({ title, error, retry }: { title: string; error: string | n
 		<>
 			<div className="detail-fetch-alert" role="alert">
 				Latest detail is unavailable: {error ?? 'Unknown error'}
-				<button type="button" className="detail-disclosure" onClick={() => void retry()}>
+				<Btn sm onClick={() => void retry()}>
 					Retry
-				</button>
+				</Btn>
 			</div>
 			<EmptyState title={title} detail="Try again when the daemon is available." />
 		</>
@@ -243,9 +243,9 @@ function FetchAlert({ error, retry }: { error: string | null; retry: () => Promi
 	return (
 		<div className="detail-fetch-alert" role="alert">
 			<span>Latest detail is unavailable: {error ?? 'Unknown error'}</span>
-			<button type="button" className="detail-disclosure" onClick={() => void retry()}>
+			<Btn sm onClick={() => void retry()}>
 				Retry
-			</button>
+			</Btn>
 		</div>
 	)
 }

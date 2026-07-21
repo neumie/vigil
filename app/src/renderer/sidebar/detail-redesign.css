@@ -81,40 +81,33 @@
 .detail-work-mode {
 	color: var(--text-2);
 }
-.detail-disclosure {
+.disclosure-action {
 	display: inline-flex;
-	align-self: flex-start;
 	align-items: center;
 	justify-content: center;
-	gap: 6px;
-	min-height: 28px;
+	min-height: 24px;
+	margin: -4px -8px -4px 0;
 	padding: 0 8px;
 	border: 0;
-	border-radius: 6px;
-	background: var(--fill-subtle);
+	border-radius: var(--radius-sm);
+	background: transparent;
 	color: var(--text-1);
-	font: 600 calc(11px * var(--ui-scale)) var(--font-ui);
+	font: 500 calc(11px * var(--ui-scale)) var(--font-ui);
 	cursor: pointer;
 	transition: background-color 140ms ease-out, color 140ms ease-out;
 }
-.detail-disclosure:hover,
-.detail-disclosure[aria-expanded="true"] {
-	background: var(--fill-raised);
+.disclosure-action:hover {
+	background: var(--fill-subtle);
 	color: var(--text-0);
 }
-.disclosure-mark {
-	width: 8px;
-	color: var(--text-2);
-	font-size: calc(13px * var(--ui-scale));
-	font-weight: 500;
-	line-height: 1;
-	text-align: center;
-}
-/* Inline disclosure (§3.20): the revealed wrapper is layout-neutral — children
- * participate in the card's flex flow directly. Content snaps; never animate
- * height (§2.5). */
+/* Disclosure group (§3.20): the action belongs to the section header; the
+ * revealed wrapper is layout-neutral so children participate in the group's
+ * flex flow directly. Content snaps; never animate height (§2.5). */
 .disclosure-content {
 	display: contents;
+}
+.disclosure-content[hidden] {
+	display: none;
 }
 .section-description {
 	font-size: calc(12px * var(--ui-scale));
@@ -141,8 +134,8 @@
 	flex: 1;
 	min-width: 0;
 }
-.detail-fetch-alert .detail-disclosure,
-.command-error .detail-disclosure {
+.detail-fetch-alert .btn,
+.command-error .btn {
 	margin-left: auto;
 	flex: none;
 }

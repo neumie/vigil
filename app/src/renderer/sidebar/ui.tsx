@@ -593,20 +593,26 @@ export function ClampText({ text, lines = 4 }: { text: string; lines?: number })
  *  always-mounted nav-page layers. `defaultOpen` applies at mount only: a
  *  status flip mid-read must never collapse a section the user opened. */
 export function Disclosure({
+	heading,
 	label,
 	hideLabel,
+	summary,
 	defaultOpen,
 	open: controlledOpen,
 	onToggle,
 	children,
 }: {
-	/** Verb-first cue while closed ("Show log"). */
+	/** Section heading that gives the compact action its context. */
+	heading: string
+	/** Short header action while closed ("Show" or "Change"). */
 	label: string
-	/** Verb-first cue while open ("Hide log"). */
+	/** Short header action while open ("Hide" or "Done"). */
 	hideLabel: string
+	/** Useful collapsed content that remains visible below the header. */
+	summary?: ReactNode
 	defaultOpen?: boolean
 	/** Controlled mode: the caller owns the open bit (single source of truth
-	 *  when something else — e.g. the live log tail — also reads it). */
+	 *  when something else also reads it). */
 	open?: boolean
 	onToggle?: (open: boolean) => void
 	children: ReactNode
@@ -614,30 +620,29 @@ export function Disclosure({
 	const [internalOpen, setInternalOpen] = useState(defaultOpen ?? false)
 	const open = controlledOpen ?? internalOpen
 	const contentId = useId()
+	const action = (
+		<button
+			type="button"
+			className="disclosure-action"
+			aria-expanded={open}
+			aria-controls={contentId}
+			onClick={() => {
+				if (controlledOpen === undefined) setInternalOpen(!open)
+				onToggle?.(!open)
+			}}
+		>
+			{open ? hideLabel : label}
+		</button>
+	)
 	return (
-		<>
-			<button
-				type="button"
-				className="detail-disclosure"
-				aria-expanded={open}
-				aria-controls={contentId}
-				onClick={() => {
-					if (controlledOpen === undefined) setInternalOpen(!open)
-					onToggle?.(!open)
-				}}
-			>
-				<span>{open ? hideLabel : label}</span>
-				<span className="disclosure-mark" aria-hidden="true">
-					{open ? '−' : '+'}
-				</span>
-			</button>
-			{open && (
-				// Layout-neutral (display: contents) — content labels itself.
-				<div id={contentId} className="disclosure-content">
-					{children}
-				</div>
-			)}
-		</>
+		<Card label={heading} trailing={action}>
+			{summary}
+			{/* Keep the controlled region's ID in the accessibility tree contract,
+			 * while leaving its potentially-heavy children unmounted at rest. */}
+			<div id={contentId} className="disclosure-content" hidden={!open}>
+				{open ? children : null}
+			</div>
+		</Card>
 	)
 }
 

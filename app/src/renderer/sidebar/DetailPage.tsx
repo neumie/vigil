@@ -318,9 +318,9 @@ export function DetailPage(props: DetailPageProps) {
 				{phase === 'stale-error' && (
 					<div className="detail-fetch-alert" role="alert">
 						<span>Latest detail is unavailable: {error}</span>
-						<button type="button" className="detail-disclosure" onClick={() => void refetch()}>
+						<Btn sm onClick={() => void refetch()}>
 							Retry
-						</button>
+						</Btn>
 					</div>
 				)}
 				{state.attention && (
@@ -345,9 +345,9 @@ export function DetailPage(props: DetailPageProps) {
 			{commandError && (
 				<div className="command-error" role="alert">
 					<span>{commandError}</span>
-					<button type="button" className="detail-disclosure" onClick={() => retryCommand?.()}>
+					<Btn sm onClick={() => retryCommand?.()}>
 						Retry
-					</button>
+					</Btn>
 				</div>
 			)}
 			<output className="sr-only" aria-live="polite">

@@ -1,8 +1,8 @@
 // Detail page sections — the one flat editorial stack (§3.15). Run evidence
-// (activity, log, solve input) and run setup live INLINE here (§3.20 inline
-// disclosure); only the two long-form reading surfaces (Task, Plan documents)
+// (activity, log, solve input) and run setup live INLINE here (§3.20
+// expandable groups); only the two long-form reading surfaces (Task, Plan documents)
 // remain pushed pages.
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { AppConfig, Assessment, DashboardItem } from '../../shared-helm'
 import {
@@ -101,50 +101,32 @@ function EvidenceWell({ label, children }: { label: string; children: ReactNode 
 /** Event history only. Current lifecycle and ticket progress already live in
  *  the Item header; Almanac state/round/summary are implementation details. */
 export function ActivitySection({ item, now }: { item: DashboardItem; now: number }) {
-	const [historyOpen, setHistoryOpen] = useState(false)
-	const listId = useId()
 	const events = useMemo(() => [...item.runObservation.events].reverse(), [item.runObservation.events])
 	const resultSummary = item.resultSummary?.trim() || null
 	if (events.length === 0 && !resultSummary) return null
-	const historyToggle = (
-		<button
-			type="button"
-			className="detail-disclosure"
-			aria-controls={listId}
-			aria-expanded={historyOpen}
-			onClick={() => setHistoryOpen(value => !value)}
-		>
-			<span>{historyOpen ? 'Hide history' : 'Show history'}</span>
-			<span className="disclosure-mark" aria-hidden="true">
-				{historyOpen ? '−' : '+'}
-			</span>
-		</button>
-	)
 	return (
-		<Card label="Activity" trailing={historyToggle}>
-			{historyOpen && (
-				<div id={listId} className="activity-history">
-					{resultSummary && (
-						<div className="activity-summary">
-							<span className="activity-summary-label">Result</span>
-							<ClampText text={resultSummary} />
-						</div>
-					)}
-					{events.length > 0 && (
-						<ol className="activity-list">
-							{events.map((event, index) => (
-								<li key={`${event.type}-${event.createdAt}-${index}`} className="activity-item">
-									<span>{event.label}</span>
-									<time className="activity-time" dateTime={event.createdAt ?? undefined}>
-										{relativeTime(event.createdAt, now)}
-									</time>
-								</li>
-							))}
-						</ol>
-					)}
-				</div>
-			)}
-		</Card>
+		<Disclosure heading="Activity" label="Show" hideLabel="Hide">
+			<div className="activity-history">
+				{resultSummary && (
+					<div className="activity-summary">
+						<span className="activity-summary-label">Result</span>
+						<ClampText text={resultSummary} />
+					</div>
+				)}
+				{events.length > 0 && (
+					<ol className="activity-list">
+						{events.map((event, index) => (
+							<li key={`${event.type}-${event.createdAt}-${index}`} className="activity-item">
+								<span>{event.label}</span>
+								<time className="activity-time" dateTime={event.createdAt ?? undefined}>
+									{relativeTime(event.createdAt, now)}
+								</time>
+							</li>
+						))}
+					</ol>
+				)}
+			</div>
+		</Disclosure>
 	)
 }
 
@@ -195,11 +177,9 @@ export function LogSection({
 export function InputSection({ item }: { item: DashboardItem }) {
 	if (!item.solveInputSnapshot) return null
 	return (
-		<Card label="Solve input">
-			<Disclosure label="Show input" hideLabel="Hide input">
-				<EvidenceWell label="Solve input">{item.solveInputSnapshot}</EvidenceWell>
-			</Disclosure>
-		</Card>
+		<Disclosure heading="Solve input" label="Show" hideLabel="Hide">
+			<EvidenceWell label="Solve input">{item.solveInputSnapshot}</EvidenceWell>
+		</Disclosure>
 	)
 }
 
@@ -227,88 +207,94 @@ export function SetupSection({
 		...(selection.agent === 'claude' ? [{ value: 'max', label: EFFORT_LABEL.max }] : []),
 	]
 	return (
-		<Card label="Execution setup">
-			<p className="run-setup-summary">{selectionSummary(selection)}</p>
-			<p className="run-caption">Applied to Start agent and Start loop.</p>
-			<Disclosure label="Change setup" hideLabel="Hide setup">
-				<div className="run-setup">
-					<div>
-						<FieldLabel>Agent</FieldLabel>
-						<Segmented
-							label="Solver agent"
-							commit
-							value={selection.agent}
-							onChange={agent => onDraftChange(selectAgent(draft, agent, config))}
-							options={[
-								{ value: 'claude', label: 'Claude' },
-								{ value: 'codex', label: 'Codex' },
-							]}
-						/>
-					</div>
-					<div>
-						<div className="run-field-head">
-							<FieldLabel htmlFor="run-model">Model</FieldLabel>
-							{(draft.model !== undefined || item.solverModel !== null) && (
-								<button className="field-reset" type="button" onClick={() => onDraftChange({ ...draft, model: null })}>
-									Default
-								</button>
-							)}
-						</div>
-						<SelectInput
-							id="run-model"
-							value={selection.model ?? ''}
-							onChange={model => onDraftChange({ ...draft, model: model || null })}
-							options={[
-								{ value: '', label: 'Default (daemon)' },
-								...catalog.map(model => ({ value: model.id, label: model.label })),
-							]}
-						/>
-					</div>
-					<div>
-						<div className="run-field-head">
-							<FieldLabel htmlFor="run-effort">Effort</FieldLabel>
-							{(draft.effort !== undefined || item.solverEffort !== null) && (
-								<button className="field-reset" type="button" onClick={() => onDraftChange({ ...draft, effort: null })}>
-									Default
-								</button>
-							)}
-						</div>
-						<SelectInput
-							id="run-effort"
-							value={selection.effort ?? ''}
-							onChange={effort => onDraftChange({ ...draft, effort: (effort || null) as RunSelectionDraft['effort'] })}
-							options={effortOptions}
-						/>
-					</div>
-					<div>
-						<div className="run-field-head">
-							<FieldLabel>Workspace</FieldLabel>
-							{(draft.workspace !== undefined || item.solverWorkspace !== null) && (
-								<button
-									className="field-reset"
-									type="button"
-									onClick={() => onDraftChange({ ...draft, workspace: null })}
-								>
-									Default
-								</button>
-							)}
-						</div>
-						<Segmented
-							label="Execution workspace"
-							value={selection.workspace}
-							onChange={workspace => onDraftChange({ ...draft, workspace })}
-							options={[
-								{ value: 'worktree', label: 'Worktree' },
-								{ value: 'main', label: 'Main' },
-							]}
-						/>
-						{selection.workspace === 'main' && (
-							<p className="run-caption">Uses the project checkout; loops require a plan prepared there.</p>
+		<Disclosure
+			heading="Execution setup"
+			label="Change"
+			hideLabel="Done"
+			summary={
+				<>
+					<p className="run-setup-summary">{selectionSummary(selection)}</p>
+					<p className="run-caption">Applied to Start agent and Start loop.</p>
+				</>
+			}
+		>
+			<div className="run-setup">
+				<div>
+					<FieldLabel>Agent</FieldLabel>
+					<Segmented
+						label="Solver agent"
+						commit
+						value={selection.agent}
+						onChange={agent => onDraftChange(selectAgent(draft, agent, config))}
+						options={[
+							{ value: 'claude', label: 'Claude' },
+							{ value: 'codex', label: 'Codex' },
+						]}
+					/>
+				</div>
+				<div>
+					<div className="run-field-head">
+						<FieldLabel htmlFor="run-model">Model</FieldLabel>
+						{(draft.model !== undefined || item.solverModel !== null) && (
+							<button className="field-reset" type="button" onClick={() => onDraftChange({ ...draft, model: null })}>
+								Default
+							</button>
 						)}
 					</div>
+					<SelectInput
+						id="run-model"
+						value={selection.model ?? ''}
+						onChange={model => onDraftChange({ ...draft, model: model || null })}
+						options={[
+							{ value: '', label: 'Default (daemon)' },
+							...catalog.map(model => ({ value: model.id, label: model.label })),
+						]}
+					/>
 				</div>
-			</Disclosure>
-		</Card>
+				<div>
+					<div className="run-field-head">
+						<FieldLabel htmlFor="run-effort">Effort</FieldLabel>
+						{(draft.effort !== undefined || item.solverEffort !== null) && (
+							<button className="field-reset" type="button" onClick={() => onDraftChange({ ...draft, effort: null })}>
+								Default
+							</button>
+						)}
+					</div>
+					<SelectInput
+						id="run-effort"
+						value={selection.effort ?? ''}
+						onChange={effort => onDraftChange({ ...draft, effort: (effort || null) as RunSelectionDraft['effort'] })}
+						options={effortOptions}
+					/>
+				</div>
+				<div>
+					<div className="run-field-head">
+						<FieldLabel>Workspace</FieldLabel>
+						{(draft.workspace !== undefined || item.solverWorkspace !== null) && (
+							<button
+								className="field-reset"
+								type="button"
+								onClick={() => onDraftChange({ ...draft, workspace: null })}
+							>
+								Default
+							</button>
+						)}
+					</div>
+					<Segmented
+						label="Execution workspace"
+						value={selection.workspace}
+						onChange={workspace => onDraftChange({ ...draft, workspace })}
+						options={[
+							{ value: 'worktree', label: 'Worktree' },
+							{ value: 'main', label: 'Main' },
+						]}
+					/>
+					{selection.workspace === 'main' && (
+						<p className="run-caption">Uses the project checkout; loops require a plan prepared there.</p>
+					)}
+				</div>
+			</div>
+		</Disclosure>
 	)
 }
 

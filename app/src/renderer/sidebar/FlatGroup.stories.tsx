@@ -111,31 +111,27 @@ export const ItemDestinations: Story = {
 export const EvidenceGroups: Story = {
 	render: () => (
 		<>
-			<Card
-				label="Activity"
-				trailing={
-					<button type="button" className="detail-disclosure" aria-expanded={false}>
-						<span>Show history</span>
-						<span className="disclosure-mark" aria-hidden="true">
-							+
-						</span>
-					</button>
-				}
-			>
-				{false}
-			</Card>
+			<Disclosure heading="Activity" label="Show" hideLabel="Hide">
+				<p className="section-description">Lifecycle history renders here.</p>
+			</Disclosure>
 			<Card label="Loop log">
 				<section className="log-well">
 					{'[12:05:19] solver-result.json written\n[12:04:40] tests: 12 passed\n[12:03:02] edited src/auth/login.ts'}
 				</section>
 			</Card>
-			<Card label="Execution setup">
-				<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>
-				<p className="run-caption">Applied to Start agent and Start loop.</p>
-				<Disclosure label="Change setup" hideLabel="Hide setup">
-					<p className="section-description">Agent, model, effort, and workspace pickers render here.</p>
-				</Disclosure>
-			</Card>
+			<Disclosure
+				heading="Execution setup"
+				label="Change"
+				hideLabel="Done"
+				summary={
+					<>
+						<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>
+						<p className="run-caption">Applied to Start agent and Start loop.</p>
+					</>
+				}
+			>
+				<p className="section-description">Agent, model, effort, and workspace pickers render here.</p>
+			</Disclosure>
 		</>
 	),
 }
