@@ -511,6 +511,7 @@ body.tab-dragging .tab {
 	width: 320px;
 	max-width: calc(100vw - 16px);
 	max-height: min(480px, calc(100vh - 48px));
+	padding: 0;
 	overflow: hidden;
 }
 
@@ -523,7 +524,7 @@ body.tab-dragging .tab {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 8px;
+	padding: 8px 12px;
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--text-1);
@@ -555,8 +556,7 @@ body.tab-dragging .tab {
 	align-items: center;
 	gap: 4px;
 	min-height: 44px;
-	margin: 0 -4px;
-	width: calc(100% + 8px);
+	width: 100%;
 	padding: 4px 12px;
 	border-radius: 0;
 	user-select: none;
