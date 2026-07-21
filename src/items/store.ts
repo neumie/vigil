@@ -292,7 +292,11 @@ export class ItemStore {
 	listSourceItemsNeedingEnrichment(): ItemRecord[] {
 		const rows = this.db
 			.prepare(
-				'SELECT * FROM items WHERE source IS NOT NULL AND (display_name IS NULL OR assessment IS NULL) ORDER BY created_at DESC',
+				`SELECT * FROM items
+				 WHERE source IS NOT NULL
+				   AND (display_name IS NULL OR assessment IS NULL
+				        OR (branch_name IS NULL AND status IN ('inbox', 'ready')))
+				 ORDER BY created_at DESC`,
 			)
 			.all() as Record<string, unknown>[]
 		return rows.map(row => this.rowToItem(row))

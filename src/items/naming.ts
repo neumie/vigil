@@ -280,6 +280,8 @@ export interface EnsureItemNameParams {
 	agent: SolverAgent
 	signal?: AbortSignal
 	deps?: EnsureItemNameDeps
+	/** Background Inbox/Queue prewarm: refuse the final write once execution owns the Item. */
+	preRunOnly?: boolean
 	/**
 	 * Manual (re)run from the dashboard: bypass the feature-enabled and
 	 * already-named gates so the user can force a fresh branch name, and throw on
@@ -300,6 +302,19 @@ export interface EnsureItemNameParams {
  * default still applies. Cancellation is re-thrown (callers run inside the
  * pipeline's abort-aware catch); nothing else throws.
  */
+export function itemWantsWorkspaceName(item: ItemRecord, config: HelmConfig): boolean {
+	if (
+		!config.solver.branchNaming.enabled ||
+		item.kind !== 'solve' ||
+		item.payload.kind !== 'solve' ||
+		item.branchName ||
+		item.worktreePath
+	)
+		return false
+	if (item.status !== 'inbox' && item.status !== 'ready') return false
+	return (item.payload.solverWorkspace ?? config.solver.workspace ?? 'worktree') !== 'main'
+}
+
 export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Promise<ItemRecord> {
 	const { commands, item, taskContext, config, repoPath, signal, deps, force } = params
 	const feature = config.solver.branchNaming
@@ -351,9 +366,12 @@ export async function ensureItemWorkspaceName(params: EnsureItemNameParams): Pro
 			suffix: itemSuffix(item),
 			planDirName,
 			gitTaken,
+			preRunOnly: params.preRunOnly,
 			force,
 		})
-		log.info('naming', `Derived branch name for Item ${item.id}: ${named.branchName} (${agent}/${model})`)
+		if (named.branchName) {
+			log.info('naming', `Derived branch name for Item ${item.id}: ${named.branchName} (${agent}/${model})`)
+		}
 		return named
 	} catch (err) {
 		if (force || isCancellation(err, signal)) throw err

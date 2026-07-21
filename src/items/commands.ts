@@ -604,9 +604,20 @@ export class ItemCommands {
 		// `force` is set only by a manual dashboard re-name: it overrides the
 		// already-named idempotency guard (the automatic path leaves it unset). The
 		// atomic uniqueness reservation still runs in both modes.
-		fields: { base: string; suffix: string; planDirName: string; gitTaken: boolean; force?: boolean },
+		fields: {
+			base: string
+			suffix: string
+			planDirName: string
+			gitTaken: boolean
+			preRunOnly?: boolean
+			force?: boolean
+		},
 	): ItemRecord {
 		const item = this.requireItem(id)
+		// Background source-Item naming may finish after the user clicks Start.
+		// Once execution owns the Item, keep the deterministic identity the worker
+		// is about to record instead of racing in a late AI-derived branch.
+		if (fields.preRunOnly && item.status !== 'inbox' && item.status !== 'ready') return item
 		// Never rename a branch once a worktree exists on it — not even forced.
 		// This is the atomic backstop for the manual-rename TOCTOU: the route checks
 		// worktreePath before its model await, but a concurrent solve could create
@@ -625,7 +636,7 @@ export class ItemCommands {
 		id: string,
 		fields: {
 			worktreePath?: string
-			branchName?: string
+			branchName?: string | null
 			planDirName?: string
 		},
 	): ItemRecord {

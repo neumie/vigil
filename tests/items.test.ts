@@ -2054,7 +2054,7 @@ test('AlmanacLoopRunner generates a missing loop prompt before launch', async ()
 		assert.equal(existsSync(join(planDir, 'prompt.md')), true)
 		const prompt = readFileSync(join(planDir, 'prompt.md'), 'utf-8')
 		assert.match(prompt, /HELM GITHUB QUEUE ASSOCIATION/)
-		assert.match(prompt, new RegExp(`docs/plans/${specName}/spec\\.md`))
+		assert.equal(prompt.includes(`docs/plans/${specName}/spec.md`), true)
 		assert.match(readFileSync(outputLogPath, 'utf-8'), /Generated prompt/)
 	} finally {
 		process.env.PATH = oldPath
@@ -2425,6 +2425,42 @@ test('processSolveItem uses the selected agent and effort', async () => {
 
 			assert.equal(solver.calls[0].solverConfig.agent, 'codex')
 			assert.equal(solver.calls[0].solverEffort, 'xhigh')
+		} finally {
+			rmSync(worktreeRoot, { recursive: true, force: true })
+		}
+	})
+})
+
+test('processSolveItem never blocks a source Item on AI naming', async () => {
+	await withTempDb(async db => {
+		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-source-branch-hot-path-'))
+		const namingConfig: HelmConfig = {
+			...config,
+			solver: { ...config.solver, branchNaming: { enabled: true }, displayName: { enabled: true } },
+		}
+		const commands = new ItemCommands(db.items, namingConfig)
+		const item = commands.createSolveItem({
+			title: 'Open in Okena quickly',
+			projectSlug: 'helm',
+			prompt: 'Do not wait for optional naming.',
+			source: { provider: 'Email', externalId: 'email:fast-start' },
+			capturedContext: { title: 'Open in Okena quickly' },
+		})
+		const solver = new FakeSolveSolver(worktreeRoot)
+		let namingCalls = 0
+		const unexpectedNaming = async () => {
+			namingCalls++
+			throw new Error('start-time source naming must not run')
+		}
+
+		try {
+			await processSolveItem(item.id, namingConfig, db, provider, solver, undefined, {
+				displayName: { runOneShot: unexpectedNaming },
+				workspaceName: { runOneShot: unexpectedNaming },
+			})
+
+			assert.equal(namingCalls, 0)
+			assert.match(solver.calls[0].branchName, /^helm\/item\//)
 		} finally {
 			rmSync(worktreeRoot, { recursive: true, force: true })
 		}
@@ -5163,16 +5199,32 @@ test('processSolveItem runs a main-workspace Item in the canonical checkout with
 			projectSlug: 'helm',
 			prompt: 'Run directly in the repo checkout.',
 		})
+		commands.recordDerivedWorkspaceName(item.id, {
+			base: 'fix/prewarmed-before-main',
+			suffix: 'test',
+			planDirName: '2026-07-21-prewarmed-before-main',
+			gitTaken: false,
+		})
 		commands.setSolveItemWorkspace(item.id, 'main')
-		const solver = new FakeSolveSolver(worktreeRoot)
+		const delegate = new FakeSolveSolver(worktreeRoot)
+		const solver: Solver = {
+			solve: params => {
+				assert.equal(
+					commands.getItem(item.id)?.branchName,
+					null,
+					'Main clears a prewarmed Worktree branch before solve',
+				)
+				return delegate.solve(params)
+			},
+		}
 
 		try {
 			await processSolveItem(item.id, mainConfig, db, provider, solver)
 
 			// The solver received the mode flag (both as the SolveParams seam and on
 			// the effective solver config).
-			assert.equal(solver.calls[0].workspaceMode, 'main')
-			assert.equal(solver.calls[0].solverConfig.workspace, 'main')
+			assert.equal(delegate.calls[0].workspaceMode, 'main')
+			assert.equal(delegate.calls[0].solverConfig.workspace, 'main')
 
 			const stored = db.items.get(item.id)
 			assert.equal(stored?.status, 'review')

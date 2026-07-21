@@ -11,7 +11,7 @@ import { buildItemTaskContext, localizeCapturedAttachments } from '../items/cont
 import { loopPayloadForItem } from '../items/execution.js'
 import { resolveItemWorkspace } from '../items/identity.js'
 import { ensureItemDisplayName, ensureItemWorkspaceName } from '../items/naming.js'
-import type { EnsureItemDisplayNameDeps } from '../items/naming.js'
+import type { EnsureItemDisplayNameDeps, EnsureItemNameDeps } from '../items/naming.js'
 import type { ItemRecord } from '../items/schema.js'
 import { PlanWorkspace } from '../plan/workspace.js'
 import type { TaskContext, TaskProvider } from '../providers/provider.js'
@@ -152,6 +152,7 @@ async function buildSolveItemTaskContext(item: ItemRecord, provider: TaskProvide
 
 export interface ProcessSolveItemDeps {
 	displayName?: EnsureItemDisplayNameDeps
+	workspaceName?: EnsureItemNameDeps
 }
 
 export async function processSolveItem(
@@ -182,42 +183,57 @@ export async function processSolveItem(
 		const selectedEffort = item.payload.kind === 'solve' ? item.payload.solverEffort : undefined
 		const selectedWorkspace = item.payload.kind === 'solve' ? item.payload.solverWorkspace : undefined
 
-		// A solve is the final guarantee that an enabled AI display name gets one
-		// generation attempt. Poll/startup enrichment is intentionally asynchronous;
-		// the naming seam re-reads before writing so the first successful name wins.
-		const displayNamed = await ensureItemDisplayName({
-			commands,
-			item,
-			config,
-			agent: selectedAgent ?? config.solver.agent,
-			signal,
-			deps: deps.displayName,
-			generateWhenMissing: true,
-		})
+		// Source Items precompute cosmetic display names in ItemEnricher. Never put
+		// that optional model call on Start agent's hot path; an in-flight result can
+		// safely land while running because displayName does not affect identity.
+		// Source-less manual Items have no background dwell, so solve startup remains
+		// their final best-effort generation attempt.
+		const displayNamed = item.source
+			? item
+			: await ensureItemDisplayName({
+					commands,
+					item,
+					config,
+					agent: selectedAgent ?? config.solver.agent,
+					signal,
+					deps: deps.displayName,
+					generateWhenMissing: true,
+				})
 
 		log.info('worker', `Building context for solve Item: ${item.title}`)
 		const taskContext = await buildSolveItemTaskContext(displayNamed, provider)
 		const workspaceMode = selectedWorkspace ?? config.solver.workspace ?? 'worktree'
 		const mainMode = workspaceMode === 'main'
+		const freshest = commands.getItem(itemId) ?? displayNamed
 
-		// Main-workspace runs skip AI branch naming entirely: no branch is
-		// pre-created — the agent manages branching itself in the main checkout.
+		// Source Items precompute AI branch names in ItemEnricher while they wait in
+		// Inbox/Queue. Never put that optional model call back on Start agent's hot
+		// path: if prewarming has not finished, use the deterministic branch now so
+		// the Okena workspace can appear immediately. Source-less manual Items have
+		// no background dwell, so they retain the start-time naming attempt.
+		// Main-workspace runs skip naming entirely; the agent branches itself.
 		const named = mainMode
-			? displayNamed
-			: await ensureItemWorkspaceName({
-					commands,
-					item: displayNamed,
-					taskContext,
-					config,
-					repoPath: projectConfig.repoPath,
-					agent: selectedAgent ?? config.solver.agent,
-					signal,
-				})
+			? { ...freshest, branchName: null }
+			: freshest.source
+				? freshest
+				: await ensureItemWorkspaceName({
+						commands,
+						item: freshest,
+						taskContext,
+						config,
+						repoPath: projectConfig.repoPath,
+						agent: selectedAgent ?? config.solver.agent,
+						signal,
+						deps: deps.workspaceName,
+					})
 
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(named)
 		// Main mode: the Item's branchName stays NULL until dispatch discovers the
 		// agent-created branch; only the plan dir is recorded up front.
-		commands.recordExecutionWorkspaceIdentity(itemId, mainMode ? { planDirName } : { planDirName, branchName })
+		commands.recordExecutionWorkspaceIdentity(
+			itemId,
+			mainMode ? { planDirName, branchName: null } : { planDirName, branchName },
+		)
 		const solverConfig = {
 			...config.solver,
 			agent: selectedAgent ?? config.solver.agent,
@@ -342,7 +358,10 @@ export async function processLoopItem(
 		// path, not a single conventional change, so
 		// AI naming is scoped to solve Items only.
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(item)
-		commands.recordExecutionWorkspaceIdentity(itemId, mainMode ? { planDirName } : { planDirName, branchName })
+		commands.recordExecutionWorkspaceIdentity(
+			itemId,
+			mainMode ? { planDirName, branchName: null } : { planDirName, branchName },
+		)
 		if (item.kind === 'solve' && item.plannedAt) {
 			if (mainMode && (!item.worktreePath || resolve(item.worktreePath) !== resolve(projectConfig.repoPath))) {
 				throw phaseError(

@@ -9,11 +9,11 @@ import { DB } from '../src/db/client.js'
 import { itemWantsAssessment } from '../src/items/assess.js'
 import { ItemCommands } from '../src/items/commands.js'
 import { ItemEnricher } from '../src/items/enricher.js'
-import { itemWantsDisplayName } from '../src/items/naming.js'
+import { itemWantsDisplayName, itemWantsWorkspaceName } from '../src/items/naming.js'
 import type { ItemRecord } from '../src/items/schema.js'
 import type { OneShotOptions } from '../src/solver/one-shot.js'
 
-function makeConfig(over?: { displayName?: boolean; triage?: boolean }): HelmConfig {
+function makeConfig(over?: { branchNaming?: boolean; displayName?: boolean; triage?: boolean }): HelmConfig {
 	return {
 		provider: {
 			type: 'contember',
@@ -30,7 +30,7 @@ function makeConfig(over?: { displayName?: boolean; triage?: boolean }): HelmCon
 			workspace: 'worktree',
 			concurrency: 2,
 			timeoutMinutes: 30,
-			branchNaming: { enabled: false },
+			branchNaming: { enabled: over?.branchNaming ?? false },
 			displayName: { enabled: over?.displayName ?? true },
 			triage: { enabled: over?.triage ?? true },
 			modelGuidance: {},
@@ -66,6 +66,7 @@ function fakeItem(over: Partial<ItemRecord>): ItemRecord {
 		assessment: null,
 		source: { provider: 'Email', externalId: 'email:x' },
 		capturedContext: null,
+		payload: { kind: 'solve', prompt: 'test' },
 		...over,
 	} as ItemRecord
 }
@@ -101,6 +102,120 @@ test('itemWantsAssessment mirrors the skip gates', () => {
 	assert.equal(itemWantsAssessment(fakeItem({ assessment: { verdict: 'clear' } as never }), cfg), false)
 	assert.equal(itemWantsAssessment(fakeItem({}), makeConfig({ triage: false })), false)
 })
+
+test('itemWantsWorkspaceName only prewarms runnable worktree solve Items', () => {
+	const cfg = makeConfig({ branchNaming: true })
+	assert.equal(itemWantsWorkspaceName(fakeItem({}), cfg), true)
+	assert.equal(itemWantsWorkspaceName(fakeItem({ branchName: 'fix/already-named' }), cfg), false)
+	assert.equal(itemWantsWorkspaceName(fakeItem({ status: 'running' }), cfg), false)
+	assert.equal(
+		itemWantsWorkspaceName(
+			fakeItem({ payload: { kind: 'solve', prompt: 'x', solverWorkspace: 'main' } as never }),
+			cfg,
+		),
+		false,
+	)
+	assert.equal(itemWantsWorkspaceName(fakeItem({}), makeConfig({ branchNaming: false })), false)
+})
+
+test('startup backfill includes unnamed runnable branches but excludes running Items', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			projectSlug: 'helm',
+			title: 'Backfill branch name',
+			prompt: 'Prewarm this Item.',
+			source: { provider: 'Email', externalId: 'email:backfill-branch' },
+			capturedContext: { title: 'Backfill branch name' },
+		})
+		commands.recordDisplayName(item.id, 'Backfill branch')
+		commands.recordAssessment(item.id, {
+			intent: 'Prewarm this Item',
+			verdict: 'clear',
+			clarifyingQuestions: [],
+			securityNote: null,
+			assessedAt: '2026-07-21T00:00:00.000Z',
+		})
+		assert.deepEqual(
+			db.items.listSourceItemsNeedingEnrichment().map(candidate => candidate.id),
+			[item.id],
+		)
+
+		commands.startItem(item.id)
+		assert.deepEqual(db.items.listSourceItemsNeedingEnrichment(), [])
+	}))
+
+test('enricher precomputes a source Item branch before Start agent', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
+		const item = new ItemCommands(db.items, config).createSolveItem({
+			projectSlug: 'helm',
+			title: 'Fix delayed workspace visibility',
+			prompt: 'Open the Okena workspace without waiting on branch naming.',
+			source: { provider: 'Email', externalId: 'email:prewarm-branch' },
+			capturedContext: { title: 'Fix delayed workspace visibility' },
+		})
+		let calls = 0
+		const enricher = new ItemEnricher(config, db.items, provider, 1, {
+			deps: {
+				runOneShot: async () => {
+					calls++
+					return 'fix/prewarm-okena-workspace'
+				},
+				branchExists: async () => false,
+			},
+			retryDelaysMs: [],
+		})
+		try {
+			enricher.enqueue([item])
+			for (let i = 0; i < 50 && !db.items.get(item.id)?.branchName; i++) await sleep(10)
+			assert.equal(db.items.get(item.id)?.branchName, 'fix/prewarm-okena-workspace')
+			assert.equal(calls, 1, 'branch naming completed in the background before execution')
+		} finally {
+			enricher.stop()
+		}
+	}))
+
+test('late branch prewarming cannot rename a source Item after execution starts', () =>
+	withTempDb(async db => {
+		const config = makeConfig({ branchNaming: true, displayName: false, triage: false })
+		const commands = new ItemCommands(db.items, config)
+		const item = commands.createSolveItem({
+			projectSlug: 'helm',
+			title: 'Start during branch prewarm',
+			prompt: 'Keep execution identity stable.',
+			source: { provider: 'Email', externalId: 'email:branch-race' },
+			capturedContext: { title: 'Start during branch prewarm' },
+		})
+		let finishNaming: ((value: string) => void) | undefined
+		let markNamingStarted: (() => void) | undefined
+		const namingStarted = new Promise<void>(resolve => {
+			markNamingStarted = resolve
+		})
+		const enricher = new ItemEnricher(config, db.items, provider, 1, {
+			deps: {
+				runOneShot: () =>
+					new Promise<string>(finish => {
+						finishNaming = finish
+						markNamingStarted?.()
+					}),
+				branchExists: async () => false,
+			},
+			retryDelaysMs: [],
+		})
+
+		try {
+			enricher.enqueue([item])
+			await namingStarted
+			commands.startItem(item.id)
+			finishNaming?.('fix/too-late-to-apply')
+			await sleep(30)
+			assert.equal(db.items.get(item.id)?.branchName, null)
+		} finally {
+			enricher.stop()
+		}
+	}))
 
 test('enricher retries a transient one-shot failure and eventually enriches', () =>
 	withTempDb(async db => {

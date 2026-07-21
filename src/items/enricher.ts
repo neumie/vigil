@@ -4,12 +4,19 @@ import type { OneShotOptions } from '../solver/one-shot.js'
 import { log } from '../util/logger.js'
 import { ensureItemAssessment, itemWantsAssessment } from './assess.js'
 import { ItemCommands } from './commands.js'
-import { ensureItemDisplayName, itemWantsDisplayName } from './naming.js'
+import { buildItemTaskContext } from './context.js'
+import {
+	ensureItemDisplayName,
+	ensureItemWorkspaceName,
+	itemWantsDisplayName,
+	itemWantsWorkspaceName,
+} from './naming.js'
 import type { ItemRecord } from './schema.js'
 import type { ItemStore } from './store.js'
 
 export interface EnricherDeps {
 	runOneShot?: (opts: OneShotOptions) => Promise<string | null>
+	branchExists?: (branch: string) => boolean | Promise<boolean>
 	now?: () => string
 }
 
@@ -26,16 +33,18 @@ const DEFAULT_RETRY_DELAYS_MS = [30_000, 120_000, 300_000]
 /**
  * Background per-item AI enricher. For each source Item it runs the best-effort
  * enrichments that are enabled and still missing — a short display name (from the
- * title) and a pre-solve intent assessment (from the live task context) — off the
- * poll hot path, with a small concurrency cap so a batch poll can't fan out dozens
- * of model calls at once. Wired in `index.ts`; the poller enqueues newly-discovered
- * Items, and startup runs a one-time backfill over Items still missing enrichment.
+ * title), a pre-solve intent assessment, and an optional AI branch name (both from
+ * task context) — off the poll/start hot paths, with a small concurrency cap so a
+ * batch poll can't fan out dozens of model calls at once. Wired in `index.ts`; the
+ * poller enqueues newly-discovered Items, and startup runs a one-time backfill over
+ * Items still missing enrichment.
  *
  * **Transient-failure auto-retry.** A one-shot model call can time out (SIGTERM)
  * when the machine is overloaded, leaving the Item unenriched. After each run, if
- * the Item still *wants* enrichment (a long title with no display name, or an
- * unassessed Item — short titles and disabled features don't count), the enricher
- * re-enqueues it on a backoff, up to a small cap, so a transient timeout recovers
+ * the Item still *wants* enrichment (a long title with no display name, an
+ * unassessed Item, or a runnable worktree Item with no branch identity — short
+ * titles, Main runs, and disabled features don't count), the enricher re-enqueues
+ * it on a backoff, up to a small cap, so a transient timeout recovers
  * on its own instead of waiting for the next daemon restart. The cap bounds a
  * genuinely-stuck case (e.g. persistently unparseable model output). Mirrors the
  * Drainer's transient solve retry.
@@ -64,13 +73,21 @@ export class ItemEnricher {
 	}
 
 	private get enabled(): boolean {
-		return this.config.solver.displayName.enabled || this.config.solver.triage.enabled
+		return (
+			this.config.solver.displayName.enabled ||
+			this.config.solver.triage.enabled ||
+			this.config.solver.branchNaming.enabled
+		)
 	}
 
 	/** An enrichment that should have landed but hasn't (worth running / retrying). */
 	private needsEnrichment(item: ItemRecord): boolean {
 		if (!item.source) return false
-		return itemWantsDisplayName(item, this.config) || itemWantsAssessment(item, this.config)
+		return (
+			itemWantsDisplayName(item, this.config) ||
+			itemWantsAssessment(item, this.config) ||
+			itemWantsWorkspaceName(item, this.config)
+		)
 	}
 
 	/** One-time startup sweep over source Items still missing any enrichment. */
@@ -159,17 +176,43 @@ export class ItemEnricher {
 			return item as ItemRecord
 		})
 
-		if (this.config.solver.triage.enabled && !item.assessment) {
-			const taskContext = await this.fetchContext(item)
-			await ensureItemAssessment({
-				commands: this.commands,
-				item,
-				taskContext,
-				config: this.config,
-				deps: this.deps,
-			}).catch(err => {
-				log.warn('enrich', `Assessment error for Item ${id}: ${err instanceof Error ? err.message : err}`)
-			})
+		const wantsAssessment = itemWantsAssessment(item, this.config)
+		const wantsWorkspaceName = itemWantsWorkspaceName(item, this.config)
+		if (wantsAssessment || wantsWorkspaceName) {
+			const taskContext = buildItemTaskContext(item, await this.fetchContext(item))
+			if (wantsAssessment) {
+				await ensureItemAssessment({
+					commands: this.commands,
+					item,
+					taskContext,
+					config: this.config,
+					deps: this.deps,
+				}).catch(err => {
+					log.warn('enrich', `Assessment error for Item ${id}: ${err instanceof Error ? err.message : err}`)
+				})
+			}
+
+			const freshItem = this.store.get(id)
+			if (!freshItem) return
+			item = freshItem
+			const projectConfig = this.config.projects.find(project => project.slug === freshItem.projectSlug)
+			if (projectConfig && itemWantsWorkspaceName(freshItem, this.config)) {
+				await ensureItemWorkspaceName({
+					commands: this.commands,
+					item: freshItem,
+					taskContext,
+					config: this.config,
+					repoPath: projectConfig.repoPath,
+					agent:
+						freshItem.payload.kind === 'solve'
+							? (freshItem.payload.solverAgent ?? this.config.solver.agent)
+							: this.config.solver.agent,
+					deps: this.deps,
+					preRunOnly: true,
+				}).catch(err => {
+					log.warn('enrich', `Branch naming error for Item ${id}: ${err instanceof Error ? err.message : err}`)
+				})
+			}
 		}
 	}
 
