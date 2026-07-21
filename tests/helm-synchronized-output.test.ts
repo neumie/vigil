@@ -79,7 +79,10 @@ test('close paths preserve the last complete snapshot before releasing a redraw 
 		const end = renderer.indexOf('\nfunction ', start + 1)
 		const body = renderer.slice(start, end)
 		assert.ok(start >= 0, `${name} is present`)
-		assert.ok(body.indexOf('saveSnapshot(tab)') < body.indexOf('tab.outputGuard.abort()'), `${name} snapshots before abort`)
+		assert.ok(
+			body.indexOf('saveSnapshot(tab)') < body.indexOf('tab.outputGuard.abort()'),
+			`${name} snapshots before abort`,
+		)
 	}
 })
 

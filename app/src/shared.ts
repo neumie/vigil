@@ -87,7 +87,8 @@ export interface ConfigApi {
  * `rename-edit` opens the inline tab-rename editor on the active tab (input
  * styling + select-all shot); `rename` commits the fixed pin "deploy watch" on
  * the active tab through the same commit path (relaunch verifies pin restore).
- * `tab-drag` holds a three-tab pointer drag over slot 0 for visual QA.
+ * `tab-drag` holds a three-tab pointer drag over slot 0 for visual QA;
+ * `running-tab` shows the protocol-owned ActivityIndicator on the active tab.
  */
 export type UiPreview =
 	| 'list'
@@ -108,6 +109,7 @@ export type UiPreview =
 	| 'rename'
 	| 'rename-edit'
 	| 'tab-drag'
+	| 'running-tab'
 
 /** Menu accelerators (cmd+t / cmd+w / cmd+shift+b) fire in main; renderer subscribes here. */
 export interface TabsApi {

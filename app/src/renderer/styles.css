@@ -245,28 +245,69 @@ body.tab-dragging .tab {
 	text-overflow: ellipsis;
 }
 
-/* Explicit OSC 9;4 live state from Pi — visible words plus the shared live
- * pulse, never guessed from output or silence. */
-.tab-running {
+/* Reusable in-progress primitive (§3.21): a monochrome six-dot Braille cell
+ * with a clockwise head and a soft three-dot tail. */
+.activity-indicator {
 	flex: none;
-	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	color: var(--accent);
-	font-size: 10px;
-	font-weight: 500;
+	display: grid;
+	grid-template-columns: repeat(2, 2px);
+	grid-template-rows: repeat(3, 2px);
+	gap: 2px;
 }
 
-.tab-running[hidden] {
+.activity-indicator[hidden] {
 	display: none;
 }
 
-.tab-running-dot {
-	width: 6px;
-	height: 6px;
+.activity-indicator-dot {
+	width: 2px;
+	height: 2px;
 	border-radius: 999px;
-	background: var(--accent);
-	animation: dot-pulse 1.6s ease-in-out infinite;
+	background: var(--text-0);
+	opacity: 0.1;
+	animation: activity-indicator-clockwise 840ms linear infinite;
+}
+
+/* Clockwise: top-left → top-right → middle-right → bottom-right →
+ * bottom-left → middle-left. Negative delays begin on a complete cycle. */
+.activity-indicator-dot:nth-child(2) {
+	animation-delay: -700ms;
+}
+.activity-indicator-dot:nth-child(3) {
+	animation-delay: -140ms;
+}
+.activity-indicator-dot:nth-child(4) {
+	animation-delay: -560ms;
+}
+.activity-indicator-dot:nth-child(5) {
+	animation-delay: -280ms;
+}
+.activity-indicator-dot:nth-child(6) {
+	animation-delay: -420ms;
+}
+
+@keyframes activity-indicator-clockwise {
+	0% {
+		opacity: 1;
+	}
+	16.66% {
+		opacity: 0.68;
+	}
+	33.33% {
+		opacity: 0.38;
+	}
+	50% {
+		opacity: 0.18;
+	}
+	66.66%,
+	100% {
+		opacity: 0.1;
+	}
+}
+
+/* Terminal tabs add only placement; all indicator visuals stay reusable. */
+.tab-running {
+	margin-right: 2px;
 }
 
 /* Inline tab rename (double-click / context-menu "Rename…", §3.14): a §3.7

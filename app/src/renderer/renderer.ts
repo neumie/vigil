@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import type { HelmApi, RestoredSession } from '../shared'
+import { createActivityIndicator } from './activity-indicator'
 import { appearance } from './appearance'
 import { mountSidebar } from './sidebar/SidebarRoot'
 import { type SynchronizedOutputGuard, createSynchronizedOutputGuard } from './synchronized-output'
@@ -144,7 +145,7 @@ interface Tab {
 	/** Explicit OSC 9;4 state from Pi; never inferred from terminal output. */
 	agentRunning: boolean
 	progressTracker: TerminalProgressTracker
-	runningEl: HTMLSpanElement
+	runningEl: HTMLOutputElement
 	term: Terminal
 	fit: FitAddon
 	/** Buffer serializer for snapshot saves (restore-before-attach, app/src/buffers.ts). */
@@ -1256,20 +1257,15 @@ async function createTerminal(opts?: TerminalOpts): Promise<void> {
 	tabButton.tabIndex = 0
 	const label = document.createElement('span')
 	label.className = 'tab-label'
-	const running = document.createElement('span')
-	running.className = 'tab-running'
+	const running = createActivityIndicator('Running')
+	running.classList.add('tab-running')
 	running.hidden = true
-	running.setAttribute('aria-live', 'polite')
-	const runningDot = document.createElement('span')
-	runningDot.className = 'tab-running-dot'
-	runningDot.setAttribute('aria-hidden', 'true')
-	running.append(runningDot, 'Running')
 	const close = document.createElement('button')
 	close.className = 'tab-close'
 	close.textContent = '×'
 	close.title = 'Close (⌘W)'
 	close.setAttribute('aria-label', 'Close terminal')
-	tabButton.append(label, running, close)
+	tabButton.append(running, label, close)
 
 	let tab!: Tab
 	const outputGuard = createSynchronizedOutputGuard({
@@ -1581,6 +1577,10 @@ window.addEventListener(
 // `background` opens the popover; `background-strip` leaves it closed.
 async function runUiPreview(): Promise<void> {
 	const preview = helm.uiPreview
+	if (preview === 'running-tab') {
+		if (activeTab) setTabAgentRunning(activeTab, true)
+		return
+	}
 	if (preview === 'tab-drag') {
 		while (tabs.length < 3) await createTerminal().catch(() => {})
 		const names = ['api', 'deploy', 'logs']

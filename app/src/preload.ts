@@ -6,8 +6,8 @@ import type { DaemonApi, HelmResult, HelmSnapshot } from './shared-helm'
 // Captured synchronously at preload time so the renderer gets the URL without an async hop.
 const { daemonUrl } = ipcRenderer.sendSync('config:get') as { daemonUrl: string }
 
-// --ui-preview=<list|project-list|queue-list|planned-list|detail|queue-detail|planned-detail|archive-detail|task|settings> arrives via webPreferences.additionalArguments
-// (main.ts) for screenshot runs; the sidebar auto-navigates to the named page.
+// --ui-preview=<...> arrives via webPreferences.additionalArguments; keep this
+// allowlist aligned with UiPreview so every deterministic app/terminal state is capturable.
 const uiPreviewArg = process.argv.find(arg => arg.startsWith('--ui-preview='))?.slice('--ui-preview='.length)
 const UI_PREVIEWS: readonly UiPreview[] = [
 	'list',
@@ -28,6 +28,7 @@ const UI_PREVIEWS: readonly UiPreview[] = [
 	'rename',
 	'rename-edit',
 	'tab-drag',
+	'running-tab',
 ]
 const uiPreview: UiPreview | null = UI_PREVIEWS.find(page => page === uiPreviewArg) ?? null
 
