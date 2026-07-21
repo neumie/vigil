@@ -28,6 +28,12 @@ test('tappable rows use a square full-bleed hover band on the page grid', () => 
 	assert.match(css, /\.action-row\s*\{[^}]*border-radius:\s*0/s)
 })
 
+test('row hover fill leaves breathing room around separators', () => {
+	assert.match(css, /\.action-row::after\s*\{[^}]*inset:\s*4px 0/s)
+	assert.match(css, /\.action-row:hover:not\(:disabled\)::after\s*\{[^}]*background:\s*var\(--fill-subtle\)/s)
+	assert.doesNotMatch(css, /\.action-row:hover:not\(:disabled\)\s*\{[^}]*background:/s)
+})
+
 test('Flat group stories do not mix navigation pitch into Action rows', () => {
 	const actions = story.slice(story.indexOf('export const ActionRows'), story.indexOf('export const NavRows'))
 	assert.doesNotMatch(actions, /label="Task"/)

@@ -196,9 +196,6 @@
 	border-top: 0;
 	padding-top: 0;
 }
-[data-detail-state] .action-row:hover:not(:disabled) {
-	background: var(--fill-subtle);
-}
 .card .section-label {
 	margin: 0;
 }

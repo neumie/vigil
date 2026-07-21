@@ -942,9 +942,11 @@
 }
 
 /* Tappable rows: controls stay rounded, but a row's selection/hover fill is a
- * square full-width stripe. Its text remains on the page's 16px grid (§3.15). */
+ * square full-width stripe. Its text remains on the page's 16px grid; the fill
+ * clears neighboring dividers by 4px so line and state never collide (§3.15). */
 .action-row {
 	position: relative;
+	isolation: isolate;
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -960,10 +962,20 @@
 	letter-spacing: -0.01em;
 	text-align: left;
 	cursor: pointer;
-	transition: background-color 140ms ease-out;
 }
-.action-row:hover:not(:disabled) {
+.action-row::after {
+	content: "";
+	position: absolute;
+	inset: 4px 0;
+	z-index: -1;
+	pointer-events: none;
 	background: var(--fill-subtle);
+	opacity: 0;
+	transition: opacity 140ms ease-out;
+}
+.action-row:hover:not(:disabled)::after {
+	background: var(--fill-subtle);
+	opacity: 1;
 }
 .action-row:disabled {
 	opacity: 0.45;

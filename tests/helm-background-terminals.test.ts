@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const renderer = readFileSync(new URL('../app/src/renderer/renderer.ts', import.meta.url), 'utf8')
 const html = readFileSync(new URL('../app/src/renderer/index.html', import.meta.url), 'utf8')
+const normalizedHtml = html.replace(/\s+/g, ' ')
 const css = readFileSync(new URL('../app/src/renderer/styles.css', import.meta.url), 'utf8')
 
 function functionSlice(name: string, nextName: string): string {
@@ -30,8 +31,8 @@ test('background rows form an editorial list with explicit icon actions', () => 
 	assert.match(render, /restore\.textContent = '⇥'/)
 	assert.match(render, /restore\.addEventListener\('click', \(\) => restoreParked\(tab\)\)/)
 	assert.match(render, /kill\.addEventListener\('click', \(\) => killParkedTab\(tab\)\)/)
-	assert.match(html, /aria-haspopup="dialog"/)
-	assert.match(html, /<span id="bg-header-count" class="bg-header-count">0<\/span>/)
+	assert.match(normalizedHtml, /aria-haspopup="dialog"/)
+	assert.match(normalizedHtml, /<span id="bg-header-count" class="bg-header-count">0<\/span>/)
 	assert.match(css, /#bg-popover\s*\{[^}]*width:\s*320px/s)
 	assert.match(css, /#bg-popover\s*\{[^}]*max-height:\s*min\(480px, calc\(100vh - 48px\)\)/s)
 	assert.match(css, /#bg-rows\s*\{[^}]*overflow-y:\s*auto/s)
@@ -45,7 +46,7 @@ test('background rows form an editorial list with explicit icon actions', () => 
 })
 
 test('background popover catches a click on native titlebar whitespace', () => {
-	assert.match(html, /<div id="topbar-drag-space" class="topbar-drag-space" aria-hidden="true"><\/div>/)
+	assert.match(normalizedHtml, /<div id="topbar-drag-space" class="topbar-drag-space" aria-hidden="true"\s*><\/div>/)
 	assert.match(css, /\.topbar-drag-space\.popover-catcher\s*\{[^}]*-webkit-app-region:\s*no-drag/s)
 	const outside = functionSlice('onBgOutside', 'onBgKeydown')
 	const open = functionSlice('openBackgroundPopover', 'closeBackgroundPopover')
