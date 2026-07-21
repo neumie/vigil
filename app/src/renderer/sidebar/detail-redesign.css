@@ -81,25 +81,6 @@
 .detail-work-mode {
 	color: var(--text-2);
 }
-.disclosure-action {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-height: 24px;
-	margin: -4px -8px -4px 0;
-	padding: 0 8px;
-	border: 0;
-	border-radius: var(--radius-sm);
-	background: transparent;
-	color: var(--text-1);
-	font: 500 calc(11px * var(--ui-scale)) var(--font-ui);
-	cursor: pointer;
-	transition: background-color 140ms ease-out, color 140ms ease-out;
-}
-.disclosure-action:hover {
-	background: var(--fill-subtle);
-	color: var(--text-0);
-}
 /* Disclosure group (§3.20): the action belongs to the section header; the
  * revealed wrapper is layout-neutral so children participate in the group's
  * flex flow directly. Content snaps; never animate height (§2.5). */

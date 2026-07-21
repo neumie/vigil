@@ -50,12 +50,7 @@ export const WithSummaryAtRest: Story = {
 			heading="Execution setup"
 			label="Change"
 			hideLabel="Done"
-			summary={
-				<>
-					<p className="run-setup-summary">Claude Code · Default model · Worktree</p>
-					<p className="run-caption">Applied to Start agent and Start loop.</p>
-				</>
-			}
+			summary={<p className="run-setup-summary">Claude Code · Default model · Worktree</p>}
 		>
 			<p className="section-description">The four run-selection fields render here when open.</p>
 		</Disclosure>

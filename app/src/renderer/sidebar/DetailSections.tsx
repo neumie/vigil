@@ -211,12 +211,7 @@ export function SetupSection({
 			heading="Execution setup"
 			label="Change"
 			hideLabel="Done"
-			summary={
-				<>
-					<p className="run-setup-summary">{selectionSummary(selection)}</p>
-					<p className="run-caption">Applied to Start agent and Start loop.</p>
-				</>
-			}
+			summary={<p className="run-setup-summary">{selectionSummary(selection)}</p>}
 		>
 			<div className="run-setup">
 				<div>

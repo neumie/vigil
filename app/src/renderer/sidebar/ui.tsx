@@ -21,6 +21,8 @@ export function Btn({
 	children,
 	block,
 	ariaLabel,
+	ariaExpanded,
+	ariaControls,
 }: {
 	tone?: 'primary' | 'quiet' | 'danger' | 'ghost'
 	sm?: boolean
@@ -31,6 +33,8 @@ export function Btn({
 	children: ReactNode
 	block?: boolean
 	ariaLabel?: string
+	ariaExpanded?: boolean
+	ariaControls?: string
 }) {
 	return (
 		<button
@@ -38,6 +42,8 @@ export function Btn({
 			className={`btn btn-${tone}${sm ? ' btn-sm' : ''}${block ? ' btn-block' : ''}`}
 			disabled={disabled || busy}
 			aria-label={ariaLabel}
+			aria-expanded={ariaExpanded}
+			aria-controls={ariaControls}
 			onClick={onClick}
 		>
 			{children}
@@ -621,18 +627,18 @@ export function Disclosure({
 	const open = controlledOpen ?? internalOpen
 	const contentId = useId()
 	const action = (
-		<button
-			type="button"
-			className="disclosure-action"
-			aria-expanded={open}
-			aria-controls={contentId}
+		<Btn
+			tone="quiet"
+			sm
+			ariaExpanded={open}
+			ariaControls={contentId}
 			onClick={() => {
 				if (controlledOpen === undefined) setInternalOpen(!open)
 				onToggle?.(!open)
 			}}
 		>
 			{open ? hideLabel : label}
-		</button>
+		</Btn>
 	)
 	return (
 		<Card label={heading} trailing={action}>

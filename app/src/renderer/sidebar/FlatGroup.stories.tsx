@@ -123,12 +123,7 @@ export const EvidenceGroups: Story = {
 				heading="Execution setup"
 				label="Change"
 				hideLabel="Done"
-				summary={
-					<>
-						<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>
-						<p className="run-caption">Applied to Start agent and Start loop.</p>
-					</>
-				}
+				summary={<p className="run-setup-summary">Claude Code · claude-sonnet-5 · High effort · Worktree</p>}
 			>
 				<p className="section-description">Agent, model, effort, and workspace pickers render here.</p>
 			</Disclosure>
