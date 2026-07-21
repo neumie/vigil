@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { CSSProperties, ReactNode } from 'react'
 import { ActivityIndicator } from './activity-indicator'
+import { IconBtn } from './icon-button'
 
 interface TabFixture {
 	label: string
@@ -64,12 +65,16 @@ function BackgroundRow({
 					{state ? <span className="bg-state">{state}</span> : null}
 				</span>
 			</button>
-			<button type="button" className="bg-action" title="Move to tabs and open">
-				⇥
-			</button>
-			<button type="button" className="bg-kill" title="Close" aria-label={`Close ${title}`}>
-				×
-			</button>
+			<IconBtn label={`Move ${title} to tabs and open`}>
+				<span className="icon-btn-glyph bg-action-glyph" aria-hidden="true">
+					⇥
+				</span>
+			</IconBtn>
+			<IconBtn label={`Close ${title}`}>
+				<span className="icon-btn-glyph bg-kill-glyph" aria-hidden="true">
+					×
+				</span>
+			</IconBtn>
 		</div>
 	)
 }

@@ -95,9 +95,9 @@ test('renderer wires explicit progress into visible, accessible tab state', () =
 	assert.equal(renderer.match(/progressTracker\.clear\(\)/g)?.length, 3)
 	assert.match(css, /\.activity-indicator\s*\{[^}]*grid-template-columns:\s*repeat\(2, 2px\)/s)
 	assert.match(css, /\.activity-indicator-dot\s*\{[^}]*background:\s*var\(--text-0\)/s)
-	assert.match(css, /\.activity-indicator-dot\s*\{[^}]*activity-indicator-clockwise 1\.2s linear infinite/s)
-	assert.match(css, /\.activity-indicator-dot:nth-child\(2\)\s*\{[^}]*animation-delay:\s*-1s/s)
-	assert.match(css, /\.activity-indicator-dot:nth-child\(6\)\s*\{[^}]*animation-delay:\s*-600ms/s)
+	assert.match(css, /\.activity-indicator-dot\s*\{[^}]*activity-indicator-clockwise 1s linear infinite/s)
+	assert.match(css, /\.activity-indicator-dot:nth-child\(2\)\s*\{[^}]*animation-delay:\s*-833ms/s)
+	assert.match(css, /\.activity-indicator-dot:nth-child\(6\)\s*\{[^}]*animation-delay:\s*-500ms/s)
 	const progressStyles = css.slice(
 		css.indexOf('@keyframes activity-indicator-clockwise'),
 		css.indexOf('/* Completion becomes'),

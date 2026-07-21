@@ -272,25 +272,25 @@ body.tab-dragging .tab {
 	border-radius: 999px;
 	background: var(--text-0);
 	opacity: 0.1;
-	animation: activity-indicator-clockwise 1.2s linear infinite;
+	animation: activity-indicator-clockwise 1s linear infinite;
 }
 
 /* Clockwise: top-left → top-right → middle-right → bottom-right →
  * bottom-left → middle-left. Negative delays begin on a complete cycle. */
 .activity-indicator-dot:nth-child(2) {
-	animation-delay: -1s;
+	animation-delay: -833ms;
 }
 .activity-indicator-dot:nth-child(3) {
-	animation-delay: -200ms;
+	animation-delay: -167ms;
 }
 .activity-indicator-dot:nth-child(4) {
-	animation-delay: -800ms;
+	animation-delay: -667ms;
 }
 .activity-indicator-dot:nth-child(5) {
-	animation-delay: -400ms;
+	animation-delay: -333ms;
 }
 .activity-indicator-dot:nth-child(6) {
-	animation-delay: -600ms;
+	animation-delay: -500ms;
 }
 
 @keyframes activity-indicator-clockwise {
@@ -541,8 +541,8 @@ body.tab-dragging .tab {
 	flex-direction: column;
 	gap: 4px;
 	min-height: 0;
+	overflow-x: hidden;
 	overflow-y: auto;
-	scrollbar-gutter: stable;
 }
 
 /* Editorial rows keep Open as the large target; ⇥ restores to the strip and ×
@@ -609,37 +609,12 @@ body.tab-dragging .tab {
 	font-variant-numeric: tabular-nums;
 }
 
-.bg-action,
-.bg-kill {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	padding: 0;
-	border: none;
-	border-radius: var(--radius-md);
-	background: none;
-	color: var(--text-2);
-	font-family: inherit;
-	cursor: pointer;
-	transition: background-color 140ms ease-out, color 140ms ease-out;
-}
-
-.bg-action {
+.bg-action-glyph {
 	font-size: 16px;
-	line-height: 1;
 }
 
-.bg-kill {
+.bg-kill-glyph {
 	font-size: 14px;
-	line-height: 1;
-}
-
-.bg-action:hover,
-.bg-kill:hover {
-	background: var(--fill-raised);
-	color: var(--text-0);
 }
 
 /* Context menu at the pointer (tab right-click): §3.8 panel, fixed positioning

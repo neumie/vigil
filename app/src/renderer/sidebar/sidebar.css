@@ -253,6 +253,12 @@
 	background: var(--fill-subtle);
 	color: var(--text-0);
 }
+.icon-btn-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 1;
+}
 
 /* ---------- list toolbar ---------- */
 

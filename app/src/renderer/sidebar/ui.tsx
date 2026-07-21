@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { DashboardTone } from '../../shared-helm'
+import { IconBtn } from '../icon-button'
 import { CHIP_CLASS } from './model'
 import type { StatusTone } from './model'
 
@@ -52,33 +53,7 @@ export function Btn({
 	)
 }
 
-export function IconBtn({
-	label,
-	onClick,
-	children,
-	pressed,
-	disabled,
-}: {
-	label: string
-	onClick?: () => void
-	children: ReactNode
-	pressed?: boolean
-	disabled?: boolean
-}) {
-	return (
-		<button
-			type="button"
-			className="icon-btn"
-			aria-label={label}
-			title={label}
-			aria-pressed={pressed}
-			disabled={disabled}
-			onClick={onClick}
-		>
-			{children}
-		</button>
-	)
-}
+export { IconBtn }
 
 // Inline SVG glyphs — stroke follows currentColor so button tones apply.
 const glyph = (d: string, size = 14) => (

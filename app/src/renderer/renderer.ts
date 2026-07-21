@@ -7,6 +7,7 @@ import './styles.css'
 import type { RestoredSession } from '../shared'
 import { createActivityIndicator, setActivityIndicatorState } from './activity-indicator'
 import { appearance } from './appearance'
+import { createIconButton } from './icon-button'
 import { mountSidebar } from './sidebar/SidebarRoot'
 import { type SynchronizedOutputGuard, createSynchronizedOutputGuard } from './synchronized-output'
 import {
@@ -843,19 +844,19 @@ function renderBackgroundRows(): void {
 		}
 		open.append(copy)
 
-		const restore = document.createElement('button')
-		restore.className = 'bg-action'
-		restore.textContent = '⇥'
-		restore.title = 'Move to tabs and open'
-		restore.setAttribute('aria-label', `Move ${displayName(tab)} to tabs and open`)
-		restore.addEventListener('click', () => restoreParked(tab))
+		const restore = createIconButton({
+			label: `Move ${displayName(tab)} to tabs and open`,
+			glyph: '⇥',
+			glyphClassName: 'bg-action-glyph',
+			onClick: () => restoreParked(tab),
+		})
 
-		const kill = document.createElement('button')
-		kill.className = 'bg-kill'
-		kill.textContent = '×'
-		kill.title = 'Close'
-		kill.setAttribute('aria-label', `Close ${displayName(tab)}`)
-		kill.addEventListener('click', () => killParkedTab(tab))
+		const kill = createIconButton({
+			label: `Close ${displayName(tab)}`,
+			glyph: '×',
+			glyphClassName: 'bg-kill-glyph',
+			onClick: () => killParkedTab(tab),
+		})
 
 		row.append(open, restore, kill)
 		bgRows.appendChild(row)

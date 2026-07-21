@@ -28,9 +28,14 @@ test('opening a background terminal activates it without restoring ownership', (
 test('background rows form an editorial list with explicit icon actions', () => {
 	const render = functionSlice('renderBackgroundRows', 'onBgOutside')
 	assert.match(render, /open\.addEventListener\('click', \(\) => openParked\(tab\)\)/)
-	assert.match(render, /restore\.textContent = '⇥'/)
-	assert.match(render, /restore\.addEventListener\('click', \(\) => restoreParked\(tab\)\)/)
-	assert.match(render, /kill\.addEventListener\('click', \(\) => killParkedTab\(tab\)\)/)
+	assert.match(
+		render,
+		/createIconButton\(\{[\s\S]*label: `Move \$\{displayName\(tab\)\} to tabs and open`[\s\S]*glyph: '⇥'/,
+	)
+	assert.match(render, /onClick: \(\) => restoreParked\(tab\)/)
+	assert.match(render, /createIconButton\(\{[\s\S]*label: `Close \$\{displayName\(tab\)\}`[\s\S]*glyph: '×'/)
+	assert.match(render, /onClick: \(\) => killParkedTab\(tab\)/)
+	assert.doesNotMatch(render, /restore\.className|kill\.className/)
 	assert.match(normalizedHtml, /aria-haspopup="dialog"/)
 	assert.match(normalizedHtml, /<span id="bg-header-count" class="bg-header-count">0<\/span>/)
 	assert.match(css, /#bg-popover\s*\{[^}]*width:\s*320px/s)

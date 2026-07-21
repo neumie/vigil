@@ -24,7 +24,12 @@ test('persistent scroll surfaces reserve scrollbar width before overflow', () =>
 	for (const selector of ['.page-scroll', '.list-scroll', '.sheet-body', '.log-well', '.plan-well']) {
 		hasStableGutter(sidebar, selector)
 	}
-	hasStableGutter(cockpit, '#bg-rows')
 	hasStableGutter(runContext, '.run-context-editor')
 	hasStableGutter(runContext, '.run-context-source')
+})
+
+test('transient background menu uses overlay scrolling without horizontal overflow', () => {
+	const rows = rule(cockpit, '#bg-rows')
+	assert.doesNotMatch(rows, /scrollbar-gutter/)
+	assert.match(rows, /overflow-x:\s*hidden/)
 })
