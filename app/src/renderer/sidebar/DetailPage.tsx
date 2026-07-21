@@ -95,14 +95,19 @@ export function DetailPage(props: DetailPageProps) {
 			),
 		)
 	const plan = () =>
-		run('Plan', async () => {
-			const result = await window.helm.daemon.plan(item.id, buildPlanBody(item, draft))
-			if (result.error === undefined) {
-				const info: PlanInfo = result.data
-				showToast({ message: `${info.spawner} planning started`, detail: info.hint, ttlMs: 8000 })
-			}
-			return result
-		})
+		run(
+			'Plan',
+			async () => {
+				const result = await window.helm.daemon.plan(item.id, buildPlanBody(item, draft))
+				if (result.error === undefined) {
+					const info: PlanInfo = result.data
+					showToast({ message: `${info.spawner} planning started`, detail: info.hint, ttlMs: 8000 })
+				}
+				return result
+			},
+			undefined,
+			null,
+		)
 	const sourceTask = () => run('Create source task', () => window.helm.daemon.sourceTask(item.id))
 	const openOkena = () =>
 		run(
