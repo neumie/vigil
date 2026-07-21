@@ -599,6 +599,9 @@ function cycleTab(delta: number): void {
 function closeTab(tab: Tab): void {
 	if (tab.closed) return
 	tab.closed = true
+	// Snapshot before releasing a synchronized redraw guard: saveSnapshot skips
+	// a pending replacement frame, preserving the previous complete snapshot.
+	if (tab.ptyId !== null) saveSnapshot(tab)
 	tab.outputGuard.abort()
 	tab.progressTracker.clear()
 	const { title, customName } = tab
@@ -607,9 +610,6 @@ function closeTab(tab: Tab): void {
 	// grace timer — the dtach session dies when it fires. The toast's Undo
 	// cancels the timer and reattaches the same session as a new tab.
 	if (tab.ptyId !== null) {
-		// Snapshot NOW, before dispose: the grace Undo replays exactly this
-		// screen into the fresh xterm it reattaches.
-		saveSnapshot(tab)
 		void helm.sessions.closeWithGrace(tab.ptyId).then(grace => {
 			if (!grace) return // non-persistent pty — already fully killed, nothing to undo
 			const toast = showToast({
@@ -703,6 +703,8 @@ function killParkedTab(tab: Tab): void {
 	const index = parked.indexOf(tab)
 	if (index === -1 || tab.closed) return
 	tab.closed = true
+	// Same snapshot-before-guard-release rule as closeTab.
+	if (tab.ptyId !== null) saveSnapshot(tab)
 	tab.outputGuard.abort()
 	tab.progressTracker.clear()
 	parked.splice(index, 1)
@@ -710,8 +712,6 @@ function killParkedTab(tab: Tab): void {
 	const { title, customName } = tab
 	const shown = customName ?? title
 	if (tab.ptyId !== null) {
-		// Same snapshot-before-dispose as closeTab: Undo replays this screen.
-		saveSnapshot(tab)
 		void helm.sessions.closeWithGrace(tab.ptyId).then(grace => {
 			if (!grace) return
 			const toast = showToast({

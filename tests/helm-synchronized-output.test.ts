@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import outputModule from '../app/src/renderer/synchronized-output.ts'
 
@@ -69,6 +70,17 @@ test('passes ordinary output through and abort releases any frozen frame', () =>
 	guard.write(`${START}unfinished`, write)
 	guard.abort()
 	assert.deepEqual(events, ['freeze', 'unfreeze'])
+})
+
+test('close paths preserve the last complete snapshot before releasing a redraw guard', () => {
+	const renderer = readFileSync(new URL('../app/src/renderer/renderer.ts', import.meta.url), 'utf8')
+	for (const name of ['closeTab', 'killParkedTab']) {
+		const start = renderer.indexOf(`function ${name}`)
+		const end = renderer.indexOf('\nfunction ', start + 1)
+		const body = renderer.slice(start, end)
+		assert.ok(start >= 0, `${name} is present`)
+		assert.ok(body.indexOf('saveSnapshot(tab)') < body.indexOf('tab.outputGuard.abort()'), `${name} snapshots before abort`)
+	}
 })
 
 test('an idle redraw with no closing marker cannot freeze Helm forever', () => {
