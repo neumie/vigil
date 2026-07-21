@@ -81,7 +81,7 @@ function BackgroundRow({
 
 function TerminalOutput() {
 	return (
-		<div className="term-holder active" style={{ padding: '12px 14px' }}>
+		<div className="term-holder active">
 			<div
 				className="term-mount"
 				style={{

@@ -8,7 +8,7 @@ const meta: Meta = {
 	title: 'Compositions/Disclosure group',
 	decorators: [
 		story => (
-			<div className="page-scroll" style={{ width: 340, overflow: 'visible' }}>
+			<div className="page-scroll" style={{ width: 340, height: 240 }}>
 				{story()}
 			</div>
 		),

@@ -13,7 +13,7 @@ const meta: Meta = {
 	title: 'Compositions/List row',
 	decorators: [
 		story => (
-			<div className="list-scroll" style={{ width: 340, overflow: 'visible' }}>
+			<div className="list-scroll" style={{ width: 340, height: 256 }}>
 				{story()}
 			</div>
 		),

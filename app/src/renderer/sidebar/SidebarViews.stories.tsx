@@ -284,7 +284,7 @@ function installBridge(detail: DashboardItem = reviewItem): void {
 	})
 }
 
-function Frame({ children, width = 420 }: { children: ReactNode; width?: number }) {
+function Frame({ children, width = 340 }: { children: ReactNode; width?: number }) {
 	return (
 		<div
 			style={{

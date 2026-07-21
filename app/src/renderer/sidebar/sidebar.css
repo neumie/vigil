@@ -37,21 +37,22 @@
 	overflow: hidden;
 }
 
-/* Quiet scrollbars inside the pane (webkit; color-scheme handles the rest). */
-.sidebar ::-webkit-scrollbar {
+/* Quiet scrollbars belong only to stable reading/editing surfaces. Row-heavy
+ * page/list scrollers keep the platform overlay so state bands reach the edge. */
+:is(.sheet-body, .log-well, .plan-well)::-webkit-scrollbar {
 	width: 10px;
 	height: 10px;
 }
-.sidebar ::-webkit-scrollbar-track {
+:is(.sheet-body, .log-well, .plan-well)::-webkit-scrollbar-track {
 	background: transparent;
 }
-.sidebar ::-webkit-scrollbar-thumb {
+:is(.sheet-body, .log-well, .plan-well)::-webkit-scrollbar-thumb {
 	background: var(--thumb);
 	border: 3px solid transparent;
 	border-radius: 999px;
 	background-clip: content-box;
 }
-.sidebar ::-webkit-scrollbar-thumb:hover {
+:is(.sheet-body, .log-well, .plan-well)::-webkit-scrollbar-thumb:hover {
 	background-color: var(--thumb-hover);
 }
 
@@ -157,7 +158,6 @@
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	scrollbar-gutter: stable;
 	padding: 16px;
 	display: flex;
 	flex-direction: column;
@@ -284,9 +284,9 @@
 	background: var(--accent-soft);
 }
 
-/* Compact project filter: a ghost menu button, not a giant select. Its text
- * sits flush on the pane's 12px left edge rhythm — the 8px padding is pulled
- * back by a negative margin so only the hover fill extends into the gutter. */
+/* Compact project filter: a rounded ghost menu button, not a row-state band.
+ * The toolbar's 8px inset plus this control's 8px padding lands text on the
+ * pane's 16px grid; its hover fill intentionally remains inset. */
 .project-trigger {
 	display: inline-flex;
 	align-items: center;
@@ -400,8 +400,7 @@
 
 /* The work-list lifecycle filter is a text index, not a segmented track. */
 .list-filter:has(.segmented-index) {
-	padding-top: 0;
-	padding-bottom: 0;
+	padding: 0;
 }
 /* Lifecycle index (§3.2): a left-aligned row of auto-width targets on the
  * 16px text grid — never a justified full-width grid (edge-pinned labels and
@@ -426,6 +425,10 @@
 	font-size: calc(13px * var(--ui-scale));
 	font-weight: 500;
 	color: var(--text-2);
+}
+.segmented-index .segment:hover:not(.segment-active),
+.segmented-index .segment:focus-visible:not(.segment-active) {
+	color: var(--text-0);
 }
 /* Active option: text weight + a 2px accent underline on the bottom hairline —
  * never accent-colored label text, never an option fill (§3.2). */
@@ -454,6 +457,8 @@
 	color: var(--text-2);
 	font-variant-numeric: tabular-nums;
 }
+.segmented-index .segment:hover:not(.segment-active) .segment-count,
+.segmented-index .segment:focus-visible:not(.segment-active) .segment-count,
 .segmented-index .segment-active .segment-count {
 	color: var(--text-1);
 }
@@ -1348,7 +1353,7 @@ button.banner {
 }
 
 .task-page-scroll {
-	padding: 16px 12px;
+	padding: 16px;
 }
 .task-detail {
 	display: flex;

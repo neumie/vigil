@@ -8,7 +8,7 @@ const meta: Meta = {
 	title: 'Compositions/Flat group',
 	decorators: [
 		story => (
-			<div className="page-scroll" style={{ width: 340, overflow: 'visible' }}>
+			<div className="page-scroll" style={{ width: 340, height: 240 }}>
 				{story()}
 			</div>
 		),
@@ -59,6 +59,15 @@ export const ActionRows: Story = {
 			<ActionRow label="Disabled" value="Unavailable" glyphKind="copy" onClick={noop} disabled />
 		</Card>
 	),
+}
+
+/** Holds a real row hover in the production scrolling geometry, exposing any
+ * left/right gutter asymmetry. */
+export const FullWidthActionHover: Story = {
+	render: ActionRows.render,
+	play: async ({ canvas, userEvent }) => {
+		await userEvent.hover(canvas.getByRole('button', { name: /PR/ }))
+	},
 }
 
 /** Nav rows (§3.15): the title IS the content, value is the current-state

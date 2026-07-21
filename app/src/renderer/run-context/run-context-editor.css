@@ -105,6 +105,25 @@
 	min-height: 0;
 }
 
+/* The restricted editor window is outside `.sidebar`, so its stable reading
+ * panes own the same quiet scrollbar treatment explicitly. */
+:is(.run-context-editor, .run-context-source)::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+:is(.run-context-editor, .run-context-source)::-webkit-scrollbar-track {
+	background: transparent;
+}
+:is(.run-context-editor, .run-context-source)::-webkit-scrollbar-thumb {
+	background: var(--thumb);
+	border: 3px solid transparent;
+	border-radius: 999px;
+	background-clip: content-box;
+}
+:is(.run-context-editor, .run-context-source)::-webkit-scrollbar-thumb:hover {
+	background-color: var(--thumb-hover);
+}
+
 .run-context-editor {
 	overflow: auto;
 	scrollbar-gutter: stable;

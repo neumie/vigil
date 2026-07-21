@@ -21,15 +21,20 @@ function hasStableGutter(css: string, selector: string): void {
 }
 
 test('persistent reading and editing surfaces reserve scrollbar width before overflow', () => {
-	for (const selector of ['.page-scroll', '.sheet-body', '.log-well', '.plan-well']) {
+	for (const selector of ['.sheet-body', '.log-well', '.plan-well']) {
 		hasStableGutter(sidebar, selector)
 	}
 	hasStableGutter(runContext, '.run-context-editor')
 	hasStableGutter(runContext, '.run-context-source')
+	assert.match(runContext, /:is\(\.run-context-editor, \.run-context-source\)::\-webkit-scrollbar\s*\{/)
 })
 
-test('full-width state-band lists use overlay scrolling without a blank edge gutter', () => {
-	assert.doesNotMatch(rule(sidebar, '.list-scroll'), /scrollbar-gutter/)
+test('full-width state-band scrollers use overlay scrolling without a blank edge gutter', () => {
+	for (const selector of ['.page-scroll', '.list-scroll']) {
+		assert.doesNotMatch(rule(sidebar, selector), /scrollbar-gutter/)
+	}
+	assert.doesNotMatch(sidebar, /\.sidebar ::\-webkit-scrollbar/)
+	assert.match(sidebar, /:is\(\.sheet-body, \.log-well, \.plan-well\)::\-webkit-scrollbar\s*\{/)
 })
 
 test('transient background menu uses overlay scrolling without horizontal overflow', () => {

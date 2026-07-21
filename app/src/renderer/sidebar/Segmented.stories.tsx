@@ -1,6 +1,6 @@
 // Segmented control (§3.2): boxed track, the accent commit variant (true
-// either/or choices only), and the work-list lifecycle index with its 2px
-// accent underline active state.
+// either/or choices only), and the work-list lifecycle index with its quiet
+// text hover plus 2px accent-underline active state.
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import type { BucketKey } from './model'
@@ -75,6 +75,15 @@ export const LifecycleIndex: Story = {
 				/>
 			</div>
 		)
+	},
+}
+
+/** Holds the real inactive hover state while the bottom hairline remains
+ * edge-to-edge across the 340px sidebar. */
+export const LifecycleIndexHover: Story = {
+	render: LifecycleIndex.render,
+	play: async ({ canvas, userEvent }) => {
+		await userEvent.hover(canvas.getByRole('radio', { name: /Active/ }))
 	},
 }
 

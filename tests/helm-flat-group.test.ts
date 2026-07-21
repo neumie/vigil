@@ -22,6 +22,7 @@ test('Item destinations share one flat resource group', () => {
 })
 
 test('tappable rows use a square full-bleed hover band on the page grid', () => {
+	assert.doesNotMatch(css, /\.page-scroll\s*\{[^}]*scrollbar-gutter:/s)
 	assert.match(css, /\.action-row\s*\{[^}]*margin:\s*0 -16px/s)
 	assert.match(css, /\.action-row\s*\{[^}]*width:\s*calc\(100% \+ 32px\)/s)
 	assert.match(css, /\.action-row\s*\{[^}]*padding:\s*0 16px/s)
@@ -34,6 +35,17 @@ test('row hover fill leaves breathing room around separators', () => {
 	assert.doesNotMatch(css, /\.action-row:hover:not\(:disabled\)\s*\{[^}]*background:/s)
 })
 
+test('lifecycle index owns the full-width hairline and visible inactive hover', () => {
+	assert.match(css, /\.list-filter:has\(\.segmented-index\)\s*\{[^}]*padding:\s*0/s)
+	assert.match(css, /\.segmented-index\s*\{[^}]*padding:\s*0 16px/s)
+	assert.match(css, /\.segmented-index \.segment:hover:not\(\.segment-active\)[^}]*color:\s*var\(--text-0\)/s)
+	assert.match(css, /\.segmented-index \.segment:focus-visible:not\(\.segment-active\)[^}]*color:\s*var\(--text-0\)/s)
+	assert.match(
+		css,
+		/\.segmented-index \.segment:hover:not\(\.segment-active\) \.segment-count[^}]*color:\s*var\(--text-1\)/s,
+	)
+})
+
 test('work-list Item rows use square full-width state stripes', () => {
 	assert.match(css, /\.list-scroll\s*\{[^}]*padding:\s*6px 0 16px/s)
 	assert.doesNotMatch(css, /\.list-scroll\s*\{[^}]*scrollbar-gutter:/s)
@@ -42,6 +54,7 @@ test('work-list Item rows use square full-width state stripes', () => {
 	assert.match(css, /\.item-row\s*\{[^}]*border-radius:\s*0/s)
 	assert.match(css, /\.item-row-actions\s*\{[^}]*right:\s*16px/s)
 	assert.match(css, /\.item-project-group-head\s*\{[^}]*padding:\s*8px 16px 0/s)
+	assert.match(css, /\.task-page-scroll\s*\{[^}]*padding:\s*16px/s)
 })
 
 test('Flat group stories do not mix navigation pitch into Action rows', () => {
