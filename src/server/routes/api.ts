@@ -1121,6 +1121,16 @@ export function apiRoutes(
 			}
 		}
 		const { baseRef, planDirName, branchName, existingWorktreePath } = resolveItemWorkspace(named)
+		// Legacy/main-planned Items may persist the canonical checkout as their
+		// workspace path. It is valid only for Main planning; handing it to a
+		// Worktree spawner silently reuses the main Okena project and never creates
+		// the branch worktree the operator selected.
+		let existingPlanningWorkspacePath: string | undefined
+		if (planningInMain) {
+			existingPlanningWorkspacePath = projectConfig.repoPath
+		} else if (existingWorktreePath && resolve(existingWorktreePath) !== resolve(projectConfig.repoPath)) {
+			existingPlanningWorkspacePath = existingWorktreePath
+		}
 
 		let itemSpawner: Spawner
 		try {
@@ -1150,7 +1160,7 @@ export function apiRoutes(
 					model: effectiveSolverModel,
 					workspace: effectiveWorkspace,
 				},
-				existingWorktreePath: planningInMain ? projectConfig.repoPath : existingWorktreePath,
+				existingWorktreePath: existingPlanningWorkspacePath,
 				replaceExistingSession: item.plannedAt !== null,
 			})
 			worktreePath = session.worktreePath
@@ -1159,7 +1169,7 @@ export function apiRoutes(
 			const msg = err instanceof Error ? err.message : String(err)
 			log.error(
 				'planning',
-				`Failed to start Item ${item.id} via ${itemSpawner.name} (project=${item.projectSlug}, branch=${branchName}, existingWorktree=${existingWorktreePath ?? 'none'})`,
+				`Failed to start Item ${item.id} via ${itemSpawner.name} (project=${item.projectSlug}, branch=${branchName}, existingWorktree=${existingPlanningWorkspacePath ?? 'none'})`,
 				err,
 			)
 			abortPlanning()

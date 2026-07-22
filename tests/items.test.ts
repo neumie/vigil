@@ -5494,6 +5494,57 @@ test('planning a main-workspace Item reuses the repo checkout and skips branch n
 	})
 })
 
+test('Re-plan in Worktree mode discards a legacy canonical-checkout plan path', async () => {
+	await withTempDb(async db => {
+		const repoPath = mkdtempSync(join(tmpdir(), 'helm-legacy-main-plan-repo-'))
+		const worktreeRoot = mkdtempSync(join(tmpdir(), 'helm-legacy-main-plan-worktrees-'))
+		const planningConfig: HelmConfig = {
+			...config,
+			projects: [{ slug: 'helm', repoPath, baseBranch: 'main' }],
+		}
+		const commands = new ItemCommands(db.items, planningConfig)
+		const item = commands.createSolveItem({
+			title: 'Move legacy plan to worktree',
+			projectSlug: 'helm',
+			prompt: 'Re-plan away from the canonical checkout.',
+		})
+		commands.beginPlanning(item.id)
+		commands.recordPlanPrepared(item.id, {
+			worktreePath: repoPath,
+			branchName: 'feat/legacy-main-plan',
+			planDirName: '2026-07-22-legacy-main-plan',
+			spawner: 'fake',
+		})
+		const planningSpawner = new FakePlanningSpawner(worktreeRoot)
+		const api = apiRoutes(
+			planningConfig,
+			'helm.config.json',
+			db,
+			queue as never,
+			poller as never,
+			provider as never,
+			planningSpawner,
+			fakeEnricher as never,
+		)
+
+		try {
+			const res = await api.request(`/items/${item.id}/plan`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ solverWorkspace: 'worktree' }),
+			})
+
+			assert.equal(res.status, 200)
+			assert.equal(planningSpawner.calls[0].existingWorktreePath, undefined)
+			assert.equal(planningSpawner.calls[0].replaceExistingSession, true)
+			assert.notEqual(db.items.get(item.id)?.worktreePath, repoPath)
+		} finally {
+			rmSync(repoPath, { recursive: true, force: true })
+			rmSync(worktreeRoot, { recursive: true, force: true })
+		}
+	})
+})
+
 test('manual branch-name AI pass refuses main-workspace Items', () =>
 	withTempDb(async db => {
 		const commands = new ItemCommands(db.items, config)
