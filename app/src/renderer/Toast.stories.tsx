@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
+import { Btn } from './button'
 
 function Toast({
 	message,
@@ -14,9 +15,9 @@ function Toast({
 				{detail ? <div className="toast-detail">{detail}</div> : null}
 			</div>
 			{action ? (
-				<button type="button" className="toast-action">
+				<Btn tone="ghost" sm className="toast-action">
 					{action}
-				</button>
+				</Btn>
 			) : null}
 			{countdown ? <div className="toast-countdown" style={{ transform: 'scaleX(0.62)' }} /> : null}
 		</div>

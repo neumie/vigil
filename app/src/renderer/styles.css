@@ -866,22 +866,7 @@ body.dragging {
 
 .toast-action {
 	flex: none;
-	height: 24px;
 	margin: -3px -6px 0 0;
-	padding: 0 6px;
-	border: 0;
-	border-radius: 6px;
-	background: none;
-	color: var(--accent);
-	font-size: 12px;
-	font-weight: 600;
-	line-height: 24px;
-	cursor: pointer;
-	transition: background-color 140ms ease-out;
-}
-
-.toast-action:hover {
-	background: var(--fill-subtle);
 }
 
 /* Inset hairline: time remains legible without turning the notice into a progress panel. */

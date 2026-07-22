@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { DashboardTone } from '../../shared-helm'
+import { Btn } from '../button'
 import { IconBtn } from '../icon-button'
 import { CHIP_CLASS } from './model'
 import type { StatusTone } from './model'
@@ -13,47 +14,7 @@ import type { StatusTone } from './model'
 // ---------------------------------------------------------------------------
 // Buttons
 
-export function Btn({
-	tone = 'quiet',
-	sm,
-	disabled,
-	busy,
-	onClick,
-	children,
-	block,
-	ariaLabel,
-	ariaExpanded,
-	ariaControls,
-}: {
-	tone?: 'primary' | 'quiet' | 'danger' | 'ghost'
-	sm?: boolean
-	disabled?: boolean
-	/** In-flight: keeps the label, appends an ellipsis, disables the control. */
-	busy?: boolean
-	onClick?: () => void
-	children: ReactNode
-	block?: boolean
-	ariaLabel?: string
-	ariaExpanded?: boolean
-	ariaControls?: string
-}) {
-	return (
-		<button
-			type="button"
-			className={`btn btn-${tone}${sm ? ' btn-sm' : ''}${block ? ' btn-block' : ''}`}
-			disabled={disabled || busy}
-			aria-label={ariaLabel}
-			aria-expanded={ariaExpanded}
-			aria-controls={ariaControls}
-			onClick={onClick}
-		>
-			{children}
-			{busy ? '…' : null}
-		</button>
-	)
-}
-
-export { IconBtn }
+export { Btn, IconBtn }
 
 // Inline SVG glyphs — stroke follows currentColor so button tones apply.
 const glyph = (d: string, size = 14) => (

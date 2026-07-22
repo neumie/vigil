@@ -1,3 +1,5 @@
+import { createButton } from './button'
+
 // Toast notifications — compact bottom-right notices, stacking, helm design language.
 // Reusable: any renderer feature can call showToast(); the soft-close Undo is
 // just the first consumer. Styles live in styles.css under "toasts"; motion
@@ -60,14 +62,17 @@ export function showToast(options: ToastOptions): ToastHandle {
 	el.appendChild(body)
 
 	if (options.action) {
-		const button = document.createElement('button')
-		button.className = 'toast-action'
-		button.textContent = options.action.label
-		button.addEventListener('click', event => {
-			event.stopPropagation()
-			options.action?.onClick()
+		const button = createButton({
+			label: options.action.label,
+			tone: 'ghost',
+			sm: true,
+			className: 'toast-action',
+			onClick: event => {
+				event.stopPropagation()
+				options.action?.onClick()
+			},
 		})
-		el.appendChild(button)
+		el.append(button)
 	}
 
 	let countdownEl: HTMLDivElement | null = null
