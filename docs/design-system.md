@@ -247,11 +247,11 @@ The sidebar work-item row; also the template for any dense list.
 
 Reference implementation: `app/src/renderer/toast.ts` + `styles.css` "toasts" block.
 
-- Container fixed bottom-right, 16px inset, column stack, gap 8, newest at bottom, `role="status"` + `aria-live="polite"`.
-- Box: min-width 220, max-width 340, padding **10 12**, background `--chrome`, 1px `--hairline`, radius `--radius-lg`, `--shadow-1`, `overflow: hidden` (clips countdown bar).
-- Content: message 13 `--text-0`; optional detail 12 `--text-1` single-line ellipsis, 2px below; optional one action button — 12/600 `--accent` text, padding 3 10, 1px `--hairline` border, radius `--radius-md`.
-- Motion: enter 140ms ease-out (opacity 0→1, translateY(8px)→0, double-rAF before adding the shown class); exit 120ms reverse. Removal by timer, not `transitionend` (unreliable in hidden tabs).
-- TTL default 4000ms. Optional countdown: 2px bar, `rgba(255,255,255,0.14)`, `transform: scaleX` draining left→right, `linear` over the TTL.
+- **Bottom notice, not corner card:** container fixed bottom-center (`left: 50%`, translateX −50%), 12px bottom inset, width `min(320px, 100vw − 32px)`, column stack, gap 6, newest at bottom, `role="status"` + `aria-live="polite"`. The container ignores pointer events; each notice restores them.
+- Notice: full container width, padding **9 12 11**, background `--chrome`, 1px `--hairline`, radius `--radius-lg`, `--shadow-1`. This consistent low profile is deliberately quieter than a content-sized corner card.
+- Content: message 13/500, 18px line-height, `--text-0`; optional detail 11/400, 14px line-height, `--text-2`, single-line ellipsis 1px below. Optional one action is a borderless quiet control aligned to the first line: height 24, padding 0 6, 12/600 `--accent`, radius `--radius-md`, `--fill-subtle` hover. Never put an outlined button inside the notice.
+- Motion: enter 150ms ease-out (opacity 0→1, translateY(8px)→0, double-rAF before adding the shown class); exit 120ms reverse. Removal by timer, not `transitionend` (unreliable in hidden tabs).
+- TTL default 4000ms. Optional countdown: one **inset 1px hairline** (`left/right 12`, bottom 5, `--thumb` at 0.7 opacity), `transform: scaleX` draining left→right, `linear` over the TTL. It communicates time without becoming a full-width progress bar.
 - **Do** use a toast + Undo for soft-destructive actions (tab close grace). **Don't** stack more than 3 visible toasts — coalesce; **don't** put more than one action in a toast.
 
 ### 3.7 Inputs & selects

@@ -1,4 +1,4 @@
-// Toast notifications — bottom-right, stacking, helm design language.
+// Toast notifications — bottom-centered notices, stacking, helm design language.
 // Reusable: any renderer feature can call showToast(); the soft-close Undo is
 // just the first consumer. Styles live in styles.css under "toasts"; motion
 // respects prefers-reduced-motion via the global media query there.
@@ -16,7 +16,7 @@ export interface ToastOptions {
 	action?: ToastAction
 	/** Auto-dismiss after this many ms. Default 4000. */
 	ttlMs?: number
-	/** Show a quiet countdown bar draining over ttlMs. */
+	/** Show a quiet inset countdown hairline draining over ttlMs. */
 	countdown?: boolean
 }
 

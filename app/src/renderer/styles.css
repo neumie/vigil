@@ -798,31 +798,35 @@ body.dragging {
 
 #toasts {
 	position: fixed;
-	right: 16px;
-	bottom: 16px;
+	left: 50%;
+	bottom: 12px;
 	z-index: 100;
 	display: flex;
+	width: min(320px, calc(100vw - 32px));
+	transform: translateX(-50%);
 	flex-direction: column;
-	align-items: flex-end;
-	gap: 8px;
+	align-items: stretch;
+	gap: 6px;
+	pointer-events: none;
 }
 
 .toast {
 	position: relative;
 	display: flex;
-	align-items: center;
-	gap: 12px;
-	min-width: 220px;
-	max-width: 340px;
-	padding: 10px 12px;
+	box-sizing: border-box;
+	width: 100%;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 9px 12px 11px;
 	border: 1px solid var(--hairline);
 	border-radius: 8px;
 	background: var(--chrome);
 	box-shadow: var(--shadow-1);
-	overflow: hidden; /* clips the countdown bar to the radius */
+	overflow: hidden;
+	pointer-events: auto;
 	opacity: 0;
 	transform: translateY(8px);
-	transition: opacity 140ms ease-out, transform 140ms ease-out;
+	transition: opacity 150ms ease-out, transform 150ms ease-out;
 }
 
 .toast.shown {
@@ -837,17 +841,22 @@ body.dragging {
 }
 
 .toast-body {
+	flex: 1;
 	min-width: 0;
 }
 
 .toast-msg {
 	color: var(--text-0);
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 18px;
 }
 
 .toast-detail {
-	margin-top: 2px;
-	color: var(--text-1);
-	font-size: 12px;
+	margin-top: 1px;
+	color: var(--text-2);
+	font-size: 11px;
+	line-height: 14px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -855,13 +864,16 @@ body.dragging {
 
 .toast-action {
 	flex: none;
-	padding: 3px 10px;
-	border: 1px solid var(--hairline);
+	height: 24px;
+	margin: -3px -6px 0 0;
+	padding: 0 6px;
+	border: 0;
 	border-radius: 6px;
 	background: none;
 	color: var(--accent);
 	font-size: 12px;
 	font-weight: 600;
+	line-height: 24px;
 	cursor: pointer;
 	transition: background-color 140ms ease-out;
 }
@@ -870,14 +882,15 @@ body.dragging {
 	background: var(--fill-subtle);
 }
 
-/* Quiet countdown affordance: hairline bar draining left-to-right over the ttl. */
+/* Inset hairline: time remains legible without turning the notice into a progress panel. */
 .toast-countdown {
 	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	height: 2px;
+	left: 12px;
+	right: 12px;
+	bottom: 5px;
+	height: 1px;
 	background: var(--thumb);
+	opacity: 0.7;
 	transform-origin: left;
 }
 

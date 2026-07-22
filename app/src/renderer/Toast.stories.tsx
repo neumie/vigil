@@ -25,8 +25,8 @@ function Toast({
 
 function Stage({ children }: { children: ReactNode }) {
 	return (
-		<div style={{ minHeight: 280, padding: 24, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-			{children}
+		<div style={{ minHeight: 280, padding: 24, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+			<div style={{ width: 'min(320px, calc(100vw - 32px))' }}>{children}</div>
 		</div>
 	)
 }
@@ -66,7 +66,7 @@ export const WithAction: Story = {
 export const StackLimit: Story = {
 	render: () => (
 		<Stage>
-			<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+			<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
 				<Toast message="Settings applied" />
 				<Toast message="Opened in Okena" detail="fix/restore-terminal-sessions" />
 				<Toast message="Terminal closed" detail="deploy watch" action="Undo" countdown />
