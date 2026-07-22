@@ -519,23 +519,15 @@ body.tab-dragging .tab {
 	display: none;
 }
 
-/* Editorial header: title and count are one quiet fact line, not another chip. */
+/* The strip control owns the count; the popover header names the resource once. */
 .bg-header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
 	padding: 8px 12px;
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--text-1);
 	user-select: none;
-}
-
-.bg-header-count {
-	color: var(--text-2);
-	font-size: 11px;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
 }
 
 #bg-rows {

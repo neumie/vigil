@@ -146,12 +146,7 @@ function TerminalShell({ children, popover, left = 0 }: { children?: ReactNode; 
 							// Mirrors the production non-modal ARIA dialog.
 							// biome-ignore lint/a11y/useSemanticElements: native <dialog> adds modal/top-layer semantics.
 							<div id="bg-popover" className="menu-panel menu-end" role="dialog" aria-label="Background terminals">
-								<div className="bg-header">
-									<span>Background terminals</span>
-									<span id="bg-header-count" className="bg-header-count">
-										4
-									</span>
-								</div>
+								<div className="bg-header">Background terminals</div>
 								<div id="bg-rows">
 									<BackgroundRow title="okena" active />
 									<BackgroundRow title="indexing workspace" activity="progress" />

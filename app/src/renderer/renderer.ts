@@ -46,7 +46,6 @@ const topbarDragSpace = el<HTMLDivElement>('topbar-drag-space')
 const bgRoot = el<HTMLDivElement>('bg-root')
 const bgToggle = el<HTMLButtonElement>('bg-toggle')
 const bgCount = el<HTMLSpanElement>('bg-count')
-const bgHeaderCount = el<HTMLSpanElement>('bg-header-count')
 const bgPopover = el<HTMLDivElement>('bg-popover')
 const bgRows = el<HTMLDivElement>('bg-rows')
 
@@ -791,7 +790,6 @@ function updateBackgroundUi(): void {
 	const focusWasInPopover = empty && bgPopover.contains(document.activeElement)
 	bgToggle.hidden = empty
 	bgCount.textContent = String(parked.length)
-	bgHeaderCount.textContent = String(parked.length)
 	if (empty) {
 		closeBackgroundPopover()
 		if (focusWasInPopover) newTabButton.focus()
