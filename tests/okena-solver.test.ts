@@ -317,7 +317,7 @@ test('Okena plan-terminal reuse ignores stale names outside the live layout', as
 	assert.equal(await manager.findPlanTerminal('project-1'), null)
 })
 
-test('OkenaSpawner focuses a reused planning terminal without sending another command', async () => {
+test('OkenaSpawner does not send another command into a reused planning terminal', async () => {
 	const worktreePath = mkdtempSync(join(tmpdir(), 'helm-okena-plan-reuse-'))
 	const actions: Record<string, unknown>[] = []
 	let commandRuns = 0
@@ -365,12 +365,6 @@ test('OkenaSpawner focuses a reused planning terminal without sending another co
 				project_id: 'project-1',
 				terminal_id: 'terminal-plan',
 				name: 'plan: Reuse plan',
-			},
-			{
-				action: 'focus_terminal',
-				project_id: 'project-1',
-				terminal_id: 'terminal-plan',
-				window: 'main',
 			},
 		])
 	} finally {

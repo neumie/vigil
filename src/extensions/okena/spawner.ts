@@ -66,21 +66,8 @@ export class OkenaSpawner implements Spawner {
 		if (reusedTerminal) {
 			// A named live plan terminal may contain a running interactive agent.
 			// Repeated Plan clicks reuse it without sending ctrl_c OR another shell
-			// command into the agent's input prompt. Focus is control-plane only: it
-			// makes Re-plan visibly return the operator to that exact session.
+			// command into the agent's input prompt.
 			log.info('okena', `Planning session already open in terminal ${terminalId}`)
-			try {
-				await this.client.action({
-					action: 'focus_terminal',
-					project_id: ensured.wtProjectId,
-					terminal_id: terminalId,
-					window: 'main',
-				})
-			} catch (err) {
-				// The planning artifacts and live session are still valid. Mirroring the
-				// Item opener, a desktop-focus failure must not turn that into an API error.
-				log.warn('okena', `Could not focus reused planning terminal ${terminalId}`, err)
-			}
 		} else {
 			const command = buildInteractiveAgentCommand(
 				params.solverConfig,
