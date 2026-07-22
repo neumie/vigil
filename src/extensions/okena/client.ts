@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,6 +11,10 @@ interface CliConfig {
 interface RemoteConfig {
 	port: number
 	pid: number
+	local_endpoint?: {
+		kind?: string
+		path?: string
+	}
 }
 
 interface ProfilesConfig {
@@ -17,9 +22,11 @@ interface ProfilesConfig {
 	default_profile?: string
 }
 
+type OkenaEndpoint = { kind: 'unixSocket'; socketPath: string } | { kind: 'http'; baseUrl: string }
+
 interface OkenaCredentials {
 	token: string
-	baseUrl: string
+	endpoint: OkenaEndpoint
 }
 
 const EXPIRED_TOKEN_HINT =
@@ -28,11 +35,12 @@ const EXPIRED_TOKEN_HINT =
 export class OkenaClient {
 	private baseDir: string
 
-	constructor() {
+	constructor(baseDir?: string) {
 		this.baseDir =
-			process.platform === 'darwin'
+			baseDir ??
+			(process.platform === 'darwin'
 				? join(homedir(), 'Library', 'Application Support', 'okena')
-				: join(homedir(), '.config', 'okena')
+				: join(homedir(), '.config', 'okena'))
 	}
 
 	/**
@@ -76,7 +84,12 @@ export class OkenaClient {
 		try {
 			const remote: RemoteConfig = JSON.parse(readFileSync(remotePath, 'utf-8'))
 			if (remote.pid && !this.isProcessAlive(remote.pid)) return null
-			return { token, baseUrl: `http://127.0.0.1:${remote.port}` }
+			const localEndpoint = remote.local_endpoint
+			const endpoint: OkenaEndpoint =
+				localEndpoint?.kind === 'unix_socket' && localEndpoint.path
+					? { kind: 'unixSocket', socketPath: localEndpoint.path }
+					: { kind: 'http', baseUrl: `http://127.0.0.1:${remote.port}` }
+			return { token, endpoint }
 		} catch {
 			return null
 		}
@@ -95,7 +108,7 @@ export class OkenaClient {
 		const creds = this.loadCredentials()
 		if (!creds) return false
 		try {
-			const res = await fetch(`${creds.baseUrl}/health`, { signal: AbortSignal.timeout(2000) })
+			const res = await requestEndpoint(creds.endpoint, '/health', { signal: AbortSignal.timeout(2000) })
 			return res.ok
 		} catch {
 			return false
@@ -106,14 +119,11 @@ export class OkenaClient {
 		const creds = this.loadCredentials()
 		if (!creds) throw new Error('Okena not configured')
 
-		const send = (c: OkenaCredentials) =>
-			fetch(`${c.baseUrl}${path}`, {
-				...init,
-				headers: {
-					...(init.headers as Record<string, string> | undefined),
-					Authorization: `Bearer ${c.token}`,
-				},
-			})
+		const send = (c: OkenaCredentials) => {
+			const headers = new Headers(init.headers)
+			headers.set('Authorization', `Bearer ${c.token}`)
+			return requestEndpoint(c.endpoint, path, { ...init, headers })
+		}
 
 		const res = await send(creds)
 		if (res.status !== 401) return res
@@ -187,6 +197,52 @@ export interface OkenaState {
 		git_status?: { branch?: string | null } | null
 		worktree_info?: { parent_project_id: string } | null
 	}>
+}
+
+function requestEndpoint(endpoint: OkenaEndpoint, path: string, init: RequestInit = {}): Promise<Response> {
+	if (endpoint.kind === 'http') return fetch(`${endpoint.baseUrl}${path}`, init)
+	if (init.body !== null && init.body !== undefined && typeof init.body !== 'string') {
+		return Promise.reject(new Error('Okena Unix-socket requests require a string body'))
+	}
+
+	return new Promise((resolve, reject) => {
+		let settled = false
+		const fail = (error: Error) => {
+			if (settled) return
+			settled = true
+			reject(error)
+		}
+		const headers = Object.fromEntries(new Headers(init.headers).entries())
+		const req = request(
+			{
+				socketPath: endpoint.socketPath,
+				path,
+				method: init.method ?? 'GET',
+				headers,
+				signal: init.signal ?? undefined,
+			},
+			res => {
+				const chunks: Buffer[] = []
+				res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
+				res.once('aborted', () => fail(new Error('Okena Unix-socket response aborted')))
+				res.once('error', fail)
+				res.on('end', () => {
+					if (settled) return
+					settled = true
+					const body = Buffer.concat(chunks)
+					resolve(
+						new Response(body.length > 0 ? body : null, {
+							status: res.statusCode ?? 500,
+							statusText: res.statusMessage,
+						}),
+					)
+				})
+			},
+		)
+		req.once('error', fail)
+		if (init.body) req.write(init.body)
+		req.end()
+	})
 }
 
 // How long to let a freshly-created/auto okena terminal settle before typing the
